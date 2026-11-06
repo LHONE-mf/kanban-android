@@ -351,7 +351,8 @@ class MainActivity : ComponentActivity() {
         if (!wasCorrect && miniReviewQueue.size < 150) miniReviewQueue.addLast(dailyQuestionIndex)
         if (wasCorrect) miniCorrectCount++
         miniQuestionNumber++
-        miniIsReview = miniQuestionNumber % 4 == 0 && miniReviewQueue.isNotEmpty()
+        miniIsReview = miniQuestionNumber % 6 == 0 && miniReviewQueue.isNotEmpty() &&
+            miniReviewQueue.first() != dailyQuestionIndex
         if (miniIsReview) {
             dailyQuestionIndex = miniReviewQueue.removeFirst()
         } else {

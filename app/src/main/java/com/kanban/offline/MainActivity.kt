@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
     private var bannerDismissedThisSession = false
     private var dailyQuestionIndex = 0
     private var miniQuestionNumber = 0
+    private var miniIsReview = false
     private val miniReviewQueue = ArrayDeque<Int>()
     private var japaneseSpeech: TextToSpeech? = null
     private var japaneseVoiceReady = false
@@ -292,11 +293,21 @@ class MainActivity : ComponentActivity() {
                 View.VISIBLE else View.GONE
     }
 
+
+    private fun saveMiniState() {
+        getSharedPreferences("japanese_daily", MODE_PRIVATE).edit()
+            .putInt("question_count", miniQuestionNumber)
+            .putString("review_queue", miniReviewQueue.joinToString(","))
+            .apply()
+    }
+
     private fun nextMiniQuestion(wasCorrect: Boolean) {
+        // Wrong answers enter the review queue. Correct reviews leave it.
         if (!wasCorrect) miniReviewQueue.addLast(dailyQuestionIndex)
         miniQuestionNumber++
         val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
-        if (miniQuestionNumber % 4 == 0 && miniReviewQueue.isNotEmpty()) {
+        miniIsReview = miniQuestionNumber % 4 == 0 && miniReviewQueue.isNotEmpty()
+        if (miniIsReview) {
             dailyQuestionIndex = miniReviewQueue.removeFirst()
         } else {
             dailyQuestionIndex = prefs.getInt("next_question", 0) % miniQuestions.size
@@ -304,6 +315,7 @@ class MainActivity : ComponentActivity() {
                 "next_question", (dailyQuestionIndex + 1) % miniQuestions.size
             ).apply()
         }
+        saveMiniState()
         renderMiniQuestion()
     }
 
@@ -312,6 +324,8 @@ class MainActivity : ComponentActivity() {
         val task = miniQuestions[dailyQuestionIndex]
         val question = dailyBanner.findViewWithTag<TextView>("mini_question")
         val answerRow = dailyBanner.findViewWithTag<LinearLayout>("mini_answers")
+        val counter = dailyBanner.findViewWithTag<TextView>("mini_counter")
+        counter.text = "№${miniQuestionNumber + 1} · повторить: ${miniReviewQueue.size}"
         question.text = "Как читается ${task.first}?"
         answerRow.removeAllViews()
         val alternatives = miniQuestions.map { it.second }
@@ -333,8 +347,6 @@ class MainActivity : ComponentActivity() {
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
-                    // Move to the next new symbol on ordinary questions; missed
-                    // symbols are inserted periodically without stopping practice.
                     nextMiniQuestion(correct)
                 }
             }, LinearLayout.LayoutParams(dp(65), dp(44)))
@@ -342,8 +354,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun createDailyBanner(): LinearLayout {
-        dailyQuestionIndex = getSharedPreferences("japanese_daily", MODE_PRIVATE)
-            .getInt("next_question", 0).coerceIn(0, miniQuestions.lastIndex)
+        val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
+        dailyQuestionIndex = prefs.getInt("next_question", 0)
+            .coerceIn(0, miniQuestions.lastIndex)
+        miniQuestionNumber = prefs.getInt("question_count", 0).coerceAtLeast(0)
+        miniReviewQueue.clear()
+        prefs.getString("review_queue", "")?.split(",")?.forEach { raw ->
+            val index = raw.toIntOrNull()
+            if (index != null && index in miniQuestions.indices &&
+                miniReviewQueue.size < miniQuestions.size * 3) {
+                miniReviewQueue.addLast(index)
+            }
+        }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(236, 246, 244))
@@ -369,6 +391,11 @@ class MainActivity : ComponentActivity() {
                 panel.visibility = View.GONE
             }
         }, LinearLayout.LayoutParams(dp(52), dp(38)))
+        header.addView(TextView(this).apply {
+            tag = "mini_counter"
+            textSize = 11f
+            setTextColor(Color.rgb(80, 112, 109))
+        })
         panel.addView(header)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL

@@ -6,7 +6,7 @@
 <header><div class="muted">KANBAN · LEARN</div><h1>日本語 · Японский с нуля</h1><p>Начни с чтения. Всего 5–10 минут практики за раз. Все упражнения работают без интернета.</p></header>
 <div class="card"><strong id="progressLabel">Изучено 0 / 46</strong><div class="progress" style="margin-top:12px"><span id="progressBar" style="width:0%"></span></div><p class="hint">Прогресс сохраняется на этом устройстве. «Изучено» означает, что ты отметил символ после знакомства с ним, а не что он уже запомнен навсегда.</p></div>
 <div class="tabs" role="tablist" aria-label="Разделы">
-<button class="active" data-tab="start">Старт</button><button data-tab="learn">Хирагана</button><button data-tab="quiz">Тренировка</button><button data-tab="words">Слова</button>
+<button class="active" data-tab="start">Старт</button><button data-tab="learn">Хирагана</button><button data-tab="quiz">Тренировка</button><button data-tab="words">Слова</button><button data-tab="review">Повторение</button>
 </div>
 <section id="start" class="page">
 <div class="card"><h2>Урок 0. Как устроен японский?</h2><p><b>Хирагана (ひらがな)</b> — знаки для японских слов и грамматических окончаний. <b>Катакана (カタカナ)</b> — часто для заимствованных слов. <b>Кандзи (漢字)</b> — иероглифы со значениями и чтениями.</p><p>Начнём с хираганы. Каждый знак обычно обозначает мору — ритмическую единицу, часто похожую на короткий слог. Например: あ = a, い = i, う = u.</p><p><b>Порядок обучения:</b> 1) пять гласных → 2) остальные базовые знаки → 3) чтение простых слов → 4) катакана, озвончение и грамматика.</p><button class="primary" id="begin">Начать с あ・い・う・え・お</button></div>
@@ -14,13 +14,16 @@
 </section>
 <section id="learn" class="page" hidden>
 <div class="card"><h2>Выбери ряд</h2><div id="groups" class="tabs"></div><p class="hint">Нажми на знак, чтобы открыть карточку. Отмечай знакомые символы и возвращайся к ним в тренировке.</p><div id="kanaGrid" class="grid"></div></div>
-<div id="detail" class="card" hidden><div class="big" id="bigKana"></div><div class="roman" id="bigRoman"></div><p id="bigHint" style="text-align:center"></p><div class="row"><button id="prevKana">← Назад</button><button class="primary" id="markKana">Отметить как изученное</button><button id="nextKana">Далее →</button></div></div>
+<div id="detail" class="card" hidden><div class="big" id="bigKana"></div><div class="roman" id="bigRoman"></div><p style="text-align:center"><button id="hearKana">🔊 Слушать</button></p><p id="bigHint" style="text-align:center"></p><div class="row"><button id="prevKana">← Назад</button><button class="primary" id="markKana">Отметить как изученное</button><button id="nextKana">Далее →</button></div></div>
 </section>
 <section id="quiz" class="page" hidden>
 <div class="card"><h2>Угадай чтение</h2><p>Выбери правильную латинскую запись. Тренировка использует только отмеченные символы, а если их меньше четырёх — первые пять гласных.</p><div id="quizKana" class="big">あ</div><div class="choices" id="choices"></div><p id="feedback" aria-live="polite"></p><div class="row"><span id="score" class="muted">Верно: 0 / 0</span><button id="nextQuestion" class="primary">Следующий →</button></div></div>
 </section>
 <section id="words" class="page" hidden>
 <div class="card"><h2>Первые слова</h2><p>Попробуй прочитать слово до открытия подсказки. Пока здесь только слова, которые можно написать базовой хираганой.</p><div id="wordList"></div></div>
+</section>
+<section id="review" class="page" hidden>
+<div class="card"><h2>Повторение с интервалами</h2><p>Сначала попробуй вспомнить чтение самостоятельно. Затем открой ответ и оцени, насколько легко вспомнил.</p><p id="dueCount"></p><div id="reviewBody"><div id="reviewKana" class="big"></div><div id="reviewAnswer" class="roman" hidden></div><p style="text-align:center"><button id="reveal">Показать ответ</button></p><div class="row" id="gradeButtons" hidden><button id="again">Не вспомнил</button><button id="good" class="primary">Вспомнил</button></div></div></div>
 </section>
 <footer>Локальный учебный модуль v0.1 · Без аккаунта, рекламы и передачи прогресса в интернет. Произношение на слух и проверка письма появятся в следующих версиях.</footer>
 </main>
@@ -40,17 +43,20 @@ const groups=[
 ].map(row=>({name:row[0],items:row.slice(1).map(s=>{const [kana,roman]=s.split(':');return {kana,roman}})}));
 const all=groups.flatMap(g=>g.items),storageKey='kanban-japanese-hiragana-v1';
 let known;try{known=new Set(JSON.parse(localStorage.getItem(storageKey)||'[]').filter(x=>typeof x==='string'))}catch(e){known=new Set()}
-let groupIndex=0,detailIndex=0,score=0,total=0,question=null,answered=false;
+let groupIndex=0,detailIndex=0,score=0,total=0,question=null,answered=false,reviewItem=null;
+const reviewKey='kanban-japanese-review-v1';let reviews={};try{reviews=JSON.parse(localStorage.getItem(reviewKey)||'{}')||{}}catch(e){reviews={}}
 const $=id=>document.getElementById(id);
 function persist(){try{localStorage.setItem(storageKey,JSON.stringify([...known]))}catch(e){console.warn('Progress not saved',e)}updateProgress()}
 function updateProgress(){$('progressLabel').textContent='Изучено '+all.filter(x=>known.has(x.kana)).length+' / '+all.length;$('progressBar').style.width=(100*all.filter(x=>known.has(x.kana)).length/all.length)+'%'}
-function tab(id){document.querySelectorAll('.page').forEach(el=>el.hidden=el.id!==id);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===id));if(id==='quiz')newQuestion();if(id==='learn')renderGroup()}
+function tab(id){document.querySelectorAll('.page').forEach(el=>el.hidden=el.id!==id);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===id));if(id==='quiz')newQuestion();if(id==='learn')renderGroup();if(id==='review')nextReview()}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>tab(b.dataset.tab)));
 $('begin').onclick=()=>{groupIndex=0;tab('learn')};
 function renderGroup(){
  $('groups').replaceChildren(...groups.map((g,i)=>{const b=document.createElement('button');b.textContent=g.name;b.className=i===groupIndex?'active':'';b.onclick=()=>{groupIndex=i;$('detail').hidden=true;renderGroup()};return b}));
  $('kanaGrid').replaceChildren(...groups[groupIndex].items.map((x,i)=>{const b=document.createElement('button');b.className='kana'+(known.has(x.kana)?' done':'');const big=document.createElement('b');big.textContent=x.kana;const small=document.createElement('small');small.textContent=x.roman;b.append(big,small);b.onclick=()=>showDetail(i);return b}))
 }
+function speak(kana){if(window.JapaneseSpeech?.postMessage){window.JapaneseSpeech.postMessage(kana)}else if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(kana);u.lang='ja-JP';u.rate=.75;speechSynthesis.cancel();speechSynthesis.speak(u)}else{alert('Озвучивание недоступно на этом устройстве')}}
+$('hearKana').onclick=()=>speak(groups[groupIndex].items[detailIndex].kana);
 function showDetail(i){const arr=groups[groupIndex].items;detailIndex=(i+arr.length)%arr.length;const x=arr[detailIndex];$('detail').hidden=false;$('bigKana').textContent=x.kana;$('bigRoman').textContent=x.roman;$('bigHint').textContent='Ряд: '+groups[groupIndex].name;$('markKana').textContent=known.has(x.kana)?'✓ Изучено — снять отметку':'Отметить как изученное'}
 $('prevKana').onclick=()=>showDetail(detailIndex-1);$('nextKana').onclick=()=>showDetail(detailIndex+1);
 $('markKana').onclick=()=>{const x=groups[groupIndex].items[detailIndex];if(known.has(x.kana))known.delete(x.kana);else known.add(x.kana);persist();renderGroup();showDetail(detailIndex)};
@@ -66,7 +72,26 @@ function newQuestion(){
 function answer(button,roman){if(answered)return;answered=true;total++;if(roman===question.roman){score++;$('feedback').textContent='Верно! '+question.kana+' = '+question.roman}else{$('feedback').textContent='Правильный ответ: '+question.roman;button.classList.add('wrong')}[...$('choices').children].forEach(b=>{b.disabled=true;if(b.textContent===question.roman)b.classList.add('correct')});$('score').textContent='Верно: '+score+' / '+total;$('nextQuestion').disabled=false}
 $('nextQuestion').onclick=newQuestion;
 const words=[['あお','ao','синий цвет'],['いえ','ie','дом'],['うえ','ue','верх; сверху'],['かお','kao','лицо'],['すし','sushi','суши'],['ねこ','neko','кошка'],['いぬ','inu','собака'],['やま','yama','гора'],['はな','hana','цветок / нос (разные слова)'],['さかな','sakana','рыба']];
-$('wordList').replaceChildren(...words.map(w=>{const d=document.createElement('div');d.className='card';const title=document.createElement('div');title.style.fontSize='34px';title.textContent=w[0];const b=document.createElement('button');b.textContent='Показать чтение и перевод';const desc=document.createElement('p');desc.hidden=true;desc.textContent=w[1]+' — '+w[2];b.onclick=()=>{desc.hidden=!desc.hidden;b.textContent=desc.hidden?'Показать чтение и перевод':'Скрыть подсказку'};d.append(title,b,desc);return d}));
+$('wordList').replaceChildren(...words.map(w=>{const d=document.createElement('div');d.className='card';const title=document.createElement('div');title.style.fontSize='34px';title.textContent=w[0];const b=document.createElement('button');b.textContent='Показать чтение и перевод';const desc=document.createElement('p');desc.hidden=true;desc.textContent=w[1]+' — '+w[2];b.onclick=()=>{desc.hidden=!desc.hidden;b.textContent=desc.hidden?'Показать чтение и перевод':'Скрыть подсказку'};const audio=document.createElement('button');audio.textContent='🔊';audio.setAttribute('aria-label','Прослушать '+w[0]);audio.onclick=()=>speak(w[0]);d.append(title,audio,b,desc);return d}));
+function nextReview(){
+ const due=all.filter(x=>known.has(x.kana)&&(reviews[x.kana]?.due||0)<=Date.now());
+ $('dueCount').textContent='К повторению сейчас: '+due.length;
+ reviewItem=due.length?due[Math.floor(Math.random()*due.length)]:null;
+ $('reviewKana').textContent=reviewItem?.kana||'✓';
+ $('reviewAnswer').textContent=reviewItem?.roman||'Пока всё повторено!';
+ $('reviewAnswer').hidden=true;$('gradeButtons').hidden=true;
+ $('reveal').hidden=!reviewItem;
+}
+$('reveal').onclick=()=>{$('reviewAnswer').hidden=false;$('gradeButtons').hidden=false;$('reveal').hidden=true};
+function grade(remembered){
+ if(!reviewItem)return;
+ const prev=reviews[reviewItem.kana]||{interval:0};
+ const days=remembered?(prev.interval===0?1:prev.interval===1?3:Math.min(60,Math.round(prev.interval*2.2))):0;
+ reviews[reviewItem.kana]={interval:days,due:Date.now()+(remembered?days*86400000:60000)};
+ try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}catch(e){console.warn(e)}
+ nextReview()
+}
+$('again').onclick=()=>grade(false);$('good').onclick=()=>grade(true);
 updateProgress();renderGroup();
 })();
 </script></body></html>

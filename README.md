@@ -40,3 +40,38 @@ On two Android phones, install the same APK. Enable Bluetooth (and location serv
 3. Add peer identities, conversation storage, encryption, and offline queueing.
 4. Add relay with TTL, message deduplication, and explicit forwarding controls.
 5. Test on at least three physical Android phones; evaluate background restrictions and battery use.
+
+## Permanent signing and installable updates
+
+Android accepts an APK update only if the **applicationId stays `com.kanban.offline`**, the **signing certificate stays the same**, and the **versionCode increases**. GitHub's default debug signing key is ephemeral; do **not** use debug APKs for reliable future updates.
+
+### One-time setup
+
+Generate and **back up** a release keystore on a trusted machine with a JDK installed:
+
+```sh
+keytool -genkeypair -v -keystore kanban-release.jks -alias kanban -keyalg RSA -keysize 3072 -validity 10000
+```
+
+Use strong, unique passwords. Do not commit the keystore or send passwords in an issue or chat.
+
+Encode the file to one line (macOS/Linux):
+
+```sh
+base64 < kanban-release.jks | tr -d '\\n'
+```
+
+Open GitHub repository **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+| Secret | Value |
+| --- | --- |
+| `KANBAN_KEYSTORE_BASE64` | One-line base64 of `kanban-release.jks` |
+| `KANBAN_STORE_PASSWORD` | Keystore password |
+| `KANBAN_KEY_ALIAS` | `kanban` (or the alias you chose) |
+| `KANBAN_KEY_PASSWORD` | Private-key password |
+
+Trigger **Actions → Android APK → Run workflow**. After all four secrets exist, the workflow builds and uploads **`kanban-signed-release-apk`**. Install **only** that release APK for ongoing updates. Every subsequent workflow run uses the same certificate and a higher `versionCode` (GitHub workflow run number).
+
+**Existing debug installation:** A release APK signed by a new key **cannot** update an existing debug-signed APK. First export a JSON backup from the old app, verify the backup exists, uninstall the old debug APK, install the signed release APK, then import the backup. Do not uninstall until your backup and import path are verified. This one-time migration is necessary unless the exact previous signing key can be recovered.
+
+**Critical:** Keep an offline backup of the keystore and passwords. Losing the signing key prevents updates to installations signed with it. Never put signing secrets in public repository files.

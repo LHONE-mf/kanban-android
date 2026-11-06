@@ -368,8 +368,14 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
         dailyQuestionIndex = prefs.getInt("current_question", prefs.getInt("next_question", 0))
             .coerceIn(0, allMiniQuestions.lastIndex)
-        miniNextNewIndex = prefs.getInt("next_question", (dailyQuestionIndex + 1) % allMiniQuestions.size)
-            .coerceIn(0, allMiniQuestions.lastIndex)
+        // Older versions stored the next question as the current question.
+        // On first launch, advance the cursor so the first character isn't repeated.
+        miniNextNewIndex = if (!prefs.contains("current_question")) {
+            (dailyQuestionIndex + 1) % allMiniQuestions.size
+        } else {
+            prefs.getInt("next_question", (dailyQuestionIndex + 1) % allMiniQuestions.size)
+                .coerceIn(0, allMiniQuestions.lastIndex)
+        }
         miniUnlockedKatakana = prefs.getBoolean("katakana_unlocked", false) ||
             dailyQuestionIndex >= miniQuestions.size
         miniQuestionNumber = prefs.getInt("question_count", 0).coerceAtLeast(0)

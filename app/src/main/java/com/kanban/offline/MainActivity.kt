@@ -37,6 +37,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var dailyBanner: LinearLayout
     private var bannerDismissedThisSession = false
     private var dailyQuestionIndex = 0
+    private var miniQuestionNumber = 0
+    private val miniReviewQueue = ArrayDeque<Int>()
     private var japaneseSpeech: TextToSpeech? = null
     private var japaneseVoiceReady = false
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
@@ -236,14 +238,52 @@ class MainActivity : ComponentActivity() {
 
 
     private val miniQuestions = listOf(
-        Triple("あ", "a", "o"), Triple("い", "i", "e"),
-        Triple("う", "u", "a"), Triple("え", "e", "i"),
-        Triple("お", "o", "u"), Triple("か", "ka", "ki"),
-        Triple("き", "ki", "ka"), Triple("く", "ku", "ko"),
-        Triple("け", "ke", "ka"), Triple("こ", "ko", "ku"),
-        Triple("さ", "sa", "shi"), Triple("し", "shi", "su"),
-        Triple("す", "su", "sa"), Triple("せ", "se", "so"),
-        Triple("そ", "so", "se")
+        "あ" to "a",
+        "い" to "i",
+        "う" to "u",
+        "え" to "e",
+        "お" to "o",
+        "か" to "ka",
+        "き" to "ki",
+        "く" to "ku",
+        "け" to "ke",
+        "こ" to "ko",
+        "さ" to "sa",
+        "し" to "shi",
+        "す" to "su",
+        "せ" to "se",
+        "そ" to "so",
+        "た" to "ta",
+        "ち" to "chi",
+        "つ" to "tsu",
+        "て" to "te",
+        "と" to "to",
+        "な" to "na",
+        "に" to "ni",
+        "ぬ" to "nu",
+        "ね" to "ne",
+        "の" to "no",
+        "は" to "ha",
+        "ひ" to "hi",
+        "ふ" to "fu",
+        "へ" to "he",
+        "ほ" to "ho",
+        "ま" to "ma",
+        "み" to "mi",
+        "む" to "mu",
+        "め" to "me",
+        "も" to "mo",
+        "や" to "ya",
+        "ゆ" to "yu",
+        "よ" to "yo",
+        "ら" to "ra",
+        "り" to "ri",
+        "る" to "ru",
+        "れ" to "re",
+        "ろ" to "ro",
+        "わ" to "wa",
+        "を" to "wo",
+        "ん" to "n"
     )
 
     private fun updateDailyBannerVisibility(url: String?) {
@@ -252,10 +292,20 @@ class MainActivity : ComponentActivity() {
                 View.VISIBLE else View.GONE
     }
 
-    private fun nextMiniQuestion() {
+    private fun nextMiniQuestion(wasCorrect: Boolean) {
         val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
-        dailyQuestionIndex = (dailyQuestionIndex + 1) % miniQuestions.size
-        prefs.edit().putInt("next_question", dailyQuestionIndex).apply()
+        if (!wasCorrect) miniReviewQueue.addLast(dailyQuestionIndex)
+        miniQuestionNumber++
+        // Every fourth prompt revisits a missed character, if one is queued.
+        dailyQuestionIndex = if (miniQuestionNumber % 4 == 0 && miniReviewQueue.isNotEmpty())
+            miniReviewQueue.removeFirst()
+        else (prefs.getInt("next_question", 0) % miniQuestions.size)
+        if (miniQuestionNumber % 4 != 0 || miniReviewQueue.isEmpty()) {
+            // Track the next unseen character independently of review prompts.
+        }
+        if (wasCorrect || miniQuestionNumber % 4 != 0) {
+            // A new character is introduced after each ordinary question.
+        }
         renderMiniQuestion()
     }
 
@@ -266,24 +316,33 @@ class MainActivity : ComponentActivity() {
         val answerRow = dailyBanner.findViewWithTag<LinearLayout>("mini_answers")
         question.text = "Как читается ${task.first}?"
         answerRow.removeAllViews()
-        val options = if (dailyQuestionIndex % 2 == 0)
-            listOf(task.second, task.third) else listOf(task.third, task.second)
+        val alternatives = miniQuestions.map { it.second }
+            .filter { it != task.second }.distinct()
+        val wrong = alternatives[(dailyQuestionIndex * 7 + miniQuestionNumber) % alternatives.size]
+        val options = if (miniQuestionNumber % 2 == 0)
+            listOf(task.second, wrong) else listOf(wrong, task.second)
         for (choice in options) {
             answerRow.addView(Button(this).apply {
                 text = choice
                 isAllCaps = false
                 textSize = 13f
                 setOnClickListener {
-                    if (choice != task.second) {
+                    val correct = choice == task.second
+                    if (!correct) {
                         android.widget.Toast.makeText(
                             this@MainActivity,
                             "${task.first} читается ${task.second}",
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
-                    // Every answer immediately advances. Closing the banner,
-                    // rather than answering, is what dismisses it for this session.
-                    nextMiniQuestion()
+                    // Move to the next new symbol on ordinary questions; missed
+                    // symbols are inserted periodically without stopping practice.
+                    val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
+                    if (miniQuestionNumber % 4 != 3) {
+                        val next = (prefs.getInt("next_question", 0) + 1) % miniQuestions.size
+                        prefs.edit().putInt("next_question", next).apply()
+                    }
+                    nextMiniQuestion(correct)
                 }
             }, LinearLayout.LayoutParams(dp(65), dp(44)))
         }

@@ -2,18 +2,18 @@
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101827"><title>Японский с нуля</title>
 <style>
 :root{color-scheme:dark;--bg:#101827;--panel:#1b293b;--line:#34455b;--txt:#f2f6fb;--muted:#b6c3d2;--accent:#85d4c5;--pink:#f6b2b8}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:18px 16px 60px}h1{font-size:27px;margin:8px 0}h2{font-size:20px}p{line-height:1.55;color:var(--muted)}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:17px;margin:14px 0}.tabs{display:flex;gap:8px;overflow:auto;padding:8px 0}.tabs button{white-space:nowrap}.button,button{font:inherit;border-radius:11px;border:1px solid var(--line);padding:11px 14px;background:#26374c;color:var(--txt);cursor:pointer}button:focus-visible{outline:3px solid var(--accent)}button.primary{background:var(--accent);color:#102332;font-weight:700;border:0}button:disabled{opacity:.45}button.active{border-color:var(--accent);color:var(--accent)}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:10px}.kana{padding:12px 4px;text-align:center;min-height:103px}.kana b{font-size:38px;display:block;font-weight:500}.kana small{color:var(--muted)}.kana.done{border-color:var(--accent)}.big{font-size:100px;text-align:center;line-height:1.3}.roman{font-size:24px;text-align:center;color:var(--accent)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1}.progress{height:11px;border-radius:20px;background:#304257;overflow:hidden}.progress span{display:block;height:100%;background:var(--accent)}.choices{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.choices button{min-height:62px;font-size:22px}.choices button.correct{border-color:var(--accent);background:#1c4b48}.choices button.wrong{border-color:var(--pink);background:#4c2935}.hint{font-size:14px}.notice{color:var(--accent)}[hidden]{display:none!important}footer{font-size:12px;color:var(--muted);margin-top:25px}
-</style></head><body><main>
+#writeCanvas{width:100%;height:290px;display:block;background:#f9fafb;border-radius:14px;touch-action:none;border:2px solid var(--line)}.sentence{font-size:26px;color:var(--txt);margin:8px 0}.subtle{font-size:14px;color:var(--muted)}.study-toggle{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}</style></head><body><main>
 <header><div class="muted">KANBAN · LEARN</div><h1>日本語 · Японский с нуля</h1><p>Начни с чтения. Всего 5–10 минут практики за раз. Все упражнения работают без интернета.</p></header>
 <div class="card"><strong id="progressLabel">Изучено 0 / 46</strong><div class="progress" style="margin-top:12px"><span id="progressBar" style="width:0%"></span></div><p class="hint">Прогресс сохраняется на этом устройстве. «Изучено» означает, что ты отметил символ после знакомства с ним, а не что он уже запомнен навсегда.</p></div>
 <div class="tabs" role="tablist" aria-label="Разделы">
-<button class="active" data-tab="start">Старт</button><button data-tab="learn">Хирагана</button><button data-tab="quiz">Тренировка</button><button data-tab="words">Слова</button><button data-tab="review">Повторение</button>
+<button class="active" data-tab="start">Старт</button><button data-tab="learn">Хирагана</button><button data-tab="quiz">Тренировка</button><button data-tab="words">Слова</button><button data-tab="review">Повторение</button><button data-tab="sentences">Фразы</button><button data-tab="writing">Письмо</button>
 </div>
 <section id="start" class="page">
 <div class="card"><h2>Урок 0. Как устроен японский?</h2><p><b>Хирагана (ひらがな)</b> — знаки для японских слов и грамматических окончаний. <b>Катакана (カタカナ)</b> — часто для заимствованных слов. <b>Кандзи (漢字)</b> — иероглифы со значениями и чтениями.</p><p>Начнём с хираганы. Каждый знак обычно обозначает мору — ритмическую единицу, часто похожую на короткий слог. Например: あ = a, い = i, う = u.</p><p><b>Порядок обучения:</b> 1) пять гласных → 2) остальные базовые знаки → 3) чтение простых слов → 4) катакана, озвончение и грамматика.</p><button class="primary" id="begin">Начать с あ・い・う・え・お</button></div>
 <div class="card"><h2>Полезно знать</h2><p>Запись латиницей (romaji) — временная подсказка. Постепенно старайся читать сами японские знаки.</p><p>Произношение приблизительно: <b>a</b> как «а», <b>i</b> как «и», <b>u</b> — короткое японское «у» (не совсем русское), <b>e</b> как «э», <b>o</b> как «о». Знаки し (shi), ち (chi), つ (tsu), ふ (fu) имеют особое звучание.</p></div>
 </section>
 <section id="learn" class="page" hidden>
-<div class="card"><h2>Выбери ряд</h2><div id="groups" class="tabs"></div><p class="hint">Нажми на знак, чтобы открыть карточку. Отмечай знакомые символы и возвращайся к ним в тренировке.</p><div id="kanaGrid" class="grid"></div></div>
+<div class="card"><h2>Азбука кана</h2><div class="study-toggle"><button id="hiraganaMode" class="active">ひらがな · Хирагана</button><button id="katakanaMode">カタカナ · Катакана</button></div><p id="scriptHint" class="hint">Хирагана используется для японских слов и грамматических окончаний.</p><h2>Выбери ряд</h2><div id="groups" class="tabs"></div><p class="hint">Нажми на знак, чтобы открыть карточку. Отмечай знакомые символы и возвращайся к ним в тренировке.</p><div id="kanaGrid" class="grid"></div></div>
 <div id="detail" class="card" hidden><div class="big" id="bigKana"></div><div class="roman" id="bigRoman"></div><p style="text-align:center"><button id="hearKana">🔊 Слушать</button></p><p id="bigHint" style="text-align:center"></p><div class="row"><button id="prevKana">← Назад</button><button class="primary" id="markKana">Отметить как изученное</button><button id="nextKana">Далее →</button></div></div>
 </section>
 <section id="quiz" class="page" hidden>
@@ -22,6 +22,8 @@
 <section id="words" class="page" hidden>
 <div class="card"><h2>Первые слова</h2><p>Попробуй прочитать слово до открытия подсказки. Пока здесь только слова, которые можно написать базовой хираганой.</p><div id="wordList"></div></div>
 </section>
+<section id="sentences" class="page" hidden><div class="card"><h2>Первые предложения</h2><p>Слушай, читай и раскрывай перевод. Здесь встречаются новые знаки, включая озвончённые слоги и долгие гласные: их разберём постепенно.</p><div id="sentenceList"></div><p class="hint">Частица は в этих предложениях произносится как «wa», а です часто звучит с ослабленным «u».</p></div></section>
+<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p>Обведи бледный символ пальцем или стилусом. Это упражнение для знакомства с формой; порядок черт пока не проверяется.</p><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button></div></div></section>
 <section id="review" class="page" hidden>
 <div class="card"><h2>Повторение с интервалами</h2><p>Сначала попробуй вспомнить чтение самостоятельно. Затем открой ответ и оцени, насколько легко вспомнил.</p><p id="dueCount"></p><div id="reviewBody"><div id="reviewKana" class="big"></div><div id="reviewAnswer" class="roman" hidden></div><p style="text-align:center"><button id="reveal">Показать ответ</button></p><div class="row" id="gradeButtons" hidden><button id="again">Не вспомнил</button><button id="good" class="primary">Вспомнил</button></div></div></div>
 </section>
@@ -44,28 +46,36 @@ const groups=[
 const all=groups.flatMap(g=>g.items),storageKey='kanban-japanese-hiragana-v1';
 let known;try{known=new Set(JSON.parse(localStorage.getItem(storageKey)||'[]').filter(x=>typeof x==='string'))}catch(e){known=new Set()}
 let groupIndex=0,detailIndex=0,score=0,total=0,question=null,answered=false,reviewItem=null;
+const hiraGroups=groups;const katakanaRows=['アイウエオ','カキクケコ','サシスセソ','タチツテト','ナニヌネノ','ハヒフヘホ','マミムメモ','ヤユヨ','ラリルレロ','ワヲン'];
+const kataGroups=hiraGroups.map((g,i)=>({name:g.name,items:[...katakanaRows[i]].map((kana,j)=>({kana,roman:g.items[j].roman}))}));
+let script='hiragana';let writeIndex=0,showGuide=true,writingStrokes=[];const allKana=()=>script==='hiragana'?hiraGroups:kataGroups;
 const reviewKey='kanban-japanese-review-v1';let reviews={};try{reviews=JSON.parse(localStorage.getItem(reviewKey)||'{}')||{}}catch(e){reviews={}}
 const $=id=>document.getElementById(id);
 function persist(){try{localStorage.setItem(storageKey,JSON.stringify([...known]))}catch(e){console.warn('Progress not saved',e)}updateProgress()}
-function updateProgress(){$('progressLabel').textContent='Изучено '+all.filter(x=>known.has(x.kana)).length+' / '+all.length;$('progressBar').style.width=(100*all.filter(x=>known.has(x.kana)).length/all.length)+'%'}
-function tab(id){document.querySelectorAll('.page').forEach(el=>el.hidden=el.id!==id);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===id));if(id==='quiz')newQuestion();if(id==='learn')renderGroup();if(id==='review')nextReview()}
+function updateProgress(){const items=[...all,...kataGroups.flatMap(g=>g.items)];const done=items.filter(x=>known.has(x.kana)).length;$('progressLabel').textContent='Изучено '+done+' / '+items.length+' знаков кана';$('progressBar').style.width=(100*done/items.length)+'%'}
+function tab(id){document.querySelectorAll('.page').forEach(el=>el.hidden=el.id!==id);document.querySelectorAll('[data-tab]').forEach(el=>el.classList.toggle('active',el.dataset.tab===id));if(id==='quiz')newQuestion();if(id==='learn')renderGroup();if(id==='review')nextReview();if(id==='writing')drawWriting()}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>tab(b.dataset.tab)));
 $('begin').onclick=()=>{groupIndex=0;tab('learn')};
 function renderGroup(){
+ const groups=allKana();
+ $('hiraganaMode').classList.toggle('active',script==='hiragana');$('katakanaMode').classList.toggle('active',script==='katakana');
+ $('scriptHint').textContent=script==='hiragana'?'Хирагана используется для японских слов и грамматических окончаний.':'Катакана часто используется для заимствованных слов и иностранных имён.';
  $('groups').replaceChildren(...groups.map((g,i)=>{const b=document.createElement('button');b.textContent=g.name;b.className=i===groupIndex?'active':'';b.onclick=()=>{groupIndex=i;$('detail').hidden=true;renderGroup()};return b}));
  $('kanaGrid').replaceChildren(...groups[groupIndex].items.map((x,i)=>{const b=document.createElement('button');b.className='kana'+(known.has(x.kana)?' done':'');const big=document.createElement('b');big.textContent=x.kana;const small=document.createElement('small');small.textContent=x.roman;b.append(big,small);b.onclick=()=>showDetail(i);return b}))
 }
 function speak(kana){if(window.JapaneseSpeech?.postMessage){window.JapaneseSpeech.postMessage(kana)}else if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(kana);u.lang='ja-JP';u.rate=.75;speechSynthesis.cancel();speechSynthesis.speak(u)}else{alert('Озвучивание недоступно на этом устройстве')}}
-$('hearKana').onclick=()=>speak(groups[groupIndex].items[detailIndex].kana);
-function showDetail(i){const arr=groups[groupIndex].items;detailIndex=(i+arr.length)%arr.length;const x=arr[detailIndex];$('detail').hidden=false;$('bigKana').textContent=x.kana;$('bigRoman').textContent=x.roman;$('bigHint').textContent='Ряд: '+groups[groupIndex].name;$('markKana').textContent=known.has(x.kana)?'✓ Изучено — снять отметку':'Отметить как изученное'}
+$('hearKana').onclick=()=>speak(allKana()[groupIndex].items[detailIndex].kana);
+function showDetail(i){const groups=allKana();const arr=groups[groupIndex].items;detailIndex=(i+arr.length)%arr.length;const x=arr[detailIndex];$('detail').hidden=false;$('bigKana').textContent=x.kana;$('bigRoman').textContent=x.roman;$('bigHint').textContent='Ряд: '+groups[groupIndex].name;$('markKana').textContent=known.has(x.kana)?'✓ Изучено — снять отметку':'Отметить как изученное'}
 $('prevKana').onclick=()=>showDetail(detailIndex-1);$('nextKana').onclick=()=>showDetail(detailIndex+1);
-$('markKana').onclick=()=>{const x=groups[groupIndex].items[detailIndex];if(known.has(x.kana))known.delete(x.kana);else known.add(x.kana);persist();renderGroup();showDetail(detailIndex)};
+$('markKana').onclick=()=>{const x=allKana()[groupIndex].items[detailIndex];if(known.has(x.kana))known.delete(x.kana);else known.add(x.kana);persist();renderGroup();showDetail(detailIndex)};
+$('hiraganaMode').onclick=()=>{script='hiragana';groupIndex=0;$('detail').hidden=true;renderGroup();updateProgress()};
+$('katakanaMode').onclick=()=>{script='katakana';groupIndex=0;$('detail').hidden=true;renderGroup();updateProgress()};
 function shuffle(a){const b=a.slice();for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]}return b}
 function newQuestion(){
- const pool=all.filter(x=>known.has(x.kana));const candidates=pool.length>=4?pool:groups[0].items;
+ const scriptItems=allKana().flatMap(g=>g.items);const pool=scriptItems.filter(x=>known.has(x.kana));const candidates=pool.length>=4?pool:allKana()[0].items;
  question=candidates[Math.floor(Math.random()*candidates.length)];answered=false;
  $('quizKana').textContent=question.kana;$('feedback').textContent='';$('nextQuestion').disabled=true;
- const choices=shuffle([question,...shuffle(all.filter(x=>x.roman!==question.roman)).slice(0,3)]);
+ const choices=shuffle([question,...shuffle(scriptItems.filter(x=>x.roman!==question.roman)).slice(0,3)]);
  $('choices').replaceChildren(...choices.map(x=>{const b=document.createElement('button');b.textContent=x.roman;b.onclick=()=>answer(b,x.roman);return b}));
  $('score').textContent='Верно: '+score+' / '+total
 }
@@ -74,7 +84,7 @@ $('nextQuestion').onclick=newQuestion;
 const words=[['あお','ao','синий цвет'],['いえ','ie','дом'],['うえ','ue','верх; сверху'],['かお','kao','лицо'],['すし','sushi','суши'],['ねこ','neko','кошка'],['いぬ','inu','собака'],['やま','yama','гора'],['はな','hana','цветок / нос (разные слова)'],['さかな','sakana','рыба']];
 $('wordList').replaceChildren(...words.map(w=>{const d=document.createElement('div');d.className='card';const title=document.createElement('div');title.style.fontSize='34px';title.textContent=w[0];const b=document.createElement('button');b.textContent='Показать чтение и перевод';const desc=document.createElement('p');desc.hidden=true;desc.textContent=w[1]+' — '+w[2];b.onclick=()=>{desc.hidden=!desc.hidden;b.textContent=desc.hidden?'Показать чтение и перевод':'Скрыть подсказку'};const audio=document.createElement('button');audio.textContent='🔊';audio.setAttribute('aria-label','Прослушать '+w[0]);audio.onclick=()=>speak(w[0]);d.append(title,audio,b,desc);return d}));
 function nextReview(){
- const due=all.filter(x=>known.has(x.kana)&&(reviews[x.kana]?.due||0)<=Date.now());
+ const due=[...all,...kataGroups.flatMap(g=>g.items)].filter(x=>known.has(x.kana)&&(reviews[x.kana]?.due||0)<=Date.now());
  $('dueCount').textContent='К повторению сейчас: '+due.length;
  reviewItem=due.length?due[Math.floor(Math.random()*due.length)]:null;
  $('reviewKana').textContent=reviewItem?.kana||'✓';
@@ -92,6 +102,46 @@ function grade(remembered){
  nextReview()
 }
 $('again').onclick=()=>grade(false);$('good').onclick=()=>grade(true);
+
+const sentences=[
+ ['こんにちは。','konnichiwa','Здравствуйте / добрый день.','Приветствие. は здесь читается wa.'],
+ ['わたしは アンナ です。','watashi wa Anna desu','Я Анна.','わたし = я; は = частица темы; です = вежливая связка.'],
+ ['これは ほん です。','kore wa hon desu','Это книга.','これ = это (рядом с говорящим); ほん = книга.'],
+ ['ねこが います。','neko ga imasu','Есть кошка.','います употребляют для одушевлённых существ.'],
+ ['ありがとうございます。','arigatou gozaimasu','Большое спасибо.','Вежливая форма благодарности.']
+];
+$('sentenceList').replaceChildren(...sentences.map(item=>{
+ const d=document.createElement('div');d.className='card';
+ const j=document.createElement('div');j.className='sentence';j.textContent=item[0];
+ const audio=document.createElement('button');audio.textContent='🔊 Слушать';audio.onclick=()=>speak(item[0]);
+ const reveal=document.createElement('button');reveal.textContent='Показать смысл';
+ const detail=document.createElement('p');detail.hidden=true;detail.textContent=item[1]+' — '+item[2]+' '+item[3];
+ reveal.onclick=()=>{detail.hidden=!detail.hidden;reveal.textContent=detail.hidden?'Показать смысл':'Скрыть смысл'};
+ d.append(j,audio,reveal,detail);return d;
+}));
+const canvas=$('writeCanvas'),ctx=canvas.getContext('2d');let drawing=false;
+function drawWriting(){
+ if(!ctx)return;
+ const item=allKana().flatMap(g=>g.items)[writeIndex%46];
+ $('writingLabel').textContent=item.kana+' · '+item.roman;
+ ctx.clearRect(0,0,canvas.width,canvas.height);
+ ctx.fillStyle='#fafafa';ctx.fillRect(0,0,canvas.width,canvas.height);
+ ctx.strokeStyle='#e3e7eb';ctx.lineWidth=2;ctx.setLineDash([12,12]);
+ ctx.beginPath();ctx.moveTo(300,0);ctx.lineTo(300,440);ctx.moveTo(0,220);ctx.lineTo(600,220);ctx.stroke();ctx.setLineDash([]);
+ if(showGuide){ctx.fillStyle='#d0d6de';ctx.font='300px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(item.kana,300,215)}
+ ctx.strokeStyle='#146c82';ctx.lineWidth=10;ctx.lineCap='round';ctx.lineJoin='round';
+ for(const stroke of writingStrokes){if(!stroke.length)continue;ctx.beginPath();ctx.moveTo(stroke[0][0],stroke[0][1]);for(const p of stroke.slice(1))ctx.lineTo(p[0],p[1]);if(stroke.length===1)ctx.lineTo(stroke[0][0]+.1,stroke[0][1]+.1);ctx.stroke()}
+}
+function point(e){const r=canvas.getBoundingClientRect();return [(e.clientX-r.left)*canvas.width/r.width,(e.clientY-r.top)*canvas.height/r.height]}
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCapture(e.pointerId);drawing=true;writingStrokes.push([point(e)]);drawWriting()});
+canvas.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();writingStrokes[writingStrokes.length-1].push(point(e));drawWriting()});
+function stopDraw(){drawing=false}
+canvas.addEventListener('pointerup',stopDraw);canvas.addEventListener('pointercancel',stopDraw);
+$('writingClear').onclick=()=>{writingStrokes=[];drawWriting()};
+$('writingToggle').onclick=()=>{showGuide=!showGuide;$('writingToggle').textContent=showGuide?'Скрыть подсказку':'Показать подсказку';drawWriting()};
+$('writingPrev').onclick=()=>{writeIndex=(writeIndex+45)%46;writingStrokes=[];drawWriting()};
+$('writingNext').onclick=()=>{writeIndex=(writeIndex+1)%46;writingStrokes=[];drawWriting()};
+
 updateProgress();renderGroup();
 })();
 </script></body></html>

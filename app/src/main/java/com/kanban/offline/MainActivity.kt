@@ -135,7 +135,22 @@ class MainActivity : ComponentActivity() {
             isAllCaps = false
             setOnClickListener { startActivity(Intent(this@MainActivity, NearbyActivity::class.java)) }
         }
-        toolbar.addView(nearbyButton)
+        val japaneseButton = Button(this).apply {
+            text = "日本語 · Учить"
+            textSize = 12f
+            isAllCaps = false
+            setOnClickListener {
+                val japaneseUrl = "$appOrigin/assets/japanese.html"
+                val kanbanUrl = "$appOrigin/assets/kanban.html"
+                val isJapanese = webView.url?.startsWith(japaneseUrl) == true
+                webView.loadUrl(if (isJapanese) kanbanUrl else japaneseUrl)
+                text = if (isJapanese) "日本語 · Учить" else "← Канбан"
+            }
+        }
+        toolbar.addView(japaneseButton, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        toolbar.addView(nearbyButton, LinearLayout.LayoutParams(0,
+            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(toolbar, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT

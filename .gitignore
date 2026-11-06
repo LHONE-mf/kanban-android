@@ -3,3 +3,8 @@
 .idea/
 local.properties
 *.iml
+
+# Never commit private signing credentials
+*.jks
+*.keystore
+keystore.properties

@@ -13,6 +13,9 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.Button
 import android.widget.LinearLayout
+import android.view.Gravity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -111,16 +114,25 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // A separate native toolbar keeps the chat button OUTSIDE WebView content
-        // and prevents it covering dialogs, task forms or Android status bar.
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Keep the WebView clear of system bars and place chat controls BELOW
+        // the Kanban content, rather than floating over task dialogs.
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(android.graphics.Color.WHITE)
+        }
+        root.addView(webView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
         val toolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(12, 2, 12, 2)
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(12, 0, 12, 0)
+            setBackgroundColor(android.graphics.Color.rgb(245, 245, 245))
         }
         val nearbyButton = Button(this).apply {
-            text = "Bluetooth chat"
+            text = "Чат по Bluetooth"
             textSize = 12f
+            isAllCaps = false
             setOnClickListener { startActivity(Intent(this@MainActivity, NearbyActivity::class.java)) }
         }
         toolbar.addView(nearbyButton)
@@ -128,10 +140,17 @@ class MainActivity : ComponentActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
-        root.addView(webView, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.statusBars() or
+                    WindowInsetsCompat.Type.navigationBars() or
+                    WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
         setContentView(root)
+        ViewCompat.requestApplyInsets(root)
         webView.loadUrl("$appOrigin/assets/kanban.html")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

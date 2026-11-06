@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     private var miniIsReview = false
     private var miniNextNewIndex = 0
     private var miniUnlockedKatakana = false
+    private var miniCorrectCount = 0
     private val miniReviewQueue = ArrayDeque<Int>()
     private var japaneseSpeech: TextToSpeech? = null
     private var japaneseVoiceReady = false
@@ -304,6 +305,8 @@ class MainActivity : ComponentActivity() {
     private fun saveMiniState() {
         getSharedPreferences("japanese_daily", MODE_PRIVATE).edit()
             .putInt("question_count", miniQuestionNumber)
+            .putInt("correct_count", miniCorrectCount)
+            .putInt("current_question", dailyQuestionIndex)
             .putInt("next_question", miniNextNewIndex)
             .putBoolean("katakana_unlocked", miniUnlockedKatakana)
             .putString("review_queue", miniReviewQueue.joinToString(","))
@@ -312,6 +315,7 @@ class MainActivity : ComponentActivity() {
 
     private fun nextMiniQuestion(wasCorrect: Boolean) {
         if (!wasCorrect && miniReviewQueue.size < 150) miniReviewQueue.addLast(dailyQuestionIndex)
+        if (wasCorrect) miniCorrectCount++
         miniQuestionNumber++
         miniIsReview = miniQuestionNumber % 4 == 0 && miniReviewQueue.isNotEmpty()
         if (miniIsReview) {
@@ -332,7 +336,7 @@ class MainActivity : ComponentActivity() {
         val answerRow = dailyBanner.findViewWithTag<LinearLayout>("mini_answers")
         val counter = dailyBanner.findViewWithTag<TextView>("mini_counter")
         val scriptName = if (dailyQuestionIndex < miniQuestions.size) "ひらがな" else "カタカナ"
-        counter.text = "$scriptName · №${miniQuestionNumber + 1} · ↻ ${miniReviewQueue.size}"
+        counter.text = "$scriptName · ✓ $miniCorrectCount/$miniQuestionNumber · ↻ ${miniReviewQueue.size}"
         question.text = "Как читается ${task.first}?"
         answerRow.removeAllViews()
         val alternatives = allMiniQuestions.map { it.second }.distinct()
@@ -362,12 +366,14 @@ class MainActivity : ComponentActivity() {
 
     private fun createDailyBanner(): LinearLayout {
         val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
-        dailyQuestionIndex = prefs.getInt("next_question", 0)
+        dailyQuestionIndex = prefs.getInt("current_question", prefs.getInt("next_question", 0))
             .coerceIn(0, allMiniQuestions.lastIndex)
-        miniNextNewIndex = (dailyQuestionIndex + 1) % allMiniQuestions.size
+        miniNextNewIndex = prefs.getInt("next_question", (dailyQuestionIndex + 1) % allMiniQuestions.size)
+            .coerceIn(0, allMiniQuestions.lastIndex)
         miniUnlockedKatakana = prefs.getBoolean("katakana_unlocked", false) ||
             dailyQuestionIndex >= miniQuestions.size
         miniQuestionNumber = prefs.getInt("question_count", 0).coerceAtLeast(0)
+        miniCorrectCount = prefs.getInt("correct_count", 0).coerceIn(0, miniQuestionNumber)
         miniReviewQueue.clear()
         prefs.getString("review_queue", "")?.split(",")?.forEach { raw ->
             val index = raw.toIntOrNull()

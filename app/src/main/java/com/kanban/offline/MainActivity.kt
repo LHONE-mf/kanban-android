@@ -293,18 +293,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun nextMiniQuestion(wasCorrect: Boolean) {
-        val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
         if (!wasCorrect) miniReviewQueue.addLast(dailyQuestionIndex)
         miniQuestionNumber++
-        // Every fourth prompt revisits a missed character, if one is queued.
-        dailyQuestionIndex = if (miniQuestionNumber % 4 == 0 && miniReviewQueue.isNotEmpty())
-            miniReviewQueue.removeFirst()
-        else (prefs.getInt("next_question", 0) % miniQuestions.size)
-        if (miniQuestionNumber % 4 != 0 || miniReviewQueue.isEmpty()) {
-            // Track the next unseen character independently of review prompts.
-        }
-        if (wasCorrect || miniQuestionNumber % 4 != 0) {
-            // A new character is introduced after each ordinary question.
+        val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
+        if (miniQuestionNumber % 4 == 0 && miniReviewQueue.isNotEmpty()) {
+            dailyQuestionIndex = miniReviewQueue.removeFirst()
+        } else {
+            dailyQuestionIndex = prefs.getInt("next_question", 0) % miniQuestions.size
+            prefs.edit().putInt(
+                "next_question", (dailyQuestionIndex + 1) % miniQuestions.size
+            ).apply()
         }
         renderMiniQuestion()
     }
@@ -337,11 +335,6 @@ class MainActivity : ComponentActivity() {
                     }
                     // Move to the next new symbol on ordinary questions; missed
                     // symbols are inserted periodically without stopping practice.
-                    val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
-                    if (miniQuestionNumber % 4 != 3) {
-                        val next = (prefs.getInt("next_question", 0) + 1) % miniQuestions.size
-                        prefs.edit().putInt("next_question", next).apply()
-                    }
                     nextMiniQuestion(correct)
                 }
             }, LinearLayout.LayoutParams(dp(65), dp(44)))
@@ -393,6 +386,9 @@ class MainActivity : ComponentActivity() {
         panel.addView(row)
         // Set field before renderMiniQuestion(), which locates the banner by tag.
         dailyBanner = panel
+        getSharedPreferences("japanese_daily", MODE_PRIVATE).edit().putInt(
+            "next_question", (dailyQuestionIndex + 1) % miniQuestions.size
+        ).apply()
         renderMiniQuestion()
         return panel
     }

@@ -8,7 +8,7 @@ An Android wrapper for the **existing single-file Kanban HTML application**, usi
 - Local app assets are loaded using `WebViewAssetLoader` at `https://appassets.androidplatform.net/assets/kanban.html`.
 - JavaScript and DOM storage enabled for the local application.
 - GitHub Actions builds a **debug APK** and publishes it as a workflow artifact.
-- **Bluetooth messaging and multi-hop mesh are not yet implemented.**
+- Experimental native BLE direct chat is included: foreground discovery/advertising, peer selection, and short GATT write messages. **No encryption, authentication, delivery guarantees, or multi-hop mesh yet. Do not send sensitive messages.**
 - **No on-device verification has been performed.**
 
 ## Get the APK
@@ -28,6 +28,10 @@ gradle :app:assembleDebug
 ## Data migration
 
 The Android WebView has **different IndexedDB storage** from Chrome. Export a JSON backup from the browser version before switching, and import it into the APK after checking file-picker support. Do not uninstall the browser app or delete its data until migration has been verified.
+
+## Experimental nearby chat
+
+On two Android phones, install the same APK. Enable Bluetooth (and location services on Android 10/11 if required), tap **Bluetooth chat** then **Start discovery and advertising** on both phones, grant the permissions, select the other device from the peer list, and send a short message (up to 100 UTF-8 bytes). Keep the chat screens open. This is an early prototype and has **not been tested on physical devices**. Bluetooth hardware may not support advertising on every phone. Stop nearby when finished.
 
 ## Bluetooth plan
 

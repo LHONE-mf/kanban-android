@@ -1,22 +1,18 @@
 package com.kanban.offline
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
-import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.content.Intent
-import android.view.Gravity
-import android.widget.Button
-import android.widget.FrameLayout
+import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.widget.Button
+import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +23,8 @@ import androidx.webkit.WebViewClientCompat
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
+    private var pendingMicRequest: PermissionRequest? = null
+    private val appOrigin = "https://appassets.androidplatform.net"
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -38,30 +36,17 @@ class MainActivity : ComponentActivity() {
         pendingFiles = null
     }
 
-    private val bluetoothPermissions = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        // BLE discovery will only be started after the user explicitly enables nearby chat.
-        // A permission grant alone must not start advertising or scanning.
-        val granted = results.values.all { it }
-        android.util.Log.i("KanbanBLE", "Bluetooth permissions granted: $granted")
-    }
-
-    private fun requestNearbyPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val required = arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_ADVERTISE
-            )
-            val missing = required.filter {
-                ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-            }
-            if (missing.isNotEmpty()) bluetoothPermissions.launch(missing.toTypedArray())
-        } else {
-            val permission = Manifest.permission.ACCESS_FINE_LOCATION
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                bluetoothPermissions.launch(arrayOf(permission))
+    private val microphonePermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val request = pendingMicRequest
+        pendingMicRequest = null
+        if (request != null) {
+            if (granted && request.origin.toString().removeSuffix("/") == appOrigin &&
+                request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
+                request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+            } else {
+                request.deny()
             }
         }
     }
@@ -71,6 +56,7 @@ class MainActivity : ComponentActivity() {
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
+
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
@@ -87,11 +73,35 @@ class MainActivity : ComponentActivity() {
                     return try {
                         filePicker.launch(fileChooserParams.createIntent())
                         true
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         pendingFiles?.onReceiveValue(null)
                         pendingFiles = null
                         false
                     }
+                }
+
+                override fun onPermissionRequest(request: PermissionRequest) {
+                    runOnUiThread {
+                        // Grant only microphone access to the trusted bundled app origin.
+                        // Never automatically grant camera or unrelated WebView permissions.
+                        val trusted = request.origin.toString().removeSuffix("/") == appOrigin
+                        val audioOnly = request.resources.size == 1 &&
+                            request.resources[0] == PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                        if (!trusted || !audioOnly || pendingMicRequest != null) {
+                            request.deny()
+                        } else if (ContextCompat.checkSelfPermission(
+                                this@MainActivity, Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED) {
+                            request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                        } else {
+                            pendingMicRequest = request
+                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                }
+
+                override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                    if (pendingMicRequest === request) pendingMicRequest = null
                 }
             }
             webViewClient = object : WebViewClientCompat() {
@@ -100,35 +110,40 @@ class MainActivity : ComponentActivity() {
                 ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
             }
         }
-        val root = FrameLayout(this)
-        root.addView(webView, FrameLayout.LayoutParams(-1, -1))
+
+        // A separate native toolbar keeps the chat button OUTSIDE WebView content
+        // and prevents it covering dialogs, task forms or Android status bar.
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(12, 2, 12, 2)
+        }
         val nearbyButton = Button(this).apply {
             text = "Bluetooth chat"
             textSize = 12f
             setOnClickListener { startActivity(Intent(this@MainActivity, NearbyActivity::class.java)) }
         }
-        root.addView(nearbyButton, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.END
-        ).apply { topMargin = 8; marginEnd = 8 })
+        toolbar.addView(nearbyButton)
+        root.addView(toolbar, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ))
+        root.addView(webView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
         setContentView(root)
-        webView.loadUrl("https://appassets.androidplatform.net/assets/kanban.html")
+        webView.loadUrl("$appOrigin/assets/kanban.html")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (webView.canGoBack()) webView.goBack() else finish()
             }
         })
-
-        // Bluetooth capabilities are checked without triggering scans or requesting
-        // permissions on startup. Nearby chat will be opt-in in a later release.
-        val manager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
-        val adapter: BluetoothAdapter? = manager.adapter
-        android.util.Log.i("KanbanBLE", "BLE adapter available: ${adapter != null}")
     }
 
     override fun onDestroy() {
+        pendingMicRequest?.deny()
+        pendingMicRequest = null
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null
         webView.destroy()

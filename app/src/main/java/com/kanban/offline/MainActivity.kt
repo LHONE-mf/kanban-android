@@ -13,6 +13,10 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.widget.Button
 import android.widget.LinearLayout
+import android.speech.tts.TextToSpeech
+import java.util.Locale
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import android.view.Gravity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -26,6 +30,8 @@ import androidx.webkit.WebViewClientCompat
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var japaneseButton: Button
+    private var japaneseSpeech: TextToSpeech? = null
+    private var japaneseVoiceReady = false
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private var pendingMicRequest: PermissionRequest? = null
     private val appOrigin = "https://appassets.androidplatform.net"
@@ -60,6 +66,11 @@ class MainActivity : ComponentActivity() {
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
+
+        japaneseSpeech = TextToSpeech(this) { status ->
+            japaneseVoiceReady = status == TextToSpeech.SUCCESS &&
+                (japaneseSpeech?.setLanguage(Locale.JAPANESE) ?: TextToSpeech.LANG_NOT_SUPPORTED) >= TextToSpeech.LANG_AVAILABLE
+        }
 
         webView = WebView(this).apply {
             settings.javaScriptEnabled = true
@@ -116,6 +127,32 @@ class MainActivity : ComponentActivity() {
                 override fun onPageFinished(view: WebView, url: String) {
                     if (::japaneseButton.isInitialized) {
                         japaneseButton.text = if (url.endsWith("/japanese.html")) "← Канбан" else "日本語 · Учить"
+                    }
+                }
+            }
+        }
+
+        // WebMessageListener restricts the speech bridge to the bundled app origin.
+        // Never expose a general-purpose JavaScript interface to remote websites.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(
+                webView, "JapaneseSpeech", setOf(appOrigin)
+            ) { _, message, sourceOrigin, isMainFrame, _ ->
+                val utterance = message.data.orEmpty()
+                if (isMainFrame && sourceOrigin.toString().removeSuffix("/") == appOrigin &&
+                    utterance.length in 1..32 &&
+                    utterance.all { ch -> ch in '\\u3040'..'\\u30ff' || ch == 'ー' }) {
+                    runOnUiThread {
+                        if (japaneseVoiceReady) {
+                            japaneseSpeech?.speak(
+                                utterance, TextToSpeech.QUEUE_FLUSH, null, "japanese-kana"
+                            )
+                        } else {
+                            android.widget.Toast.makeText(
+                                this, "Установите японский голос в настройках синтеза речи Android",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 }
             }
@@ -187,6 +224,9 @@ class MainActivity : ComponentActivity() {
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null
         webView.destroy()
+        japaneseSpeech?.stop()
+        japaneseSpeech?.shutdown()
+        japaneseSpeech = null
         super.onDestroy()
     }
 }

@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity() {
                 val utterance = message.data.orEmpty()
                 if (isMainFrame && sourceOrigin.toString().removeSuffix("/") == appOrigin &&
                     utterance.length in 1..32 &&
-                    utterance.all { ch -> ch in '\\u3040'..'\\u30ff' || ch == 'ー' }) {
+                    utterance.all { ch -> ch.code in 0x3040..0x30ff || ch == 'ー' }) {
                     runOnUiThread {
                         if (japaneseVoiceReady) {
                             japaneseSpeech?.speak(

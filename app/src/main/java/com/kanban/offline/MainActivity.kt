@@ -35,6 +35,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var japaneseButton: Button
     private lateinit var dailyBanner: LinearLayout
+    private var bannerDismissedThisSession = false
+    private var dailyQuestionIndex = 0
     private var japaneseSpeech: TextToSpeech? = null
     private var japaneseVoiceReady = false
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
@@ -232,68 +234,42 @@ class MainActivity : ComponentActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+
+    private val miniQuestions = listOf(
+        Triple("あ", "a", "o"), Triple("い", "i", "e"),
+        Triple("う", "u", "a"), Triple("え", "e", "i"),
+        Triple("お", "o", "u"), Triple("か", "ka", "ki"),
+        Triple("き", "ki", "ka"), Triple("く", "ku", "ko"),
+        Triple("け", "ke", "ka"), Triple("こ", "ko", "ku"),
+        Triple("さ", "sa", "shi"), Triple("し", "shi", "su"),
+        Triple("す", "su", "sa"), Triple("せ", "se", "so"),
+        Triple("そ", "so", "se")
+    )
+
     private fun updateDailyBannerVisibility(url: String?) {
-        val completed = getSharedPreferences("japanese_daily", MODE_PRIVATE)
-            .getString("completed_date", "") == LocalDate.now().toString()
-        dailyBanner.visibility = if (!completed && url?.endsWith("/kanban.html") == true)
-            View.VISIBLE else View.GONE
+        dailyBanner.visibility =
+            if (!bannerDismissedThisSession && url?.endsWith("/kanban.html") == true)
+                View.VISIBLE else View.GONE
     }
 
-    private fun completeDailyChallenge() {
-        getSharedPreferences("japanese_daily", MODE_PRIVATE).edit()
-            .putString("completed_date", LocalDate.now().toString()).apply()
-        dailyBanner.visibility = View.GONE
+    private fun nextMiniQuestion() {
+        val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
+        dailyQuestionIndex = (dailyQuestionIndex + 1) % miniQuestions.size
+        prefs.edit().putInt("next_question", dailyQuestionIndex).apply()
+        renderMiniQuestion()
     }
 
-    private fun createDailyBanner(): LinearLayout {
-        val entries = listOf(
-            Triple("あ", "a", "o"), Triple("い", "i", "e"),
-            Triple("う", "u", "a"), Triple("え", "e", "i"),
-            Triple("お", "o", "u"), Triple("か", "ka", "ki"),
-            Triple("き", "ki", "ka"), Triple("く", "ku", "ko"),
-            Triple("け", "ke", "ka"), Triple("こ", "ko", "ku"),
-            Triple("さ", "sa", "shi"), Triple("し", "shi", "su"),
-            Triple("す", "su", "sa"), Triple("せ", "se", "so"),
-            Triple("そ", "so", "se")
-        )
-        val today = LocalDate.now().toEpochDay()
-        val task = entries[Math.floorMod(today, entries.size.toLong()).toInt()]
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.rgb(236, 246, 244))
-            setPadding(dp(12), dp(5), dp(12), dp(6))
-            visibility = View.GONE
-        }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(TextView(this).apply {
-            text = "🇯🇵 Японский за 10 секунд"
-            textSize = 13f
-            setTextColor(Color.rgb(34, 77, 74))
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(Button(this).apply {
-            text = "✕"
-            contentDescription = "Скрыть задание на сегодня"
-            textSize = 12f
-            isAllCaps = false
-            setOnClickListener { completeDailyChallenge() }
-        }, LinearLayout.LayoutParams(dp(52), dp(38)))
-        panel.addView(header)
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        row.addView(TextView(this).apply {
-            text = "Как читается ${task.first}?"
-            textSize = 17f
-            setTextColor(Color.rgb(25, 51, 49))
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        val options = if (today % 2L == 0L)
+    private fun renderMiniQuestion() {
+        if (!::dailyBanner.isInitialized) return
+        val task = miniQuestions[dailyQuestionIndex]
+        val question = dailyBanner.findViewWithTag<TextView>("mini_question")
+        val answerRow = dailyBanner.findViewWithTag<LinearLayout>("mini_answers")
+        question.text = "Как читается ${task.first}?"
+        answerRow.removeAllViews()
+        val options = if (dailyQuestionIndex % 2 == 0)
             listOf(task.second, task.third) else listOf(task.third, task.second)
         for (choice in options) {
-            row.addView(Button(this).apply {
+            answerRow.addView(Button(this).apply {
                 text = choice
                 isAllCaps = false
                 textSize = 13f
@@ -305,11 +281,60 @@ class MainActivity : ComponentActivity() {
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
-                    completeDailyChallenge()
+                    // Every answer immediately advances. Closing the banner,
+                    // rather than answering, is what dismisses it for this session.
+                    nextMiniQuestion()
                 }
             }, LinearLayout.LayoutParams(dp(65), dp(44)))
         }
+    }
+
+    private fun createDailyBanner(): LinearLayout {
+        dailyQuestionIndex = getSharedPreferences("japanese_daily", MODE_PRIVATE)
+            .getInt("next_question", 0).coerceIn(0, miniQuestions.lastIndex)
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(236, 246, 244))
+            setPadding(dp(12), dp(5), dp(12), dp(6))
+            visibility = View.GONE
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(TextView(this).apply {
+            text = "🇯🇵 Японский · мини-тренировка"
+            textSize = 13f
+            setTextColor(Color.rgb(34, 77, 74))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(Button(this).apply {
+            text = "✕"
+            contentDescription = "Скрыть тренировку до следующего запуска"
+            textSize = 12f
+            isAllCaps = false
+            setOnClickListener {
+                bannerDismissedThisSession = true
+                panel.visibility = View.GONE
+            }
+        }, LinearLayout.LayoutParams(dp(52), dp(38)))
+        panel.addView(header)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        row.addView(TextView(this).apply {
+            tag = "mini_question"
+            textSize = 17f
+            setTextColor(Color.rgb(25, 51, 49))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(LinearLayout(this).apply {
+            tag = "mini_answers"
+            orientation = LinearLayout.HORIZONTAL
+        })
         panel.addView(row)
+        // Set field before renderMiniQuestion(), which locates the banner by tag.
+        dailyBanner = panel
+        renderMiniQuestion()
         return panel
     }
 

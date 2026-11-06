@@ -25,6 +25,7 @@ import androidx.webkit.WebViewClientCompat
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
+    private lateinit var japaneseButton: Button
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private var pendingMicRequest: PermissionRequest? = null
     private val appOrigin = "https://appassets.androidplatform.net"
@@ -111,6 +112,12 @@ class MainActivity : ComponentActivity() {
                 override fun shouldInterceptRequest(
                     view: WebView, request: WebResourceRequest
                 ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+
+                override fun onPageFinished(view: WebView, url: String) {
+                    if (::japaneseButton.isInitialized) {
+                        japaneseButton.text = if (url.endsWith("/japanese.html")) "← Канбан" else "日本語 · Учить"
+                    }
+                }
             }
         }
 
@@ -135,7 +142,7 @@ class MainActivity : ComponentActivity() {
             isAllCaps = false
             setOnClickListener { startActivity(Intent(this@MainActivity, NearbyActivity::class.java)) }
         }
-        val japaneseButton = Button(this).apply {
+        japaneseButton = Button(this).apply {
             text = "日本語 · Учить"
             textSize = 12f
             isAllCaps = false
@@ -144,7 +151,6 @@ class MainActivity : ComponentActivity() {
                 val kanbanUrl = "$appOrigin/assets/kanban.html"
                 val isJapanese = webView.url?.startsWith(japaneseUrl) == true
                 webView.loadUrl(if (isJapanese) kanbanUrl else japaneseUrl)
-                text = if (isJapanese) "日本語 · Учить" else "← Канбан"
             }
         }
         toolbar.addView(japaneseButton, LinearLayout.LayoutParams(0,

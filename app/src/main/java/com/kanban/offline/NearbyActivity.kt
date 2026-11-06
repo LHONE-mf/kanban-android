@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.ParcelUuid
 import android.os.Bundle
 import android.widget.*
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -83,7 +85,20 @@ class NearbyActivity : ComponentActivity() {
         })
         log = TextView(this).apply { text = "Nearby is off.\n" }
         root.addView(log)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.statusBars() or
+                    WindowInsetsCompat.Type.navigationBars() or
+                    WindowInsetsCompat.Type.displayCutout()
+            )
+            view.setPadding(
+                bars.left + 24, bars.top + 24,
+                bars.right + 24, bars.bottom + 24
+            )
+            insets
+        }
         setContentView(root)
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun append(s: String) = runOnUiThread {

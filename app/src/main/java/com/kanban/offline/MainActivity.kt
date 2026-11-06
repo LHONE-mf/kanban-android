@@ -8,6 +8,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
+import android.view.Gravity
+import android.widget.Button
+import android.widget.FrameLayout
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -96,7 +100,19 @@ class MainActivity : ComponentActivity() {
                 ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
             }
         }
-        setContentView(webView)
+        val root = FrameLayout(this)
+        root.addView(webView, FrameLayout.LayoutParams(-1, -1))
+        val nearbyButton = Button(this).apply {
+            text = "Bluetooth chat"
+            textSize = 12f
+            setOnClickListener { startActivity(Intent(this@MainActivity, NearbyActivity::class.java)) }
+        }
+        root.addView(nearbyButton, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.END
+        ).apply { topMargin = 8; marginEnd = 8 })
+        setContentView(root)
         webView.loadUrl("https://appassets.androidplatform.net/assets/kanban.html")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

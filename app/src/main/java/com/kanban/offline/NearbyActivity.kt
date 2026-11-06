@@ -103,12 +103,12 @@ class NearbyActivity : ComponentActivity() {
 
     private fun requestStart() {
         if (adapter == null) { append("Bluetooth unavailable"); return }
-        if (adapter?.isEnabled != true) { append("Enable Bluetooth in Android settings first"); return }
         if (!hasPermissions()) {
             pendingStart = true
             permissionLauncher.launch(permissions())
             return
         }
+        if (adapter?.isEnabled != true) { append("Enable Bluetooth in Android settings first"); return }
         startNearby()
     }
 
@@ -116,6 +116,7 @@ class NearbyActivity : ComponentActivity() {
     private fun startNearby() {
         if (!hasPermissions() || running) return
         val a = adapter ?: return
+        if (!a.isEnabled) { append("Enable Bluetooth first"); return }
         scanner = a.bluetoothLeScanner
         advertiser = a.bluetoothLeAdvertiser
         if (scanner == null || advertiser == null) {

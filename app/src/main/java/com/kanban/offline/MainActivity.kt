@@ -336,7 +336,7 @@ class MainActivity : ComponentActivity() {
         val answerRow = dailyBanner.findViewWithTag<LinearLayout>("mini_answers")
         val counter = dailyBanner.findViewWithTag<TextView>("mini_counter")
         val scriptName = if (dailyQuestionIndex < miniQuestions.size) "ひらがな" else "カタカナ"
-        counter.text = "$scriptName · ✓ $miniCorrectCount/$miniQuestionNumber · ↻ ${miniReviewQueue.size}"
+        counter.text = "$scriptName · ✓$miniCorrectCount/$miniQuestionNumber · ↻${miniReviewQueue.size}"
         question.text = "Как читается ${task.first}?"
         answerRow.removeAllViews()
         val alternatives = allMiniQuestions.map { it.second }.distinct()
@@ -393,25 +393,29 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(TextView(this).apply {
-            text = "🇯🇵 Японский · мини-тренировка"
+            text = "🇯🇵 Японский"
             textSize = 13f
             setTextColor(Color.rgb(34, 77, 74))
         }, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(TextView(this).apply {
+            tag = "mini_counter"
+            textSize = 11f
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setTextColor(Color.rgb(80, 112, 109))
+        }, LinearLayout.LayoutParams(0, -2, 1.4f))
         header.addView(Button(this).apply {
             text = "✕"
             contentDescription = "Скрыть тренировку до следующего запуска"
             textSize = 12f
             isAllCaps = false
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(0, 0, 0, 0)
             setOnClickListener {
                 bannerDismissedThisSession = true
                 panel.visibility = View.GONE
             }
-        }, LinearLayout.LayoutParams(dp(52), dp(38)))
-        header.addView(TextView(this).apply {
-            tag = "mini_counter"
-            textSize = 11f
-            setTextColor(Color.rgb(80, 112, 109))
-        })
+        }, LinearLayout.LayoutParams(dp(40), dp(38)))
         panel.addView(header)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL

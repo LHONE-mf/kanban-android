@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private var miniNextNewIndex = 0
     private var miniUnlockedKatakana = false
     private var miniCorrectCount = 0
+    private var miniDarkTheme = false
     private val miniReviewQueue = ArrayDeque<Int>()
     private var japaneseSpeech: TextToSpeech? = null
     private var japaneseVoiceReady = false
@@ -141,6 +142,7 @@ class MainActivity : ComponentActivity() {
                     if (::japaneseButton.isInitialized) {
                         japaneseButton.text = if (url.endsWith("/japanese.html")) "← Канбан" else "日本語 · Учить"
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
+                        view.evaluateJavascript("""(function(){function sync(){var t=localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }
                 }
             }
@@ -171,6 +173,16 @@ class MainActivity : ComponentActivity() {
                             ).show()
                         }
                     }
+                }
+            }
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanTheme", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (isMainFrame && sourceOrigin.toString().removeSuffix("/") == appOrigin &&
+                    message.data in listOf("dark", "light")) {
+                    runOnUiThread { applyMiniTheme(message.data == "dark") }
                 }
             }
         }
@@ -295,6 +307,28 @@ class MainActivity : ComponentActivity() {
     }
     private val allMiniQuestions get() = miniQuestions + katakanaQuestions
 
+    private fun applyMiniTheme(dark: Boolean) {
+        miniDarkTheme = dark
+        if (!::dailyBanner.isInitialized) return
+        dailyBanner.setBackgroundColor(
+            if (dark) Color.rgb(30, 30, 30) else Color.rgb(236, 246, 244)
+        )
+        val fg = if (dark) Color.rgb(240, 240, 240) else Color.rgb(25, 51, 49)
+        dailyBanner.findViewWithTag<TextView>("mini_title")?.setTextColor(fg)
+        dailyBanner.findViewWithTag<TextView>("mini_question")?.setTextColor(fg)
+        dailyBanner.findViewWithTag<TextView>("mini_counter")?.setTextColor(
+            if (dark) Color.rgb(175, 175, 175) else Color.rgb(80, 112, 109)
+        )
+        dailyBanner.findViewWithTag<LinearLayout>("mini_answers")?.let { row ->
+            for (i in 0 until row.childCount) {
+                (row.getChildAt(i) as? Button)?.apply {
+                    setTextColor(fg)
+                    setBackgroundColor(if (dark) Color.rgb(60, 60, 60) else Color.rgb(215, 228, 226))
+                }
+            }
+        }
+    }
+
     private fun updateDailyBannerVisibility(url: String?) {
         dailyBanner.visibility =
             if (!bannerDismissedThisSession && url?.endsWith("/kanban.html") == true)
@@ -362,6 +396,7 @@ class MainActivity : ComponentActivity() {
                 }
             }, LinearLayout.LayoutParams(dp(65), dp(44)))
         }
+        applyMiniTheme(miniDarkTheme)
     }
 
     private fun createDailyBanner(): LinearLayout {
@@ -400,6 +435,7 @@ class MainActivity : ComponentActivity() {
         }
         header.addView(TextView(this).apply {
             text = "🇯🇵 Японский"
+            tag = "mini_title"
             textSize = 13f
             setTextColor(Color.rgb(34, 77, 74))
         }, LinearLayout.LayoutParams(0, -2, 1f))

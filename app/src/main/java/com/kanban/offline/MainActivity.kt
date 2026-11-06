@@ -140,8 +140,11 @@ class MainActivity : ComponentActivity() {
             ) { _, message, sourceOrigin, isMainFrame, _ ->
                 val utterance = message.data.orEmpty()
                 if (isMainFrame && sourceOrigin.toString().removeSuffix("/") == appOrigin &&
-                    utterance.length in 1..32 &&
-                    utterance.all { ch -> ch.code in 0x3040..0x30ff || ch == 'ー' }) {
+                    utterance.length in 1..100 &&
+                    utterance.all { ch ->
+                        ch.code in 0x3040..0x30ff || ch.code in 0x3400..0x9fff ||
+                            ch == 'ー' || ch == ' ' || ch == '。' || ch == '、'
+                    }) {
                     runOnUiThread {
                         if (japaneseVoiceReady) {
                             japaneseSpeech?.speak(

@@ -119,6 +119,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Older versions stored only the removed chat screen's theme here.
+        // Clear this obsolete preference without touching Kanban or learning data.
+        deleteSharedPreferences("kanban_nearby")
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()

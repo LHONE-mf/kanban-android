@@ -113,10 +113,10 @@ class UiRegressionTests(unittest.TestCase):
 
     def test_wireless_chat_fully_removed_from_active_project(self):
         self.assertFalse((ROOT / "app/src/main/java/com/kanban/offline/NearbyActivity.kt").exists())
+        self.assertIn('deleteSharedPreferences("kanban_nearby")', self.main)
         paths = [
             *(ROOT / "app/src/main").rglob("*"),
             *(ROOT / ".agents").rglob("*"),
-            *(ROOT / ".github/workflows").rglob("*"),
             ROOT / "AGENTS.md",
             ROOT / ".github/copilot-instructions.md",
             ROOT / "README.md",
@@ -130,9 +130,11 @@ class UiRegressionTests(unittest.TestCase):
                     ".css", ".js", ".md", ".yaml", ".sh"}:
                 continue
             text = path.read_text(encoding="utf-8").lower()
-            # The smoke test intentionally asserts the removed button is NOT visible.
+            # Only intentional removal checks can mention the old feature.
             if path.name == "smoke.yaml":
                 text = text.replace('- assertnotvisible: "чат по bluetooth"', "")
+            if path.name == "MainActivity.kt":
+                text = text.replace('deletesharedpreferences("kanban_nearby")', "")
             for token in forbidden:
                 with self.subTest(path=str(path.relative_to(ROOT)), token=token):
                     self.assertNotIn(token, text)

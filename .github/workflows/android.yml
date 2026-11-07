@@ -53,6 +53,16 @@ jobs:
           echo "$INFO" | grep -q "name='com.kanban.offline'"
           echo "$INFO" | grep -q "versionCode='${{ github.run_number }}'"
           echo "Verified package, versionCode and persistent signing certificate."
+      - name: Verify packaged APK has no removed chat components
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          MANIFEST="$RUNNER_TEMP/packaged-manifest.txt"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml > "$MANIFEST"
+          if grep -Ei 'BLUETOOTH|ACCESS_FINE_LOCATION|NearbyActivity|hardware.bluetooth_le' "$MANIFEST"; then
+            echo "::error::Obsolete chat permission or activity found in packaged APK"
+            exit 1
+          fi
+          echo "Packaged Android manifest contains no obsolete chat components."
       - uses: actions/upload-artifact@v4
         with:
           name: kanban-debug-apk

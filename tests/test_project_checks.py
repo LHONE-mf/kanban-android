@@ -60,5 +60,58 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertEqual(paths[0].attrib.get("path"), "editable/")
 
 
+class UiRegressionTests(unittest.TestCase):
+    """Source-level contracts; these are not screenshot or emulator tests."""
+
+    @classmethod
+    def setUpClass(cls):
+        assets = ROOT / "app/src/main/assets"
+        android = ROOT / "app/src/main/java/com/kanban/offline"
+        cls.html = (assets / "kanban.html").read_text(encoding="utf-8")
+        cls.css = (assets / "kanban.css").read_text(encoding="utf-8")
+        cls.design_css = (assets / "design-system.css").read_text(encoding="utf-8")
+        cls.theme_js = (
+            ROOT / "app/src/main/js-src/media-dialogs.js"
+        ).read_text(encoding="utf-8")
+        cls.main = (android / "MainActivity.kt").read_text(encoding="utf-8")
+        cls.nearby = (android / "NearbyActivity.kt").read_text(encoding="utf-8")
+
+    def test_kanban_loads_shared_styles_and_script(self):
+        for asset in ("kanban.css", "design-system.css", "kanban.js"):
+            with self.subTest(asset=asset):
+                self.assertIn(asset, self.html)
+
+    def test_web_theme_has_both_palettes_and_persists(self):
+        self.assertIn('[data-theme="dark"]', self.css)
+        self.assertIn(':root[data-theme="dark"]', self.design_css)
+        self.assertIn('document.documentElement.setAttribute(\'data-theme\', t)', self.theme_js)
+        self.assertIn("localStorage.setItem('kanban_theme', t)", self.theme_js)
+
+    def test_native_theme_bridge_and_bluetooth_handoff(self):
+        self.assertIn("KanbanTheme.postMessage(t)", self.main)
+        self.assertIn('putExtra("dark_theme", miniDarkTheme)', self.main)
+        self.assertIn('intent.getBooleanExtra("dark_theme"', self.nearby)
+        self.assertIn('applyMiniTheme(message.data == "dark")', self.main)
+
+    def test_japanese_banner_controls_follow_theme(self):
+        self.assertIn('findViewWithTag<Button>("mini_close")', self.main)
+        self.assertIn('findViewWithTag<LinearLayout>("mini_answers")', self.main)
+        self.assertIn("styleThemeButton(it, dark)", self.main)
+        self.assertIn("applyMiniTheme(miniDarkTheme)", self.main)
+
+    def test_bluetooth_screen_respects_system_bars(self):
+        self.assertIn("ViewCompat.setOnApplyWindowInsetsListener(root)", self.nearby)
+        self.assertIn("WindowInsetsCompat.Type.statusBars()", self.nearby)
+        self.assertIn("WindowInsetsCompat.Type.navigationBars()", self.nearby)
+        self.assertIn("isAppearanceLightStatusBars = !darkTheme", self.nearby)
+        self.assertIn("isAppearanceLightNavigationBars = !darkTheme", self.nearby)
+
+    def test_bluetooth_has_required_interactive_elements(self):
+        for control in ("startNearby()", "stopNearby()", "sendMessage()"):
+            with self.subTest(control=control):
+                self.assertIn(control, self.nearby)
+        self.assertIn("isFillViewport = true", self.nearby)
+
+
 if __name__ == "__main__":
     unittest.main()

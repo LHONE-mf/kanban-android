@@ -146,13 +146,13 @@ class NearbyActivity : ComponentActivity() {
             styleButton(this, true)
             setOnClickListener { requestStart() }
         }
-        actions.addView(startButton, LinearLayout.LayoutParams(0, dp(48), 1f))
+        actions.addView(requireNotNull(startButton), LinearLayout.LayoutParams(0, dp(48), 1f))
         stopButton = Button(this).apply {
             text = "Stop"
             styleButton(this)
             setOnClickListener { stopNearby() }
         }
-        actions.addView(stopButton, LinearLayout.LayoutParams(0, dp(48), 0.55f).apply {
+        actions.addView(requireNotNull(stopButton), LinearLayout.LayoutParams(0, dp(48), 0.55f).apply {
             marginStart = dp(8)
         })
         root.addView(actions)
@@ -209,7 +209,7 @@ class NearbyActivity : ComponentActivity() {
             styleButton(this, true)
             setOnClickListener { sendMessage() }
         }
-        root.addView(sendButton, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        root.addView(requireNotNull(sendButton), LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
         log = TextView(this).apply {
             text = "Activity log"
             textSize = 12f

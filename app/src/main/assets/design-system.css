@@ -88,3 +88,36 @@ body.japanese-learning .card { border-radius: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .btn, .modal .btn, .chip, .view-tab, .tabs button, .page button, .modal-close { transition: none; }
 }
+
+/* Consistent task surfaces and column styling across light/dark themes. */
+.column {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.task-card {
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--ui-ease), box-shadow var(--ui-ease),
+    transform var(--ui-ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .task-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+}
+.task-card:active:not(.dragging) { box-shadow: var(--shadow-sm); }
+.view-tab { border-radius: var(--ui-radius-small); }
+.chip, .btn { touch-action: manipulation; }
+@media (max-width: 600px) {
+  .modal { align-items: center; }
+  .modal-body { overscroll-behavior: contain; }
+  .modal-footer { gap: 10px; }
+  .modal-footer .spacer { flex-basis: 100%; height: 0; }
+  .modal-footer .btn { flex: 1 1 auto; }
+  .task-card { padding-block: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-card { transition: none; }
+}

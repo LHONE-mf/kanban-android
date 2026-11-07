@@ -25,8 +25,16 @@ jobs:
           base64 --decode .github/keys/kanban-debug.keystore.b64 > .github/keys/kanban-debug.keystore
           chmod 600 .github/keys/kanban-debug.keystore
           keytool -list -keystore .github/keys/kanban-debug.keystore -storepass android -alias androiddebugkey >/dev/null
+      - name: Run project regression tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
+      - name: Check JavaScript syntax
+        run: node --check app/src/main/assets/kanban.js
+      - name: Compile Kotlin before APK packaging
+        env:
+          KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
+        run: gradle :app:compileDebugKotlin --no-daemon
       - name: Build development APK
         env:
           KANBAN_VERSION_CODE: ${{ github.run_number }}

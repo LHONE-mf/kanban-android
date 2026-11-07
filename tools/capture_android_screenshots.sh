@@ -22,14 +22,43 @@ adb shell am start -W -n "$PACKAGE/.MainActivity"
 sleep 6
 capture kanban-initial
 
-# Explicit theme extras make these screenshots deterministic without
-# depending on the WebView's previously stored preferences.
-adb shell am force-stop "$PACKAGE"
-adb shell am start -W -n "$PACKAGE/.NearbyActivity" --ez dark_theme false
+# Open the non-exported chat via its real in-app button.
+# Android intentionally prevents shell from launching non-exported activities directly.
+tap_label() {
+  local label="$1"
+  adb shell uiautomator dump /sdcard/window.xml >/dev/null
+  adb pull /sdcard/window.xml "$OUT/window.xml" >/dev/null
+  local coords
+  coords=$(python3 - "$OUT/window.xml" "$label" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+label = sys.argv[2]
+for node in root.iter("node"):
+    if label in (node.get("text", "") + " " + node.get("content-desc", "")):
+        bounds = re.findall(r"\d+", node.get("bounds", ""))
+        if len(bounds) == 4:
+            x1, y1, x2, y2 = map(int, bounds)
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
+PY
+)
+  if [[ -z "$coords" ]]; then
+    echo "Could not find UI control: $label" >&2
+    return 1
+  fi
+  adb shell input tap $coords
+}
+
+tap_label "Чат по Bluetooth"
 capture bluetooth-light
 
-adb shell am force-stop "$PACKAGE"
-adb shell am start -W -n "$PACKAGE/.NearbyActivity" --ez dark_theme true
+# Return to Kanban and toggle its theme through the actual UI.
+adb shell input keyevent KEYCODE_BACK
+sleep 2
+tap_label "◐"
+sleep 2
+capture kanban-dark
+tap_label "Чат по Bluetooth"
 capture bluetooth-dark
 
 echo "Captured screenshots to $OUT/"

@@ -4,6 +4,11 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.util.Base64
+import androidx.core.content.FileProvider
+import org.json.JSONObject
+import java.io.File
+import java.security.MessageDigest
 import android.os.Bundle
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
@@ -52,6 +57,38 @@ class MainActivity : ComponentActivity() {
     private var japaneseVoiceReady = false
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private var pendingMicRequest: PermissionRequest? = null
+    private var editingAttachmentId: String? = null
+    private var editingFile: File? = null
+    private var editingDigest: String? = null
+    private var externalEditorOpened = false
+    private val editLimitBytes = 5 * 1024 * 1024
+    private fun digest(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    private val attachmentEditor = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        externalEditorOpened = false
+        val file = editingFile
+        val id = editingAttachmentId
+        if (file != null && id != null && file.exists()) {
+            val bytes = file.readBytes()
+            if (bytes.size <= editLimitBytes && digest(bytes) != editingDigest) {
+                val payload = JSONObject().put("id", id)
+                    .put("base64", Base64.encodeToString(bytes, Base64.NO_WRAP)).toString()
+                webView.evaluateJavascript(
+                    "window.kanbanExternalEditResult && window.kanbanExternalEditResult(" +
+                        JSONObject.quote(payload) + ")", null
+                )
+            } else if (bytes.size > editLimitBytes) {
+                android.widget.Toast.makeText(this, "Изменённый файл превышает 5 МБ", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+        editingAttachmentId = null
+        editingFile = null
+        editingDigest = null
+    }
+
     private val appOrigin = "https://appassets.androidplatform.net"
 
     private val filePicker = registerForActivityResult(
@@ -188,6 +225,54 @@ class MainActivity : ComponentActivity() {
                     message.data in listOf("dark", "light")) {
                     runOnUiThread { applyMiniTheme(message.data == "dark") }
                 }
+            }
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanFileEdit", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin) return@addWebMessageListener
+                try {
+                    val data = JSONObject(message.data ?: return@addWebMessageListener)
+                    val id = data.getString("id")
+                    val name = data.getString("name")
+                    val mime = data.optString("type", "application/octet-stream")
+                    val bytes = Base64.decode(data.getString("base64"), Base64.DEFAULT)
+                    if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}")) ||
+                        name.length !in 1..200 || bytes.size > editLimitBytes ||
+                        editingAttachmentId != null) return@addWebMessageListener
+                    runOnUiThread {
+                        try {
+                            val dir = File(cacheDir, "editable").apply { mkdirs() }
+                            dir.listFiles()?.forEach { it.delete() }
+                            val safeName = name.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                            val file = File(dir, safeName).apply { writeBytes(bytes) }
+                            editingAttachmentId = id
+                            editingFile = file
+                            editingDigest = digest(bytes)
+                            val uri = FileProvider.getUriForFile(
+                                this@MainActivity, "$packageName.editablefiles", file
+                            )
+                            val intent = Intent(Intent.ACTION_EDIT).apply {
+                                setDataAndType(uri, mime)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                clipData = android.content.ClipData.newUri(
+                                    contentResolver, name, uri
+                                )
+                            }
+                            externalEditorOpened = true
+                            attachmentEditor.launch(Intent.createChooser(intent, "Редактировать файл"))
+                        } catch (e: Exception) {
+                            editingAttachmentId = null
+                            editingFile = null
+                            editingDigest = null
+                            externalEditorOpened = false
+                            android.widget.Toast.makeText(this, "Не удалось открыть редактор: " +
+                                (e.message ?: ""), android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                } catch (_: Exception) { }
             }
         }
 

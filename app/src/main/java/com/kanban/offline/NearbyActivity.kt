@@ -14,8 +14,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
-import android.text.TextWatcher
-import android.text.Editable
 import androidx.core.view.WindowInsetsControllerCompat
 import android.widget.*
 import androidx.core.view.ViewCompat
@@ -66,7 +64,7 @@ class NearbyActivity : ComponentActivity() {
     }
 
     private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
-    private fun shape(fill: Int, radius: Int = 12, stroke: Int? = null): GradientDrawable =
+    private fun shape(fill: Int, radius: Int = 9, stroke: Int? = null): GradientDrawable =
         GradientDrawable().apply {
             setColor(fill)
             cornerRadius = dp(radius).toFloat()
@@ -79,15 +77,15 @@ class NearbyActivity : ComponentActivity() {
     private fun border(dark: Boolean): Int = if (dark) Color.rgb(50, 50, 50) else Color.rgb(231, 231, 231)
     private fun styleButton(button: Button, primary: Boolean = false) {
         button.isAllCaps = false
-        button.textSize = 13f
+        button.textSize = 14f
         button.backgroundTintList = null
         button.background = shape(
             if (primary) foreground(darkTheme) else panel(darkTheme),
-            12, if (primary) null else border(darkTheme)
+            9, if (primary) null else border(darkTheme)
         )
         button.setTextColor(if (primary) (if (darkTheme) Color.BLACK else Color.WHITE) else foreground(darkTheme))
-        button.minHeight = dp(48)
-        button.minimumHeight = dp(48)
+        button.minHeight = dp(42)
+        button.minimumHeight = dp(42)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,59 +111,59 @@ class NearbyActivity : ComponentActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(bg)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setPadding(dp(16), dp(8), dp(16), dp(8))
         }
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         heading.addView(Button(this).apply {
-            text = "‹"
+            text = "←"
             contentDescription = "Back to Kanban"
             styleButton(this)
             setOnClickListener { finish() }
-        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        }, LinearLayout.LayoutParams(dp(42), dp(42)))
         heading.addView(TextView(this).apply {
-            text = "Bluetooth chat"
-            textSize = 20f
+            text = "Bluetooth чат"
+            textSize = 17f
             setTypeface(null, Typeface.BOLD)
             setTextColor(foreground(darkTheme))
-            setPadding(dp(12), 0, 0, 0)
+            setPadding(dp(10), 0, 0, 0)
         }, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(heading)
 
         root.addView(TextView(this).apply {
-            text = "Experimental · Unencrypted · Works only while open"
+            text = "Экспериментальный · Без шифрования · Только при открытом экране"
             textSize = 12f
             setTextColor(muted(darkTheme))
-            setPadding(0, dp(8), 0, dp(14))
+            setPadding(0, dp(8), 0, dp(12))
         })
         val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         startButton = Button(this).apply {
-            text = "Start discovery"
+            text = "Найти устройства"
             styleButton(this, true)
             setOnClickListener { requestStart() }
         }
-        actions.addView(requireNotNull(startButton), LinearLayout.LayoutParams(0, dp(48), 1f))
+        actions.addView(requireNotNull(startButton), LinearLayout.LayoutParams(0, dp(42), 1f))
         stopButton = Button(this).apply {
-            text = "Stop"
+            text = "Стоп"
             styleButton(this)
             setOnClickListener { stopNearby() }
         }
-        actions.addView(requireNotNull(stopButton), LinearLayout.LayoutParams(0, dp(48), 0.55f).apply {
+        actions.addView(requireNotNull(stopButton), LinearLayout.LayoutParams(0, dp(42), 0.55f).apply {
             marginStart = dp(8)
         })
         root.addView(actions)
         status = TextView(this).apply {
-            text = "● Nearby is off"
+            text = "● Поиск выключен"
             textSize = 13f
             setTextColor(muted(darkTheme))
-            setPadding(0, dp(14), 0, dp(12))
+            setPadding(0, dp(10), 0, dp(12))
         }
         root.addView(status)
         root.addView(TextView(this).apply {
-            text = "Nearby devices"
-            textSize = 15f
+            text = "Устройства рядом"
+            textSize = 14f
             setTypeface(null, Typeface.BOLD)
             setTextColor(foreground(darkTheme))
         })
@@ -175,19 +173,18 @@ class NearbyActivity : ComponentActivity() {
             setPadding(0, dp(10), 0, 0)
         }
         emptyPeers = TextView(this).apply {
-            text = "No devices found yet. Start discovery to search."
+            text = "Устройств пока нет. Нажмите «Найти устройства»."
             textSize = 13f
             gravity = Gravity.CENTER
             setTextColor(muted(darkTheme))
-            setPadding(dp(12), dp(28), dp(12), dp(28))
-            background = shape(panel(darkTheme), 14, border(darkTheme))
+            setPadding(dp(12), dp(18), dp(12), dp(18))
+            background = shape(panel(darkTheme), 12, border(darkTheme))
         }
         peers.addView(emptyPeers)
         scroll.addView(peers)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         root.addView(TextView(this).apply {
-            text = "Message"
+            text = "Сообщение"
             textSize = 13f
             setTextColor(muted(darkTheme))
             setPadding(0, dp(12), 0, dp(6))
@@ -197,35 +194,36 @@ class NearbyActivity : ComponentActivity() {
             setHintTextColor(muted(darkTheme))
             setTextColor(foreground(darkTheme))
             textSize = 14f
-            minLines = 2
-            maxLines = 3
+            minLines = 1
+            maxLines = 2
             setPadding(dp(12), dp(10), dp(12), dp(10))
             backgroundTintList = null
             background = shape(panel(darkTheme), 12, border(darkTheme))
         }
         root.addView(message, LinearLayout.LayoutParams(-1, -2))
         sendButton = Button(this).apply {
-            text = "Send message"
+            text = "Отправить"
             styleButton(this, true)
             setOnClickListener { sendMessage() }
         }
-        root.addView(requireNotNull(sendButton), LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        root.addView(requireNotNull(sendButton), LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(10) })
         log = TextView(this).apply {
-            text = "Activity log"
+            text = "События"
             textSize = 12f
             setTextColor(muted(darkTheme))
             setPadding(0, dp(10), 0, 0)
             maxLines = 3
         }
         root.addView(log)
+        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(12) })
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.statusBars() or
                     WindowInsetsCompat.Type.navigationBars() or
                     WindowInsetsCompat.Type.displayCutout()
             )
-            view.setPadding(bars.left + dp(16), bars.top + dp(12),
-                bars.right + dp(16), bars.bottom + dp(12))
+            view.setPadding(bars.left + dp(16), bars.top + dp(8),
+                bars.right + dp(16), bars.bottom + dp(8))
             insets
         }
         setContentView(root)

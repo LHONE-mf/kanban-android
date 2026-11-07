@@ -299,7 +299,11 @@ class MainActivity : ComponentActivity() {
             text = "Чат по Bluetooth"
             textSize = 12f
             isAllCaps = false
-            setOnClickListener { startActivity(Intent(this@MainActivity, NearbyActivity::class.java)) }
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, NearbyActivity::class.java).apply {
+                    putExtra("dark_theme", miniDarkTheme)
+                })
+            }
         }
         japaneseButton = Button(this).apply {
             text = "日本語 · Учить"

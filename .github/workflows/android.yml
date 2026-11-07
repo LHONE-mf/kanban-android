@@ -20,10 +20,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Restore stable development signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          base64 --decode .github/keys/kanban-debug.keystore.b64 > "$HOME/.android/debug.keystore"
+          chmod 600 "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+      - name: Verify generated Kanban JavaScript
+        run: python3 tools/build_kanban_js.py --check
       - name: Build development APK
         env:
           KANBAN_VERSION_CODE: ${{ github.run_number }}
         run: gradle :app:assembleDebug --no-daemon
+      - name: Verify development APK signature
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -q 'Signer #1 certificate SHA-256 digest'
       - uses: actions/upload-artifact@v4
         with:
           name: kanban-debug-apk

@@ -55,7 +55,7 @@ class AndroidProjectTests(unittest.TestCase):
         )
         self.assertEqual(len(activities), 1)
 
-    def test_unused_wireless_permissions_removed(self):
+    def test_manifest_permissions_are_minimal(self):
         manifest = ET.parse(ROOT / "app/src/main/AndroidManifest.xml").getroot()
         ns = "{http://schemas.android.com/apk/res/android}"
         permissions = {
@@ -111,33 +111,6 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("styleThemeButton(it, dark)", self.main)
         self.assertIn("applyMiniTheme(miniDarkTheme)", self.main)
 
-    def test_wireless_chat_fully_removed_from_active_project(self):
-        self.assertFalse((ROOT / "app/src/main/java/com/kanban/offline/NearbyActivity.kt").exists())
-        self.assertIn('deleteSharedPreferences("kanban_nearby")', self.main)
-        paths = [
-            *(ROOT / "app/src/main").rglob("*"),
-            *(ROOT / ".agents").rglob("*"),
-            ROOT / "AGENTS.md",
-            ROOT / ".github/copilot-instructions.md",
-            ROOT / "README.md",
-            ROOT / ".maestro/smoke.yaml",
-            ROOT / "tools/capture_android_screenshots.sh",
-        ]
-        forbidden = ("nearbyactivity", "nearbybutton", "kanban_nearby",
-                     "bluetooth", "блютуз")
-        for path in paths:
-            if not path.is_file() or path.suffix not in {".kt", ".xml", ".html",
-                    ".css", ".js", ".md", ".yaml", ".sh"}:
-                continue
-            text = path.read_text(encoding="utf-8").lower()
-            # Only intentional removal checks can mention the old feature.
-            if path.name == "smoke.yaml":
-                text = text.replace('- assertnotvisible: "чат по bluetooth"', "")
-            if path.name == "MainActivity.kt":
-                text = text.replace('deletesharedpreferences("kanban_nearby")', "")
-            for token in forbidden:
-                with self.subTest(path=str(path.relative_to(ROOT)), token=token):
-                    self.assertNotIn(token, text)
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ Before changing code, select and read the relevant `.agents/skills/<skill>/SKILL
 - More than one file: `incremental-implementation`
 - Before merge or handoff: `code-review-and-quality`
 - GitHub Actions, APK versioning/signing: `ci-cd-and-automation`
-- Files, WebView bridges, Bluetooth, permissions, input: `security-and-hardening`
+- Files, WebView bridges, permissions, input: `security-and-hardening`
 
 Supporting upstream checklists live in `.agents/references/`. The original source and license are documented in `.agents/README.md`.
 

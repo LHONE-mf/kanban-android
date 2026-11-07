@@ -115,6 +115,10 @@ class UiRegressionTests(unittest.TestCase):
         self.assertFalse((ROOT / "app/src/main/java/com/kanban/offline/NearbyActivity.kt").exists())
         paths = [
             *(ROOT / "app/src/main").rglob("*"),
+            *(ROOT / ".agents").rglob("*"),
+            *(ROOT / ".github/workflows").rglob("*"),
+            ROOT / "AGENTS.md",
+            ROOT / ".github/copilot-instructions.md",
             ROOT / "README.md",
             ROOT / ".maestro/smoke.yaml",
             ROOT / "tools/capture_android_screenshots.sh",

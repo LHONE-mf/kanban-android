@@ -16,7 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "app" / "src" / "main" / "js-src"
 OUTPUT = ROOT / "app" / "src" / "main" / "assets" / "kanban.js"
-PARTS = ("core.js", "views.js", "actions.js")
+PARTS = ("core.js", "views.js", "tasks.js", "media-dialogs.js", "data-transfer.js", "interactions.js", "android-extras.js")
 
 
 def main():

@@ -52,7 +52,7 @@ button:disabled { cursor: not-allowed; }
   border-color: var(--text-muted, var(--muted));
   background: var(--surface, var(--panel));
 }
-body:has(.page) .tabs button {
+body.japanese-learning .tabs button {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--ui-radius-small);
@@ -61,24 +61,24 @@ body:has(.page) .tabs button {
   font-size: 13px;
   font-weight: 600;
 }
-body:has(.page) .tabs button.active {
+body.japanese-learning .tabs button.active {
   background: var(--panel);
   border-color: var(--line);
   color: var(--txt);
   box-shadow: 0 1px 3px rgba(0,0,0,.06);
 }
-body:has(.page) .page button:not(.kana) {
+body.japanese-learning .page button:not(.kana) {
   border-radius: var(--ui-radius-small);
   min-height: var(--ui-control-height);
   font-size: 14px;
   font-weight: 600;
 }
-body:has(.page) .page button.primary {
+body.japanese-learning .page button.primary {
   background: var(--txt);
   color: var(--bg);
   border-color: var(--txt);
 }
-body:has(.page) .card { border-radius: 16px; }
+body.japanese-learning .card { border-radius: 16px; }
 @media (max-width: 600px) {
   .modal-content { max-height: calc(100dvh - 24px); }
   .modal-header, .modal-body, .modal-footer { padding-left: 16px; padding-right: 16px; }

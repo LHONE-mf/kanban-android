@@ -11,10 +11,9 @@ adb install -r "$APK"
 capture() {
   local name="$1"
   sleep 3
-  adb shell screencap -p "/sdcard/${name}.png"
-  adb pull "/sdcard/${name}.png" "$OUT/${name}.png"
-  adb shell uiautomator dump "/sdcard/${name}.xml" >/dev/null || true
-  adb pull "/sdcard/${name}.xml" "$OUT/${name}.xml" || true
+  adb exec-out screencap -p > "$OUT/${name}.png"
+  adb shell uiautomator dump "/data/local/tmp/${name}.xml" >/dev/null || true
+  adb pull "/data/local/tmp/${name}.xml" "$OUT/${name}.xml" || true
 }
 
 # First-launch Kanban: permissions and onboarding may differ on real devices.
@@ -26,8 +25,8 @@ capture kanban-initial
 # Android intentionally prevents shell from launching non-exported activities directly.
 tap_label() {
   local label="$1"
-  adb shell uiautomator dump /sdcard/window.xml >/dev/null
-  adb pull /sdcard/window.xml "$OUT/window.xml" >/dev/null
+  adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null
+  adb pull /data/local/tmp/window.xml "$OUT/window.xml" >/dev/null
   local coords
   coords=$(python3 - "$OUT/window.xml" "$label" <<'PY'
 import re, sys, xml.etree.ElementTree as ET

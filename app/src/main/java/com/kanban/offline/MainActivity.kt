@@ -250,7 +250,8 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) webView.goBack() else finish()
+                // Android back gesture exits the app rather than navigating WebView history.
+                finish()
             }
         })
     }

@@ -50,7 +50,19 @@ class AndroidProjectTests(unittest.TestCase):
         ns = "{http://schemas.android.com/apk/res/android}"
         activities = manifest.findall(".//activity")
         self.assertTrue(any(a.get(ns + "name", "").endswith("MainActivity") for a in activities))
-        self.assertTrue(any(a.get(ns + "name", "").endswith("NearbyActivity") for a in activities))
+        self.assertEqual(
+            sum(a.get(ns + "name", "").endswith("MainActivity") for a in activities), 1
+        )
+        self.assertEqual(len(activities), 1)
+
+    def test_unused_wireless_permissions_removed(self):
+        manifest = ET.parse(ROOT / "app/src/main/AndroidManifest.xml").getroot()
+        ns = "{http://schemas.android.com/apk/res/android}"
+        permissions = {
+            p.get(ns + "name", "") for p in manifest.findall("uses-permission")
+        }
+        self.assertEqual(permissions, {"android.permission.RECORD_AUDIO"})
+        self.assertFalse(manifest.findall("uses-feature"))
 
     def test_fileprovider_paths_are_restricted(self):
         paths = ET.parse(ROOT / "app/src/main/res/xml/editable_file_paths.xml").getroot()
@@ -74,7 +86,6 @@ class UiRegressionTests(unittest.TestCase):
             ROOT / "app/src/main/js-src/media-dialogs.js"
         ).read_text(encoding="utf-8")
         cls.main = (android / "MainActivity.kt").read_text(encoding="utf-8")
-        cls.nearby = (android / "NearbyActivity.kt").read_text(encoding="utf-8")
 
     def test_kanban_loads_shared_styles_and_script(self):
         for asset in ("kanban.css", "design-system.css", "kanban.js"):
@@ -87,11 +98,12 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn('document.documentElement.setAttribute(\'data-theme\', t)', self.theme_js)
         self.assertIn("localStorage.setItem('kanban_theme', t)", self.theme_js)
 
-    def test_native_theme_bridge_and_bluetooth_handoff(self):
+    def test_native_theme_bridge_and_japanese_navigation(self):
         self.assertIn("KanbanTheme.postMessage(t)", self.main)
-        self.assertIn('putExtra("dark_theme", miniDarkTheme)', self.main)
-        self.assertIn('intent.getBooleanExtra("dark_theme"', self.nearby)
         self.assertIn('applyMiniTheme(message.data == "dark")', self.main)
+        self.assertIn('val japaneseUrl = "$appOrigin/assets/japanese.html"', self.main)
+        self.assertIn('toolbar.addView(japaneseButton', self.main)
+        self.assertIn('japaneseButton.text = if (url.endsWith("/japanese.html"))', self.main)
 
     def test_japanese_banner_controls_follow_theme(self):
         self.assertIn('findViewWithTag<Button>("mini_close")', self.main)
@@ -99,18 +111,27 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("styleThemeButton(it, dark)", self.main)
         self.assertIn("applyMiniTheme(miniDarkTheme)", self.main)
 
-    def test_bluetooth_screen_respects_system_bars(self):
-        self.assertIn("ViewCompat.setOnApplyWindowInsetsListener(root)", self.nearby)
-        self.assertIn("WindowInsetsCompat.Type.statusBars()", self.nearby)
-        self.assertIn("WindowInsetsCompat.Type.navigationBars()", self.nearby)
-        self.assertIn("isAppearanceLightStatusBars = !darkTheme", self.nearby)
-        self.assertIn("isAppearanceLightNavigationBars = !darkTheme", self.nearby)
-
-    def test_bluetooth_has_required_interactive_elements(self):
-        for control in ("startNearby()", "stopNearby()", "sendMessage()"):
-            with self.subTest(control=control):
-                self.assertIn(control, self.nearby)
-        self.assertIn("isFillViewport = true", self.nearby)
+    def test_wireless_chat_fully_removed_from_active_project(self):
+        self.assertFalse((ROOT / "app/src/main/java/com/kanban/offline/NearbyActivity.kt").exists())
+        paths = [
+            *(ROOT / "app/src/main").rglob("*"),
+            ROOT / "README.md",
+            ROOT / ".maestro/smoke.yaml",
+            ROOT / "tools/capture_android_screenshots.sh",
+        ]
+        forbidden = ("nearbyactivity", "nearbybutton", "kanban_nearby",
+                     "bluetooth", "блютуз", "gatt")
+        for path in paths:
+            if not path.is_file() or path.suffix not in {".kt", ".xml", ".html",
+                    ".css", ".js", ".md", ".yaml", ".sh"}:
+                continue
+            text = path.read_text(encoding="utf-8").lower()
+            # The smoke test intentionally asserts the removed button is NOT visible.
+            if path.name == "smoke.yaml":
+                text = text.replace('- assertnotvisible: "чат по bluetooth"', "")
+            for token in forbidden:
+                with self.subTest(path=str(path.relative_to(ROOT)), token=token):
+                    self.assertNotIn(token, text)
 
 
 if __name__ == "__main__":

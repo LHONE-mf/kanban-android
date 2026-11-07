@@ -21,8 +21,7 @@ adb shell am start -W -n "$PACKAGE/.MainActivity"
 sleep 6
 capture kanban-initial
 
-# Open the non-exported chat via its real in-app button.
-# Android intentionally prevents shell from launching non-exported activities directly.
+# Navigate via the app's learning button to capture both main screens.
 tap_label() {
   local label="$1"
   adb shell uiautomator dump /data/local/tmp/window.xml >/dev/null
@@ -48,16 +47,13 @@ PY
   adb shell input tap $coords
 }
 
-tap_label "Чат по Bluetooth"
-capture bluetooth-light
+tap_label "日本語 · Учить"
+capture japanese-light
 
 # Return to Kanban and toggle its theme through the actual UI.
-adb shell input keyevent KEYCODE_BACK
-sleep 2
+tap_label "← Канбан"
+capture kanban-return
 tap_label "◐"
-sleep 2
 capture kanban-dark
-tap_label "Чат по Bluetooth"
-capture bluetooth-dark
 
 echo "Captured screenshots to $OUT/"

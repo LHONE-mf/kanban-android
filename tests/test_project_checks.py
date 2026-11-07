@@ -23,7 +23,7 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(build.OUTPUT.read_text(encoding="utf-8"), expected)
 
     def test_check_rejects_stale_bundle(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(dir=ROOT) as folder:
             source = Path(folder) / "source"
             source.mkdir()
             for part in build.PARTS:

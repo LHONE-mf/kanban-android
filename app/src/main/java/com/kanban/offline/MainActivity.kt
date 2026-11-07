@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var appRoot: LinearLayout
     private lateinit var bottomToolbar: LinearLayout
     private var bannerDismissedThisSession = false
+    private var lastBackGestureAt = 0L
     private var dailyQuestionIndex = 0
     private var miniQuestionNumber = 0
     private var miniIsReview = false
@@ -250,8 +251,17 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // Android back gesture exits the app rather than navigating WebView history.
-                finish()
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastBackGestureAt <= 2000L) {
+                    finish()
+                } else {
+                    lastBackGestureAt = now
+                    android.widget.Toast.makeText(
+                        this@MainActivity,
+                        "Проведите назад ещё раз, чтобы выйти",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
             }
         })
     }

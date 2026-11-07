@@ -49,8 +49,10 @@ const all=groups.flatMap(g=>g.items),storageKey='kanban-japanese-hiragana-v1';
 let known;try{known=new Set(JSON.parse(localStorage.getItem(storageKey)||'[]').filter(x=>typeof x==='string'))}catch(e){known=new Set()}
 const quizProgressKey='kanban-japanese-quiz-progress-v1';
 let savedQuiz={};try{savedQuiz=JSON.parse(localStorage.getItem(quizProgressKey)||'{}')||{}}catch(e){}
-let groupIndex=0,detailIndex=0,score=Number(savedQuiz.score)||0,total=Number(savedQuiz.total)||0,question=null,answered=false,reviewItem=null;
-function saveQuizProgress(){try{localStorage.setItem(quizProgressKey,JSON.stringify({score,total}))}catch(e){console.warn('Quiz progress not saved',e)}}
+let groupIndex=0,detailIndex=0,score=Math.max(0,Number(savedQuiz.score)||0),total=Math.max(0,Number(savedQuiz.total)||0),question=null,answered=false,reviewItem=null;
+let recentQuestions=Array.isArray(savedQuiz.recentQuestions)?savedQuiz.recentQuestions.filter(x=>typeof x==='string').slice(-8):[];
+let lastQuizScript=typeof savedQuiz.lastQuizScript==='string'?savedQuiz.lastQuizScript:null;
+function saveQuizProgress(){try{localStorage.setItem(quizProgressKey,JSON.stringify({score,total,recentQuestions,lastQuizScript}))}catch(e){console.warn('Quiz progress not saved',e)}}
 window.addEventListener('pageshow',()=>{try{document.documentElement.dataset.theme=localStorage.getItem('kanban_theme')||'light'}catch(e){}});
 const hiraGroups=groups;const katakanaRows=['アイウエオ','カキクケコ','サシスセソ','タチツテト','ナニヌネノ','ハヒフヘホ','マミムメモ','ヤユヨ','ラリルレロ','ワヲン'];
 const kataGroups=hiraGroups.map((g,i)=>({name:g.name,items:[...katakanaRows[i]].map((kana,j)=>({kana,roman:g.items[j].roman}))}));
@@ -79,7 +81,16 @@ $('katakanaMode').onclick=()=>{script='katakana';groupIndex=0;$('detail').hidden
 function shuffle(a){const b=a.slice();for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]}return b}
 function newQuestion(){
  const scriptItems=allKana().flatMap(g=>g.items);const pool=scriptItems.filter(x=>known.has(x.kana));const candidates=pool.length>=4?pool:allKana()[0].items;
- question=candidates[Math.floor(Math.random()*candidates.length)];answered=false;
+ const scriptChanged=lastQuizScript!==script;
+ if(scriptChanged){recentQuestions=[];lastQuizScript=script}
+ const recent=new Set(recentQuestions);
+ const available=candidates.filter(x=>!recent.has(x.kana));
+ const selection=available.length?available:candidates.filter(x=>x.kana!==recentQuestions[recentQuestions.length-1]);
+ const nextPool=selection.length?selection:candidates;
+ question=nextPool[Math.floor(Math.random()*nextPool.length)];answered=false;
+ recentQuestions.push(question.kana);
+ recentQuestions=recentQuestions.slice(-Math.min(8,Math.max(1,candidates.length-1)));
+ saveQuizProgress();
  $('quizKana').textContent=question.kana;$('feedback').textContent='';$('nextQuestion').disabled=true;
  const choices=shuffle([question,...shuffle(scriptItems.filter(x=>x.roman!==question.roman)).slice(0,3)]);
  $('choices').replaceChildren(...choices.map(x=>{const b=document.createElement('button');b.textContent=x.roman;b.onclick=()=>answer(b,x.roman);return b}));

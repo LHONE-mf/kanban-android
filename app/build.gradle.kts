@@ -1,5 +1,7 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 
+val debugKeystore = System.getenv("KANBAN_DEBUG_KEYSTORE_PATH")
+val debugSigningEnabled = !debugKeystore.isNullOrBlank()
 val releaseKeystore = System.getenv("KANBAN_KEYSTORE_PATH")
 val releaseStorePassword = System.getenv("KANBAN_STORE_PASSWORD")
 val releaseKeyAlias = System.getenv("KANBAN_KEY_ALIAS")
@@ -22,6 +24,14 @@ android {
     }
 
     signingConfigs {
+        if (debugSigningEnabled) {
+            create("stableDebug") {
+                storeFile = file(requireNotNull(debugKeystore))
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
         if (hasReleaseSigning) {
             create("persistentRelease") {
                 storeFile = file(requireNotNull(releaseKeystore))
@@ -33,6 +43,11 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            if (debugSigningEnabled) {
+                signingConfig = signingConfigs.getByName("stableDebug")
+            }
+        }
         getByName("release") {
             isMinifyEnabled = false
             if (hasReleaseSigning) {

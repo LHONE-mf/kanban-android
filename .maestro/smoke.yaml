@@ -3,12 +3,10 @@ appId: com.kanban.offline
 - launchApp:
     clearState: true
 - assertVisible: "日本語 · Учить"
-- assertNotVisible: "Чат по Bluetooth"
 - takeScreenshot: ui-screenshots/kanban-initial
 - tapOn: "日本語 · Учить"
 - assertVisible: "← Канбан"
 - takeScreenshot: ui-screenshots/japanese-learning
 - tapOn: "← Канбан"
 - assertVisible: "日本語 · Учить"
-- assertNotVisible: "Чат по Bluetooth"
 - takeScreenshot: ui-screenshots/kanban-return

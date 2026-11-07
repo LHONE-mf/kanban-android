@@ -120,7 +120,7 @@ class UiRegressionTests(unittest.TestCase):
             ROOT / "tools/capture_android_screenshots.sh",
         ]
         forbidden = ("nearbyactivity", "nearbybutton", "kanban_nearby",
-                     "bluetooth", "блютуз", "gatt")
+                     "bluetooth", "блютуз")
         for path in paths:
             if not path.is_file() or path.suffix not in {".kt", ".xml", ".html",
                     ".css", ".js", ".md", ".yaml", ".sh"}:

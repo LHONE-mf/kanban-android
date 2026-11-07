@@ -220,6 +220,20 @@ function toggleCollapse(key) {
   renderMindmap();
 }
 
+function mmPositionKey() { return 'kanban_mindmap_positions_' + state.activeBoardId; }
+function mmSavedPositions() {
+  try {
+    const data = JSON.parse(localStorage.getItem(mmPositionKey()) || '{}');
+    return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+  } catch (_) { return {}; }
+}
+function mmSavePosition(key, x, cy) {
+  if (!Number.isFinite(x) || !Number.isFinite(cy)) return;
+  const positions = mmSavedPositions();
+  positions[key] = { x, cy };
+  try { localStorage.setItem(mmPositionKey(), JSON.stringify(positions)); }
+  catch (e) { showToast('Не удалось сохранить положение узла'); }
+}
 function mmLayout() {
   const ROW = 50, XG = 70, nodes = {}, edges = [];
   const collapsed = getCollapsedKeys();
@@ -241,6 +255,13 @@ function mmLayout() {
     return cy;
   };
   place('root', 0, null, null);
+  const positions = mmSavedPositions();
+  Object.values(nodes).forEach(n => {
+    const saved = positions[n.key];
+    if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.cy)) {
+      n.x = saved.x; n.cy = saved.cy;
+    }
+  });
   return { nodes, edges };
 }
 function mmApply() { $('#mmVp')?.setAttribute('transform', `translate(${mm.x} ${mm.y}) scale(${mm.k})`); }
@@ -266,7 +287,7 @@ function renderMindmap() {
   let h = '<defs><pattern id="mmGrid" width="40" height="40" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="var(--border-strong)"/></pattern></defs><rect x="-50000" y="-50000" width="100000" height="100000" fill="url(#mmGrid)" opacity=".7"/>';
   edges.forEach(([a, b]) => {
     const A = nodes[a], B = nodes[b];
-    h += `<path d="${mmBezier(A.x + A.w, A.cy, B.x, B.cy)}" fill="none" stroke="${escapeHtml(B.color || 'var(--border-strong)')}" stroke-width="1.6" opacity=".55"/>`;
+    h += `<path data-edge-from="${escapeHtml(a)}" data-edge-to="${escapeHtml(b)}" d="${mmBezier(A.x + A.w, A.cy, B.x, B.cy)}" fill="none" stroke="${escapeHtml(B.color || 'var(--border-strong)')}" stroke-width="1.6" opacity=".55"/>`;
   });
   Object.values(nodes).forEach(n => {
     const t = n.key.startsWith('task:') ? n.item : null;
@@ -405,20 +426,24 @@ async function mmMove(id, tk) {
 }
 function mmStartDrag() {
   const dn = mm.down;
-  if (!dn || !dn.cand || mm.drag || !mm.nodes[dn.key]) return;
-  const id = dn.key.slice(5);
-  mm.drag = { key: dn.key, tgt: null, bad: new Set([dn.key, ...subtree(id).map(t => 'task:' + t.id)]) };
+  if (!dn || !dn.key || mm.drag || !mm.nodes[dn.key]) return;
+  const node = mm.nodes[dn.key];
+  mm.drag = { key: dn.key, x: node.x, cy: node.cy };
   $('#mmVp').querySelector(`[data-key="${CSS.escape(dn.key)}"]`)?.classList.add('mm-dragging');
-  if (navigator.vibrate) try { navigator.vibrate(8); } catch (_) {}
 }
 function mmDragMove(e) {
-  const dn = mm.down, d = mm.drag, r = $('#mindmapSvg').getBoundingClientRect(), vp = $('#mmVp');
-  const wx = (e.clientX - r.left - mm.x) / mm.k, wy = (e.clientY - r.top - mm.y) / mm.k;
-  vp.querySelector('.mm-dragging')?.setAttribute('transform', `translate(${(e.clientX - dn.x) / mm.k} ${(e.clientY - dn.y) / mm.k})`);
-  const hit = Object.values(mm.nodes).find(n => n.d > 0 && !d.bad.has(n.key) && wx >= n.x && wx <= n.x + n.w && Math.abs(wy - n.cy) <= 19);
-  vp.querySelectorAll('.mm-drop').forEach(el => el.classList.remove('mm-drop'));
-  d.tgt = hit ? hit.key : null;
-  if (hit) vp.querySelector(`[data-key="${CSS.escape(hit.key)}"]`)?.classList.add('mm-drop');
+  const dn = mm.down, drag = mm.drag;
+  if (!dn || !drag) return;
+  const dx = (e.clientX - dn.x) / mm.k, dy = (e.clientY - dn.y) / mm.k;
+  const node = mm.nodes[drag.key];
+  node.x = drag.x + dx; node.cy = drag.cy + dy;
+  const vp = $('#mmVp');
+  vp.querySelector(`[data-key="${CSS.escape(drag.key)}"]`)?.setAttribute('transform', `translate(${dx} ${dy})`);
+  vp.querySelectorAll('[data-edge-from], [data-edge-to]').forEach(path => {
+    if (path.dataset.edgeFrom !== drag.key && path.dataset.edgeTo !== drag.key) return;
+    const a = mm.nodes[path.dataset.edgeFrom], b = mm.nodes[path.dataset.edgeTo];
+    if (a && b) path.setAttribute('d', mmBezier(a.x + a.w, a.cy, b.x, b.cy));
+  });
 }
 function mmBind() {
   const svg = $('#mindmapSvg');
@@ -446,8 +471,8 @@ function mmBind() {
     if (mm.ptrs.size > 2) return;
     const key = e.target.closest('.mm-node')?.dataset.key, fileTask = e.target.closest('.mm-badge')?.dataset.files;
     mm.down = { id: e.pointerId, x: e.clientX, y: e.clientY, px: mm.x, py: mm.y, key, fileTask, moved: false,
-      cand: !!key && key.startsWith('task:') && !fileTask, touch: e.pointerType !== 'mouse', timer: null };
-    if (mm.down.cand && mm.down.touch) mm.down.timer = setTimeout(mmStartDrag, 350);
+      cand: !!key && !fileTask, touch: e.pointerType !== 'mouse', timer: null };
+    /* Dragging starts after a small movement; no long press needed. */
   });
   svg.addEventListener('pointermove', e => {
     if (!mm.ptrs.has(e.pointerId)) return;
@@ -465,7 +490,7 @@ function mmBind() {
     if (mm.drag) { mmDragMove(e); return; }
     if (Math.hypot(e.clientX - dn.x, e.clientY - dn.y) > 6) {
       dn.moved = true;
-      if (dn.cand && !dn.touch) { mmStartDrag(); if (mm.drag) mmDragMove(e); return; }
+      if (dn.cand) { mmStartDrag(); if (mm.drag) mmDragMove(e); return; }
       clearTimeout(dn.timer);
       mm.x = dn.px + e.clientX - dn.x; mm.y = dn.py + e.clientY - dn.y; mmApply();
     }
@@ -478,8 +503,12 @@ function mmBind() {
     clearTimeout(dn.timer); mm.down = null;
     if (mm.drag) {
       const d = mm.drag; mm.drag = null;
-      if (e.type === 'pointerup' && d.tgt) await mmMove(d.key.slice(5), d.tgt);
-      else { if (!d.tgt) mm.sel = d.key; renderMindmap(); }
+      if (e.type === 'pointerup') {
+        const node = mm.nodes[d.key];
+        if (node) mmSavePosition(d.key, node.x, node.cy);
+        mm.sel = d.key;
+      }
+      renderMindmap();
       return;
     }
     if (dn.moved || e.type === 'pointercancel') return;

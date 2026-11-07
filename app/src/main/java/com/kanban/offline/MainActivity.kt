@@ -24,6 +24,7 @@ import androidx.webkit.WebViewFeature
 import android.view.Gravity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +36,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var japaneseButton: Button
     private lateinit var dailyBanner: LinearLayout
+    private lateinit var appRoot: LinearLayout
+    private lateinit var bottomToolbar: LinearLayout
     private var bannerDismissedThisSession = false
     private var dailyQuestionIndex = 0
     private var miniQuestionNumber = 0
@@ -191,8 +194,9 @@ class MainActivity : ComponentActivity() {
         // the Kanban content, rather than floating over task dialogs.
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(android.graphics.Color.WHITE)
+            setBackgroundColor(Color.rgb(10, 10, 10))
         }
+        appRoot = root
         root.addView(webView, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
         ))
@@ -202,7 +206,7 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(12, 0, 12, 0)
-            setBackgroundColor(android.graphics.Color.rgb(245, 245, 245))
+            setBackgroundColor(Color.rgb(26, 26, 26))
         }
         val nearbyButton = Button(this).apply {
             text = "Чат по Bluetooth"
@@ -221,6 +225,7 @@ class MainActivity : ComponentActivity() {
                 webView.loadUrl(if (isJapanese) kanbanUrl else japaneseUrl)
             }
         }
+        bottomToolbar = toolbar
         toolbar.addView(japaneseButton, LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         toolbar.addView(nearbyButton, LinearLayout.LayoutParams(0,
@@ -239,6 +244,7 @@ class MainActivity : ComponentActivity() {
             insets
         }
         setContentView(root)
+        applyMiniTheme(true)
         ViewCompat.requestApplyInsets(root)
         webView.loadUrl("$appOrigin/assets/kanban.html")
 
@@ -309,6 +315,20 @@ class MainActivity : ComponentActivity() {
 
     private fun applyMiniTheme(dark: Boolean) {
         miniDarkTheme = dark
+        val background = if (dark) Color.rgb(10, 10, 10) else Color.rgb(250, 250, 250)
+        val toolbarColor = if (dark) Color.rgb(26, 26, 26) else Color.rgb(245, 245, 245)
+        window.statusBarColor = background
+        window.navigationBarColor = toolbarColor
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+        if (::appRoot.isInitialized) appRoot.setBackgroundColor(background)
+        if (::bottomToolbar.isInitialized) bottomToolbar.setBackgroundColor(toolbarColor)
         if (!::dailyBanner.isInitialized) return
         dailyBanner.setBackgroundColor(
             if (dark) Color.rgb(30, 30, 30) else Color.rgb(236, 246, 244)

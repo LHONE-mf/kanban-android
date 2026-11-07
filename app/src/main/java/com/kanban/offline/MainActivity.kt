@@ -21,6 +21,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.view.View
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import java.time.LocalDate
 import android.speech.tts.TextToSpeech
 import java.util.Locale
@@ -316,6 +317,7 @@ class MainActivity : ComponentActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         toolbar.addView(nearbyButton, LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        applyMiniTheme(miniDarkTheme)
         root.addView(toolbar, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
@@ -409,6 +411,17 @@ class MainActivity : ComponentActivity() {
     }
     private val allMiniQuestions get() = miniQuestions + katakanaQuestions
 
+    private fun styleThemeButton(button: Button, dark: Boolean) {
+        val foreground = if (dark) Color.rgb(250, 250, 250) else Color.rgb(23, 23, 23)
+        val fill = if (dark) Color.rgb(38, 38, 38) else Color.rgb(245, 245, 245)
+        button.backgroundTintList = null
+        button.background = GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(9).toFloat()
+        }
+        button.setTextColor(foreground)
+    }
+
     private fun applyMiniTheme(dark: Boolean) {
         miniDarkTheme = dark
         val background = if (dark) Color.rgb(10, 10, 10) else Color.rgb(250, 250, 250)
@@ -424,7 +437,12 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = !dark
         }
         if (::appRoot.isInitialized) appRoot.setBackgroundColor(background)
-        if (::bottomToolbar.isInitialized) bottomToolbar.setBackgroundColor(toolbarColor)
+        if (::bottomToolbar.isInitialized) {
+            bottomToolbar.setBackgroundColor(toolbarColor)
+            for (i in 0 until bottomToolbar.childCount) {
+                (bottomToolbar.getChildAt(i) as? Button)?.let { styleThemeButton(it, dark) }
+            }
+        }
         if (!::dailyBanner.isInitialized) return
         dailyBanner.setBackgroundColor(
             if (dark) Color.rgb(23, 23, 23) else Color.rgb(255, 255, 255)
@@ -433,18 +451,12 @@ class MainActivity : ComponentActivity() {
         dailyBanner.findViewWithTag<TextView>("mini_title")?.setTextColor(fg)
         dailyBanner.findViewWithTag<TextView>("mini_question")?.setTextColor(fg)
         dailyBanner.findViewWithTag<TextView>("mini_counter")?.setTextColor(
-            if (dark) Color.rgb(163, 163, 163) else Color.rgb(107, 107, 107)
+            if (dark) Color.rgb(205, 205, 205) else Color.rgb(80, 80, 80)
         )
-        dailyBanner.findViewWithTag<Button>("mini_close")?.apply {
-            setTextColor(fg)
-            setBackgroundColor(if (dark) Color.rgb(38, 38, 38) else Color.rgb(245, 245, 245))
-        }
+        dailyBanner.findViewWithTag<Button>("mini_close")?.let { styleThemeButton(it, dark) }
         dailyBanner.findViewWithTag<LinearLayout>("mini_answers")?.let { row ->
             for (i in 0 until row.childCount) {
-                (row.getChildAt(i) as? Button)?.apply {
-                    setTextColor(fg)
-                    setBackgroundColor(if (dark) Color.rgb(38, 38, 38) else Color.rgb(245, 245, 245))
-                }
+                (row.getChildAt(i) as? Button)?.let { styleThemeButton(it, dark) }
             }
         }
     }

@@ -52,7 +52,10 @@ let savedQuiz={};try{savedQuiz=JSON.parse(localStorage.getItem(quizProgressKey)|
 let groupIndex=0,detailIndex=0,score=Math.max(0,Number(savedQuiz.score)||0),total=Math.max(0,Number(savedQuiz.total)||0),question=null,answered=false,reviewItem=null;
 let recentQuestions=Array.isArray(savedQuiz.recentQuestions)?savedQuiz.recentQuestions.filter(x=>typeof x==='string').slice(-8):[];
 let lastQuizScript=typeof savedQuiz.lastQuizScript==='string'?savedQuiz.lastQuizScript:null;
-function saveQuizProgress(){try{localStorage.setItem(quizProgressKey,JSON.stringify({score,total,recentQuestions,lastQuizScript}))}catch(e){console.warn('Quiz progress not saved',e)}}
+let quizTurn=Math.max(0,Number(savedQuiz.quizTurn)||0);
+let mistakeQueue=Array.isArray(savedQuiz.mistakeQueue)?savedQuiz.mistakeQueue.filter(x=>x&&typeof x.kana==='string'&&Number.isFinite(x.due)).slice(-30):[];
+score=Math.min(score,total);
+function saveQuizProgress(){try{localStorage.setItem(quizProgressKey,JSON.stringify({score,total,recentQuestions,lastQuizScript,quizTurn,mistakeQueue}))}catch(e){console.warn('Quiz progress not saved',e)}}
 window.addEventListener('pageshow',()=>{try{document.documentElement.dataset.theme=localStorage.getItem('kanban_theme')||'light'}catch(e){}});
 const hiraGroups=groups;const katakanaRows=['アイウエオ','カキクケコ','サシスセソ','タチツテト','ナニヌネノ','ハヒフヘホ','マミムメモ','ヤユヨ','ラリルレロ','ワヲン'];
 const kataGroups=hiraGroups.map((g,i)=>({name:g.name,items:[...katakanaRows[i]].map((kana,j)=>({kana,roman:g.items[j].roman}))}));
@@ -87,7 +90,10 @@ function newQuestion(){
  const available=candidates.filter(x=>!recent.has(x.kana));
  const selection=available.length?available:candidates.filter(x=>x.kana!==recentQuestions[recentQuestions.length-1]);
  const nextPool=selection.length?selection:candidates;
- question=nextPool[Math.floor(Math.random()*nextPool.length)];answered=false;
+ const dueMistake=mistakeQueue.find(x=>x.due<=quizTurn&&nextPool.some(y=>y.kana===x.kana));
+ question=dueMistake?nextPool.find(x=>x.kana===dueMistake.kana):nextPool[Math.floor(Math.random()*nextPool.length)];answered=false;
+ quizTurn++;
+ if(dueMistake)mistakeQueue=mistakeQueue.filter(x=>x!==dueMistake);
  recentQuestions.push(question.kana);
  recentQuestions=recentQuestions.slice(-Math.min(8,Math.max(1,candidates.length-1)));
  saveQuizProgress();
@@ -96,7 +102,7 @@ function newQuestion(){
  $('choices').replaceChildren(...choices.map(x=>{const b=document.createElement('button');b.textContent=x.roman;b.onclick=()=>answer(b,x.roman);return b}));
  $('score').textContent='Верно: '+score+' / '+total
 }
-function answer(button,roman){if(answered)return;answered=true;total++;if(roman===question.roman){score++;$('feedback').textContent='Верно! '+question.kana+' = '+question.roman}else{$('feedback').textContent='Правильный ответ: '+question.roman;button.classList.add('wrong')}[...$('choices').children].forEach(b=>{b.disabled=true;if(b.textContent===question.roman)b.classList.add('correct')});saveQuizProgress();$('score').textContent='Верно: '+score+' / '+total;$('nextQuestion').disabled=false}
+function answer(button,roman){if(answered)return;answered=true;total++;if(roman===question.roman){score++;$('feedback').textContent='Верно! '+question.kana+' = '+question.roman}else{$('feedback').textContent='Правильный ответ: '+question.roman;button.classList.add('wrong');mistakeQueue=mistakeQueue.filter(x=>x.kana!==question.kana);mistakeQueue.push({kana:question.kana,due:quizTurn+3})}[...$('choices').children].forEach(b=>{b.disabled=true;if(b.textContent===question.roman)b.classList.add('correct')});saveQuizProgress();$('score').textContent='Верно: '+score+' / '+total;$('nextQuestion').disabled=false}
 $('nextQuestion').onclick=newQuestion;
 const words=[['あお','ao','синий цвет'],['いえ','ie','дом'],['うえ','ue','верх; сверху'],['かお','kao','лицо'],['すし','sushi','суши'],['ねこ','neko','кошка'],['いぬ','inu','собака'],['やま','yama','гора'],['はな','hana','цветок / нос (разные слова)'],['さかな','sakana','рыба']];
 $('wordList').replaceChildren(...words.map(w=>{const d=document.createElement('div');d.className='card';const title=document.createElement('div');title.style.fontSize='34px';title.textContent=w[0];const b=document.createElement('button');b.textContent='Показать чтение и перевод';const desc=document.createElement('p');desc.hidden=true;desc.textContent=w[1]+' — '+w[2];b.onclick=()=>{desc.hidden=!desc.hidden;b.textContent=desc.hidden?'Показать чтение и перевод':'Скрыть подсказку'};const audio=document.createElement('button');audio.textContent='🔊';audio.setAttribute('aria-label','Прослушать '+w[0]);audio.onclick=()=>speak(w[0]);d.append(title,audio,b,desc);return d}));

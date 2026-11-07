@@ -4,6 +4,9 @@ name: Android UI Smoke Tests and Screenshots
 # Emulator boot is significantly slower than normal CI checks.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - ui-testing
 
 jobs:
   screenshots:

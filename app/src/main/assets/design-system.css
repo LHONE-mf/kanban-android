@@ -1,0 +1,90 @@
+/* Shared Kanban design language — loaded after each page's own styles.
+   Uses existing semantic classes; does not alter application data or behavior. */
+:root {
+  --ui-radius: 12px;
+  --ui-radius-small: 9px;
+  --ui-control-height: 38px;
+  --ui-ease: 160ms ease;
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+:root:not([data-theme="dark"]) { color-scheme: light; }
+button, input, select, textarea { font-family: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, [role="button"]:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent, var(--text, #171717));
+  outline-offset: 2px;
+}
+button:disabled { cursor: not-allowed; }
+.btn, .modal .btn, .chip, .view-tab, .tabs button,
+.page button, .modal-close {
+  transition: background-color var(--ui-ease), border-color var(--ui-ease),
+    color var(--ui-ease), box-shadow var(--ui-ease), transform var(--ui-ease);
+}
+.btn:not(.btn-icon):not(.btn-small) {
+  min-height: var(--ui-control-height);
+  border-radius: var(--ui-radius-small);
+  padding-inline: 14px;
+  font-weight: 600;
+}
+.btn-secondary, .btn-ghost, .chip { border-radius: var(--ui-radius-small); }
+.btn:active:not(:disabled), .page button:active:not(:disabled) { transform: scale(.985); }
+.modal { padding: max(12px, env(safe-area-inset-top, 0px)) 12px max(12px, env(safe-area-inset-bottom, 0px)); }
+.modal-content {
+  border-radius: 18px;
+  background: var(--surface, var(--panel));
+  border: 1px solid var(--border, var(--line));
+  box-shadow: 0 24px 70px rgba(0,0,0,.20);
+}
+.modal-header { background: var(--surface, var(--panel)); }
+.modal-footer {
+  background: var(--surface, var(--panel));
+  border-top: 1px solid var(--border, var(--line));
+}
+.modal-title { font-size: 17px; letter-spacing: -.02em; }
+.modal-close { border-radius: var(--ui-radius-small); width: 36px; height: 36px; }
+.modal .field input, .modal .field textarea, .modal .field select {
+  border-radius: var(--ui-radius-small);
+  background: var(--surface-2, var(--button));
+  min-height: 42px;
+}
+.modal .field input:focus, .modal .field textarea:focus, .modal .field select:focus {
+  border-color: var(--text-muted, var(--muted));
+  background: var(--surface, var(--panel));
+}
+body:has(.page) .tabs button {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-small);
+  color: var(--muted);
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+body:has(.page) .tabs button.active {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--txt);
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+body:has(.page) .page button:not(.kana) {
+  border-radius: var(--ui-radius-small);
+  min-height: var(--ui-control-height);
+  font-size: 14px;
+  font-weight: 600;
+}
+body:has(.page) .page button.primary {
+  background: var(--txt);
+  color: var(--bg);
+  border-color: var(--txt);
+}
+body:has(.page) .card { border-radius: 16px; }
+@media (max-width: 600px) {
+  .modal-content { max-height: calc(100dvh - 24px); }
+  .modal-header, .modal-body, .modal-footer { padding-left: 16px; padding-right: 16px; }
+  .modal-footer { flex-wrap: wrap; }
+  .modal-footer .btn { min-height: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .modal .btn, .chip, .view-tab, .tabs button, .page button, .modal-close { transition: none; }
+}

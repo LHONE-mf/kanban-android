@@ -169,7 +169,7 @@ class NearbyActivity : ComponentActivity() {
             setTypeface(null, Typeface.BOLD)
             setTextColor(foreground(darkTheme))
         })
-        val scroll = ScrollView(this).apply { fillViewport = true }
+        val scroll = ScrollView(this).apply { isFillViewport = true }
         peers = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(10), 0, 0)

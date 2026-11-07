@@ -1780,8 +1780,8 @@ function getVisibleTasks() {
         const diff = dayDiff(t.deadline);
         if (filterDeadline === 'attention') { if (diff > 0 || doneColIds.has(t.columnId)) return false; }
         else if (filterDeadline === 'overdue') { if (diff >= 0 || doneColIds.has(t.columnId)) return false; }
-        else if (filterDeadline === 'today') { if (diff !== 0) return false; }
-        else if (filterDeadline === 'week') { if (diff < 0 || diff > 6) return false; }
+        else if (filterDeadline === 'today') { if (diff !== 0 || doneColIds.has(t.columnId)) return false; }
+        else if (filterDeadline === 'week') { if (diff < 0 || diff > 6 || doneColIds.has(t.columnId)) return false; }
       }
     }
     if (q) {

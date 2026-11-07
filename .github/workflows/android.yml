@@ -22,21 +22,29 @@ jobs:
           gradle-version: '8.9'
       - name: Restore stable development signing key
         run: |
-          mkdir -p "$HOME/.android"
-          base64 --decode .github/keys/kanban-debug.keystore.b64 > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+          base64 --decode .github/keys/kanban-debug.keystore.b64 > .github/keys/kanban-debug.keystore
+          chmod 600 .github/keys/kanban-debug.keystore
+          keytool -list -keystore .github/keys/kanban-debug.keystore -storepass android -alias androiddebugkey >/dev/null
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
       - name: Build development APK
         env:
           KANBAN_VERSION_CODE: ${{ github.run_number }}
+          KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
         run: gradle :app:assembleDebug --no-daemon
       - name: Verify development APK signature
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -q 'Signer #1 certificate SHA-256 digest'
+          ACTUAL=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          EXPECTED=$(keytool -list -v -keystore .github/keys/kanban-debug.keystore -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          test -n "$ACTUAL" && test "$ACTUAL" = "$EXPECTED"
+          INFO=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "^package:")
+          echo "$INFO"
+          echo "$INFO" | grep -q "name='com.kanban.offline'"
+          echo "$INFO" | grep -q "versionCode='${{ github.run_number }}'"
+          echo "Verified package, versionCode and persistent signing certificate."
       - uses: actions/upload-artifact@v4
         with:
           name: kanban-debug-apk
@@ -84,6 +92,6 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
-      - name: Remove signing key
+      - name: Remove signing keys
         if: always()
-        run: rm -f "$RUNNER_TEMP/kanban-release.jks"
+        run: rm -f "$RUNNER_TEMP/kanban-release.jks" .github/keys/kanban-debug.keystore

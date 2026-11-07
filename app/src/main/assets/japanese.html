@@ -90,8 +90,8 @@ function newQuestion(){
  const available=candidates.filter(x=>!recent.has(x.kana));
  const selection=available.length?available:candidates.filter(x=>x.kana!==recentQuestions[recentQuestions.length-1]);
  const nextPool=selection.length?selection:candidates;
- const dueMistake=mistakeQueue.find(x=>x.due<=quizTurn&&nextPool.some(y=>y.kana===x.kana));
- question=dueMistake?nextPool.find(x=>x.kana===dueMistake.kana):nextPool[Math.floor(Math.random()*nextPool.length)];answered=false;
+ const dueMistake=mistakeQueue.find(x=>x.due<=quizTurn&&candidates.some(y=>y.kana===x.kana)&&x.kana!==recentQuestions[recentQuestions.length-1]);
+ question=dueMistake?candidates.find(x=>x.kana===dueMistake.kana):nextPool[Math.floor(Math.random()*nextPool.length)];answered=false;
  quizTurn++;
  if(dueMistake)mistakeQueue=mistakeQueue.filter(x=>x!==dueMistake);
  recentQuestions.push(question.kana);

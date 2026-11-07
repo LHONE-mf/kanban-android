@@ -1702,10 +1702,12 @@ function renderFiles() {
   all.forEach((it, i) => {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px';
-    row.innerHTML = `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${escapeHtml(it.f.name)}${it.f.size ? ' · ' + fmtSize(it.f.size) : ''}${it.old ? '' : ' (новый)'}</span>${it.old ? '<button type="button" class="media-remove" data-open="1">Открыть</button>' : ''}<button type="button" class="media-remove" data-rm="1" aria-label="Убрать файл">×</button>`;
+    row.innerHTML = `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${escapeHtml(it.f.name)}${it.f.size ? ' · ' + fmtSize(it.f.size) : ''}${it.old ? '' : ' (новый)'}</span>${it.old ? '<button type="button" class="media-remove" data-open="1">Открыть</button><button type="button" class="media-remove" data-edit="1">Изменить</button>' : ''}<button type="button" class="media-remove" data-rm="1" aria-label="Убрать файл">×</button>`;
     row.querySelector('[data-rm]').onclick = () => { if (it.old) tempFiles = tempFiles.filter(x => x !== it.f); else newFiles = newFiles.filter(x => x !== it.f); renderFiles(); };
     const op = row.querySelector('[data-open]');
     if (op) op.onclick = () => openFile(it.f, $('#taskTitle').value);
+    const edit = row.querySelector('[data-edit]');
+    if (edit) edit.onclick = () => editAttachmentExternally(it.f);
     box.appendChild(row);
   });
   renderAudioList();
@@ -1721,6 +1723,53 @@ async function storeFile(file) {
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   return { id, name: file._name || file.name || 'Файл', type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
+async function editAttachmentExternally(f) {
+  if (!window.KanbanFileEdit?.postMessage) {
+    showToast('Редактирование доступно только в Android-приложении'); return;
+  }
+  const record = await mediaGet(f.id).catch(() => null);
+  if (!record?.full) { showToast('Файл не найден'); return; }
+  if (record.full.size > 5 * 1024 * 1024) {
+    showToast('Для внешнего редактирования поддерживаются файлы до 5 МБ'); return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = String(reader.result).split(',')[1];
+    window.KanbanFileEdit.postMessage(JSON.stringify({
+      id: f.id, name: f.name, type: f.type || 'application/octet-stream', base64
+    }));
+  };
+  reader.onerror = () => showToast('Не удалось прочитать файл');
+  reader.readAsDataURL(record.full);
+}
+window.kanbanExternalEditResult = async function(payload) {
+  try {
+    const data = JSON.parse(payload);
+    const binary = atob(data.base64);
+    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+    const previous = await mediaGet(data.id);
+    if (!previous) throw new Error('Исходный файл не найден');
+    const file = tempFiles.find(f => f.id === data.id) ||
+      state.tasks.flatMap(t => t.files || []).find(f => f.id === data.id);
+    if (!file) throw new Error('Вложение больше не существует');
+    const blob = new Blob([bytes], { type: file.type || previous.type });
+    await mediaPut(data.id, blob, previous.thumb || null, file.type || previous.type);
+    const touched = state.tasks.filter(t => (t.files || []).some(f => f.id === data.id));
+    for (const task of touched) {
+      const updated = { ...task, files: task.files.map(f =>
+        f.id === data.id ? { ...f, size: blob.size } : f) };
+      await dbPutTask(updated);
+      const idx = state.tasks.findIndex(t => t.id === task.id);
+      if (idx !== -1) state.tasks[idx] = updated;
+    }
+    tempFiles.filter(f => f.id === data.id).forEach(f => { f.size = blob.size; });
+    renderFiles();
+    notifyOtherTabs();
+    showToast('Изменения файла сохранены в Канбан');
+  } catch (error) {
+    showToast('Не удалось обновить вложение: ' + error.message);
+  }
+};
 async function openFile(f, title) {
   if (/^(image|video)\//.test(f.type)) return openLightbox({ title, files: [f] }, f);
   const m = await mediaGet(f.id).catch(() => null);

@@ -40,6 +40,15 @@ jobs:
         run: |
           curl -fsSL https://get.maestro.mobile.dev | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+      - name: Enable KVM acceleration for Android UI tests
+        run: |
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod a+rw /dev/kvm
+            test -r /dev/kvm && test -w /dev/kvm
+            echo "KVM accelerator accessible to GitHub Actions runner."
+          else
+            echo "::warning::KVM unavailable; emulator UI tests may time out."
+          fi
       - name: Run Android UI interactions and screenshots
         uses: reactivecircus/android-emulator-runner@v2
         with:

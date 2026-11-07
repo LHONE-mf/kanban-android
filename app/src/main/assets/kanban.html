@@ -882,6 +882,16 @@ button { font-family: inherit; }
   </section>
 </div>
 
+<div class="modal" id="textPromptModal" role="dialog" aria-modal="true" aria-labelledby="textPromptTitle">
+  <div class="modal-content modal-small">
+    <div class="modal-header"><h3 class="modal-title" id="textPromptTitle">Введите название</h3><button type="button" class="modal-close" id="textPromptClose" aria-label="Закрыть">×</button></div>
+    <form id="textPromptForm">
+      <div class="modal-body"><div class="field"><label class="label" for="textPromptInput">Название</label><input class="input" id="textPromptInput" type="text" maxlength="200" autocomplete="off" required></div></div>
+      <div class="modal-footer"><span class="spacer"></span><button type="button" class="btn btn-secondary" id="textPromptCancel">Отмена</button><button type="submit" class="btn" id="textPromptSubmit">Сохранить</button></div>
+    </form>
+  </div>
+</div>
+
 <div class="modal" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
   <div class="modal-content">
     <div class="modal-header">
@@ -2133,8 +2143,51 @@ function mmUpdateBar() {
   bar.querySelector('[data-a="del"]').hidden = !isT;
 }
 function mmOpen(key) { if (key.startsWith('task:')) openTaskModal(key.slice(5)); else openSettingsModal(); }
+// App-styled replacement for browser prompt(), matching the task dialogs.
+function askForText(title, initialValue = '', maxLength = 200) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('textPromptModal');
+    const input = document.getElementById('textPromptInput');
+    const heading = document.getElementById('textPromptTitle');
+    const form = document.getElementById('textPromptForm');
+    const previousFocus = document.activeElement;
+    heading.textContent = title;
+    input.value = initialValue;
+    input.maxLength = maxLength;
+    modal.classList.add('open');
+    function finish(value) {
+      modal.classList.remove('open');
+      form.removeEventListener('submit', submit);
+      modal.removeEventListener('keydown', keydown);
+      modal.removeEventListener('click', backdrop);
+      document.getElementById('textPromptCancel').removeEventListener('click', cancel);
+      document.getElementById('textPromptClose').removeEventListener('click', cancel);
+      previousFocus?.focus?.();
+      resolve(value);
+    }
+    function submit(event) { event.preventDefault(); finish(input.value.trim()); }
+    function cancel() { finish(null); }
+    function backdrop(event) { if (event.target === modal) cancel(); }
+    function keydown(event) {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); }
+      if (event.key === 'Tab') {
+        const controls = [input, document.getElementById('textPromptCancel'), document.getElementById('textPromptSubmit'), document.getElementById('textPromptClose')];
+        const i = controls.indexOf(document.activeElement);
+        if (event.shiftKey && i === 0) { event.preventDefault(); controls[controls.length - 1].focus(); }
+        else if (!event.shiftKey && i === controls.length - 1) { event.preventDefault(); controls[0].focus(); }
+      }
+    }
+    form.addEventListener('submit', submit);
+    modal.addEventListener('keydown', keydown);
+    modal.addEventListener('click', backdrop);
+    document.getElementById('textPromptCancel').addEventListener('click', cancel);
+    document.getElementById('textPromptClose').addEventListener('click', cancel);
+    input.focus();
+    input.select();
+  });
+}
 async function mmAdd(key) {
-  const title = (prompt('Название узла:') || '').trim().slice(0, 200);
+  const title = await askForText('Название узла', '', 200);
   if (!title) return;
   const par = key.startsWith('task:') ? state.tasks.find(t => t.id === key.slice(5)) : null;
   const columnId = par ? par.columnId : key.slice(4), parentId = par ? par.id : '';
@@ -3526,7 +3579,7 @@ function bindEvents() {
 
   $('#boardSelect').onchange = (e) => switchBoard(e.target.value);
   $('#addBoardBtn').onclick = async () => {
-    const name = prompt('Название новой доски:', 'Новая доска');
+    const name = await askForText('Название новой доски', 'Новая доска', 100);
     if (name === null) return;
     await addBoard(name);
   };
@@ -3824,8 +3877,8 @@ function renderAudioList() {
     let meta = f, getBlob = async () => (await mediaGet(f.id))?.full;
     if (!old) { f._aid = f._aid || 'tmp_' + generateId(); const m = f._meta || {}; meta = { id: f._aid, name: f.name, dur: m.dur || f._dur, peaks: m.peaks }; meta.name = f._name || f.name; getBlob = async () => f; }
     const row = document.createElement('div'); row.className = 'audio-item';
-    row.appendChild(createAudioPlayer(meta, { scope: 'modal', getBlob, onRename: () => {
-      const v = (prompt('Название записи:', String(meta.name || '').replace(/\.[a-z0-9]+$/i, '')) || '').trim().slice(0, 80);
+    row.appendChild(createAudioPlayer(meta, { scope: 'modal', getBlob, onRename: async () => {
+      const v = await askForText('Название записи', String(meta.name || '').replace(/\.[a-z0-9]+$/i, ''), 80);
       if (!v) return; if (old) f.name = v; else f._name = v; renderFiles();
     } }));
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'audio-rm'; rm.textContent = '×'; rm.setAttribute('aria-label', 'Удалить запись');

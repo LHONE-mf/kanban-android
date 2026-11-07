@@ -183,7 +183,7 @@ class MainActivity : ComponentActivity() {
                     if (::japaneseButton.isInitialized) {
                         japaneseButton.text = if (url.endsWith("/japanese.html")) "← Канбан" else "日本語 · Учить"
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
-                        view.evaluateJavascript("""(function(){function sync(){var t=localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
+                        view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }
                 }
             }
@@ -412,7 +412,7 @@ class MainActivity : ComponentActivity() {
     private fun applyMiniTheme(dark: Boolean) {
         miniDarkTheme = dark
         val background = if (dark) Color.rgb(10, 10, 10) else Color.rgb(250, 250, 250)
-        val toolbarColor = if (dark) Color.rgb(26, 26, 26) else Color.rgb(245, 245, 245)
+        val toolbarColor = if (dark) Color.rgb(23, 23, 23) else Color.rgb(255, 255, 255)
         window.statusBarColor = background
         window.navigationBarColor = toolbarColor
         if (android.os.Build.VERSION.SDK_INT >= 29) {
@@ -427,19 +427,23 @@ class MainActivity : ComponentActivity() {
         if (::bottomToolbar.isInitialized) bottomToolbar.setBackgroundColor(toolbarColor)
         if (!::dailyBanner.isInitialized) return
         dailyBanner.setBackgroundColor(
-            if (dark) Color.rgb(30, 30, 30) else Color.rgb(236, 246, 244)
+            if (dark) Color.rgb(23, 23, 23) else Color.rgb(255, 255, 255)
         )
-        val fg = if (dark) Color.rgb(240, 240, 240) else Color.rgb(25, 51, 49)
+        val fg = if (dark) Color.rgb(250, 250, 250) else Color.rgb(23, 23, 23)
         dailyBanner.findViewWithTag<TextView>("mini_title")?.setTextColor(fg)
         dailyBanner.findViewWithTag<TextView>("mini_question")?.setTextColor(fg)
         dailyBanner.findViewWithTag<TextView>("mini_counter")?.setTextColor(
-            if (dark) Color.rgb(175, 175, 175) else Color.rgb(80, 112, 109)
+            if (dark) Color.rgb(163, 163, 163) else Color.rgb(107, 107, 107)
         )
+        dailyBanner.findViewWithTag<Button>("mini_close")?.apply {
+            setTextColor(fg)
+            setBackgroundColor(if (dark) Color.rgb(38, 38, 38) else Color.rgb(245, 245, 245))
+        }
         dailyBanner.findViewWithTag<LinearLayout>("mini_answers")?.let { row ->
             for (i in 0 until row.childCount) {
                 (row.getChildAt(i) as? Button)?.apply {
                     setTextColor(fg)
-                    setBackgroundColor(if (dark) Color.rgb(60, 60, 60) else Color.rgb(215, 228, 226))
+                    setBackgroundColor(if (dark) Color.rgb(38, 38, 38) else Color.rgb(245, 245, 245))
                 }
             }
         }
@@ -564,6 +568,7 @@ class MainActivity : ComponentActivity() {
         }, LinearLayout.LayoutParams(0, -2, 1.4f))
         header.addView(Button(this).apply {
             text = "✕"
+            tag = "mini_close"
             contentDescription = "Скрыть тренировку до следующего запуска"
             textSize = 12f
             isAllCaps = false

@@ -9,6 +9,14 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.ParcelUuid
 import android.os.Bundle
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.view.Gravity
+import android.view.View
+import android.text.TextWatcher
+import android.text.Editable
+import androidx.core.view.WindowInsetsControllerCompat
 import android.widget.*
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -30,6 +38,12 @@ class NearbyActivity : ComponentActivity() {
     }
 
     private lateinit var log: TextView
+    private lateinit var status: TextView
+    private lateinit var emptyPeers: TextView
+    private var darkTheme = false
+    private var startButton: Button? = null
+    private var stopButton: Button? = null
+    private var sendButton: Button? = null
     private lateinit var peers: LinearLayout
     private lateinit var message: EditText
     private lateinit var manager: BluetoothManager
@@ -51,39 +65,158 @@ class NearbyActivity : ComponentActivity() {
         pendingStart = false
     }
 
+    private fun dp(n: Int) = (n * resources.displayMetrics.density).toInt()
+    private fun shape(fill: Int, radius: Int = 12, stroke: Int? = null): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(radius).toFloat()
+            if (stroke != null) setStroke(dp(1), stroke)
+        }
+
+    private fun panel(dark: Boolean): Int = if (dark) Color.rgb(23, 23, 23) else Color.WHITE
+    private fun foreground(dark: Boolean): Int = if (dark) Color.rgb(250, 250, 250) else Color.rgb(23, 23, 23)
+    private fun muted(dark: Boolean): Int = if (dark) Color.rgb(163, 163, 163) else Color.rgb(107, 107, 107)
+    private fun border(dark: Boolean): Int = if (dark) Color.rgb(50, 50, 50) else Color.rgb(231, 231, 231)
+    private fun styleButton(button: Button, primary: Boolean = false) {
+        button.isAllCaps = false
+        button.textSize = 13f
+        button.backgroundTintList = null
+        button.background = shape(
+            if (primary) foreground(darkTheme) else panel(darkTheme),
+            12, if (primary) null else border(darkTheme)
+        )
+        button.setTextColor(if (primary) (if (darkTheme) Color.BLACK else Color.WHITE) else foreground(darkTheme))
+        button.minHeight = dp(48)
+        button.minimumHeight = dp(48)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         manager = getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         adapter = manager.adapter
+        val prefs = getSharedPreferences("kanban_nearby", MODE_PRIVATE)
+        // The WebView theme is stored separately; MainActivity passes the active theme.
+        darkTheme = intent.getBooleanExtra("dark_theme", prefs.getBoolean("dark_theme", false))
+        prefs.edit().putBoolean("dark_theme", darkTheme).apply()
+        val bg = if (darkTheme) Color.rgb(10, 10, 10) else Color.rgb(250, 250, 250)
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !darkTheme
+            isAppearanceLightNavigationBars = !darkTheme
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
+            setBackgroundColor(bg)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
         }
+        val heading = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        heading.addView(Button(this).apply {
+            text = "‹"
+            contentDescription = "Back to Kanban"
+            styleButton(this)
+            setOnClickListener { finish() }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        heading.addView(TextView(this).apply {
+            text = "Bluetooth chat"
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(foreground(darkTheme))
+            setPadding(dp(12), 0, 0, 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(heading)
+
         root.addView(TextView(this).apply {
-            text = "Nearby chat — experimental, unencrypted, foreground only"
-            textSize = 17f
+            text = "Experimental · Unencrypted · Works only while open"
+            textSize = 12f
+            setTextColor(muted(darkTheme))
+            setPadding(0, dp(8), 0, dp(14))
         })
-        root.addView(Button(this).apply {
-            text = "Start discovery and advertising"
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        startButton = Button(this).apply {
+            text = "Start discovery"
+            styleButton(this, true)
             setOnClickListener { requestStart() }
-        })
-        root.addView(Button(this).apply {
-            text = "Stop nearby"
+        }
+        actions.addView(startButton, LinearLayout.LayoutParams(0, dp(48), 1f))
+        stopButton = Button(this).apply {
+            text = "Stop"
+            styleButton(this)
             setOnClickListener { stopNearby() }
+        }
+        actions.addView(stopButton, LinearLayout.LayoutParams(0, dp(48), 0.55f).apply {
+            marginStart = dp(8)
         })
-        root.addView(TextView(this).apply { text = "Tap a discovered peer to select it:" })
-        val scroll = ScrollView(this)
-        peers = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(actions)
+        status = TextView(this).apply {
+            text = "● Nearby is off"
+            textSize = 13f
+            setTextColor(muted(darkTheme))
+            setPadding(0, dp(14), 0, dp(12))
+        }
+        root.addView(status)
+        root.addView(TextView(this).apply {
+            text = "Nearby devices"
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(foreground(darkTheme))
+        })
+        val scroll = ScrollView(this).apply { fillViewport = true }
+        peers = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(10), 0, 0)
+        }
+        emptyPeers = TextView(this).apply {
+            text = "No devices found yet. Start discovery to search."
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(muted(darkTheme))
+            setPadding(dp(12), dp(28), dp(12), dp(28))
+            background = shape(panel(darkTheme), 14, border(darkTheme))
+        }
+        peers.addView(emptyPeers)
         scroll.addView(peers)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        message = EditText(this).apply { hint = "Short message (up to 100 UTF-8 bytes)"; maxLines = 2 }
-        root.addView(message)
-        root.addView(Button(this).apply {
-            text = "Send to selected peer"
-            setOnClickListener { sendMessage() }
+
+        root.addView(TextView(this).apply {
+            text = "Message"
+            textSize = 13f
+            setTextColor(muted(darkTheme))
+            setPadding(0, dp(12), 0, dp(6))
         })
-        log = TextView(this).apply { text = "Nearby is off.\n" }
+        message = EditText(this).apply {
+            hint = "Write a short message (max 100 bytes)"
+            setHintTextColor(muted(darkTheme))
+            setTextColor(foreground(darkTheme))
+            textSize = 14f
+            minLines = 2
+            maxLines = 3
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            backgroundTintList = null
+            background = shape(panel(darkTheme), 12, border(darkTheme))
+        }
+        root.addView(message, LinearLayout.LayoutParams(-1, -2))
+        sendButton = Button(this).apply {
+            text = "Send message"
+            styleButton(this, true)
+            setOnClickListener { sendMessage() }
+        }
+        root.addView(sendButton, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(10) })
+        log = TextView(this).apply {
+            text = "Activity log"
+            textSize = 12f
+            setTextColor(muted(darkTheme))
+            setPadding(0, dp(10), 0, 0)
+            maxLines = 3
+        }
         root.addView(log)
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(
@@ -91,10 +224,8 @@ class NearbyActivity : ComponentActivity() {
                     WindowInsetsCompat.Type.navigationBars() or
                     WindowInsetsCompat.Type.displayCutout()
             )
-            view.setPadding(
-                bars.left + 24, bars.top + 24,
-                bars.right + 24, bars.bottom + 24
-            )
+            view.setPadding(bars.left + dp(16), bars.top + dp(12),
+                bars.right + dp(16), bars.bottom + dp(12))
             insets
         }
         setContentView(root)
@@ -141,6 +272,8 @@ class NearbyActivity : ComponentActivity() {
         running = true
         seen.clear()
         peers.removeAllViews()
+        peers.addView(emptyPeers)
+        status.text = "● Searching for nearby devices"
         val characteristic = BluetoothGattCharacteristic(
             MESSAGE,
             BluetoothGattCharacteristic.PROPERTY_WRITE,
@@ -215,10 +348,13 @@ class NearbyActivity : ComponentActivity() {
             val device = result.device
             if (!seen.add(device.address)) return
             runOnUiThread {
+                if (emptyPeers.parent === peers) peers.removeView(emptyPeers)
                 peers.addView(Button(this@NearbyActivity).apply {
+                    styleButton(this)
                     text = "Peer ${device.address}"
                     setOnClickListener {
                         selected = device
+                        status.text = "● Selected ${device.address}"
                         append("Selected ${device.address}")
                     }
                 })
@@ -295,6 +431,7 @@ class NearbyActivity : ComponentActivity() {
         server = null
         selected = null
         pendingBytes = null
+        status.text = "● Nearby is off"
         append("Nearby stopped")
     }
 

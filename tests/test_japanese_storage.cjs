@@ -10,6 +10,7 @@ function extract(start, end) {
   return html.slice(a, b);
 }
 const persist = extract('function persist(){', 'function updateProgress(){');
+const progress = extract('function updateProgress(){', 'function tab(');
 const handler = extract("$('markKana').onclick=()=>{", '\nfunction setScript(');
 const storage = new Map();
 let failWrites = false;
@@ -36,9 +37,7 @@ const context = {
   showDetail() {}
 };
 vm.createContext(context);
-vm.runInContext(persist + 'function updateProgress(){' +
-  "const items=[...all,...kataGroups.flatMap(g=>g.items)];const done=items.filter(x=>known.has(x.kana)).length;$('progressLabel').textContent='Изучено '+done+' / '+items.length+' знаков кана';$('progressBar').style.width=(100*done/items.length)+'%'}" +
-  handler, context);
+vm.runInContext(persist + progress + handler, context);
 const click = () => vm.runInContext("$('markKana').onclick()", context);
 click();
 assert.equal(storage.get(context.storageKey), '["あ"]');

@@ -12,11 +12,14 @@ androidWebViewHierarchy: devtools
 - tapOn:
     id: "quickAdd"
 - inputText: "Beta upgrade persistence task"
-- pressKey: Enter
+# Use the explicit mobile button; keyboard Enter is not consistently emitted by the emulator.
+- tapOn:
+    id: "quickAddSubmit"
 - scrollUntilVisible:
     element:
-      text: "Beta upgrade persistence task"
+      id: "Beta upgrade persistence task"
     direction: DOWN
     timeout: 30000
-- assertVisible: "Beta upgrade persistence task"
+- assertVisible:
+    id: "Beta upgrade persistence task"
 - takeScreenshot: ui-screenshots/kanban-before-upgrade

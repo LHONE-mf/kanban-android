@@ -1,0 +1,28 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Regression: a newly created Kanban task must survive an activity restart.
+# This flow starts after the Japanese upgrade test and preserves existing data.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "日本語 · Учить"
+    timeout: 30000
+- tapOn: "← Канбан"
+- extendedWaitUntil:
+    visible: "Быстрое добавление задачи"
+    timeout: 30000
+- tapOn: "Быстрое добавление задачи"
+- inputText: "Beta persistence smoke task"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "Beta persistence smoke task"
+    timeout: 30000
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "Beta persistence smoke task"
+    timeout: 30000
+- takeScreenshot: ui-screenshots/kanban-task-persisted

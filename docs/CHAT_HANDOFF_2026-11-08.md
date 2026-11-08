@@ -75,3 +75,18 @@ You are continuing active development of the Android Kanban app with a Japanese-
 ## Working style
 
 Use GitHub connector tools to inspect/edit files and Actions logs, commit small meaningful fixes, and provide a link to each important commit/run. Be explicit about `passed`, `failed`, `queued`, and `in progress`. Avoid unnecessary CI-triggering commits or claiming completion prematurely. The user's next message in the new chat may simply be "Go"; treat that as permission to continue this plan.
+
+## Update — 2026-11-08 (branch ui-testing, commit ff24221)
+
+The verified emulator failure above is historical, **not** a verified outcome for the current head. Since handoff, the branch has gained:
+- Explicitly labeled kana buttons for Maestro and Japanese restart/upgrade flows.
+- Two signed APK builds (versionCode 1 and 2), installed in place with certificate and installed-version checks.
+- Kanban IndexedDB task creation before upgrade and persistence checks after upgrade/restart.
+- Emulator failure-stage diagnostics, screenshots, package dumps, and logcat artifacts.
+- Runtime JavaScript tests exercising the real Japanese learned-kana, review grading, and quiz-answer handlers with failed localStorage writes.
+- A syntax test for both inline Japanese scripts, invoked in both Android workflows. Its regex escaping was fixed at ff24221.
+- Rollback and retry for learned-kana saves, spaced-repetition grades, and quiz answers when storage writes fail.
+
+**Do not report CI success without checking the new run.** The GitHub connector currently exposes only PR-triggered runs through fetch_commit_workflow_runs, so recent push-triggered Actions conclusions have not been verified here. Open https://github.com/LHONE-mf/kanban-android/actions/workflows/ui-screenshots.yml and inspect the newest run, including its android-ui-screenshots artifact on failure. Keep push-triggered emulator CI enabled.
+
+Next priority: establish a passing end-to-end Maestro run for Japanese progress across restart and v1→v2 upgrade, then Kanban task persistence. Fix the first concrete failure reported by that run; avoid adding unrelated tests before checking it.

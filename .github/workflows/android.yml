@@ -29,6 +29,7 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Test Japanese progress storage failures
         run: node tests/test_japanese_storage.cjs
+          node tests/test_japanese_review.cjs
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax

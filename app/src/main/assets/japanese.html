@@ -66,7 +66,7 @@ function persist(){try{localStorage.setItem(storageKey,JSON.stringify([...known]
 function updateProgress(){const items=[...all,...kataGroups.flatMap(g=>g.items)];const done=items.filter(x=>known.has(x.kana)).length;$('progressLabel').textContent='Изучено '+done+' / '+items.length+' знаков кана';$('progressBar').style.width=(100*done/items.length)+'%'}
 function tab(id){document.querySelectorAll('.page').forEach(el=>el.hidden=el.id!==id);document.querySelectorAll('[data-tab]').forEach(el=>{const selected=el.dataset.tab===id;el.classList.toggle('active',selected);el.setAttribute('aria-selected',String(selected))});try{localStorage.setItem('kanban-japanese-active-tab-v1',id)}catch(e){}if(id==='quiz'&&!question)newQuestion();if(id==='learn')renderGroup();if(id==='review')nextReview();if(id==='writing')drawWriting()}
 document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>tab(b.dataset.tab)));
-$('begin').onclick=()=>{groupIndex=0;tab('learn')};
+$('begin').onclick=()=>{groupIndex=0;tab('learn');window.scrollTo(0,0)};
 function renderGroup(){
  const groups=allKana();
  $('hiraganaMode').classList.toggle('active',script==='hiragana');$('katakanaMode').classList.toggle('active',script==='katakana');

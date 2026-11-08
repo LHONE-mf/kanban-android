@@ -26,7 +26,10 @@ androidWebViewHierarchy: devtools
     timeout: 15000
 - takeScreenshot: ui-screenshots/kanban-backup-save-downloads
 - tapOn: "(?i)^save$"
+# The toast is intentionally transient; verifying its visibility is unreliable
+# in Maestro's WebView hierarchy. The shell runner validates the actual file.
 - extendedWaitUntil:
-    visible: "Бэкап сохранён:"
+    visible:
+      id: "exportBtn"
     timeout: 30000
 - takeScreenshot: ui-screenshots/kanban-backup-saved

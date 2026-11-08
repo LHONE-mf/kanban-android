@@ -1,0 +1,33 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Cancel the native SAF CreateDocument picker, then prove the app stays usable
+# and can open the picker again without a stuck transfer.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "exportBtn"
+    timeout: 30000
+- tapOn:
+    id: "exportBtn"
+- extendedWaitUntil:
+    visible: "(?i)^save$"
+    timeout: 30000
+- back
+- extendedWaitUntil:
+    visible: "Сохранение бэкапа отменено"
+    timeout: 30000
+- assertVisible:
+    id: "exportBtn"
+- tapOn:
+    id: "exportBtn"
+- extendedWaitUntil:
+    visible: "(?i)^save$"
+    timeout: 30000
+- takeScreenshot: ui-screenshots/kanban-backup-picker-after-cancel
+- back
+- extendedWaitUntil:
+    visible: "Сохранение бэкапа отменено"
+    timeout: 30000

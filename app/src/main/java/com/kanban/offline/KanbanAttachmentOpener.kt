@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.activity.ComponentActivity
 import androidx.core.content.FileProvider
@@ -138,6 +139,9 @@ internal class KanbanAttachmentOpener(
                 clipData = ClipData.newUri(activity.contentResolver, transfer.file.name, uri)
             }
             activity.startActivity(Intent.createChooser(view, "Открыть файл"))
+            // A headless emulator may lack a compatible document viewer. Record
+            // that ACTION_VIEW was dispatched, without logging names or bytes.
+            Log.i("KanbanAttachmentOpen", "ACTION_VIEW chooser dispatched")
             active = null
             reply(id, "opened")
         } catch (_: Exception) {

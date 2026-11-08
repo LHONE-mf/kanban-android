@@ -41,6 +41,7 @@ jobs:
           node tests/test_japanese_syntax.cjs
           node tests/test_japanese_load.cjs
           node tests/test_japanese_review_load.cjs
+          node tests/test_japanese_new_question.cjs
           python3 tools/build_kanban_js.py --check
           gradle :app:assembleDebug --no-daemon
       - name: Build sequentially versioned APKs for upgrade regression

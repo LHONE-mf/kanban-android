@@ -133,6 +133,21 @@ class UiRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(flow.count('Изучено 1 / 92 знаков кана'), 2)
         self.assertGreaterEqual(flow.count('✓ Изучено — снять отметку'), 2)
 
+    def test_kanban_upgrade_flow_requires_a_saved_task_card(self):
+        html = (ROOT / "app/src/main/assets/kanban.html").read_text(encoding="utf-8")
+        js = (ROOT / "app/src/main/js-src/android-extras.js").read_text(encoding="utf-8")
+        views = (ROOT / "app/src/main/js-src/views.js").read_text(encoding="utf-8")
+        before = (ROOT / ".maestro/kanban-before-upgrade.yaml").read_text(encoding="utf-8")
+        after = (ROOT / ".maestro/kanban-persistence.yaml").read_text(encoding="utf-8")
+        self.assertIn('id="quickAddSubmit"', html)
+        self.assertIn("quickAddButton.addEventListener('click', submitQuickAdd)", js)
+        self.assertIn("card.setAttribute('aria-label', task.title)", views)
+        for flow in (before, after):
+            self.assertIn('id: "quickAddSubmit"', flow)
+            self.assertIn('id: "Beta upgrade persistence task"', flow)
+            self.assertNotIn('- pressKey: Enter', flow)
+        self.assertIn('id: "Beta persistence smoke task"', after)
+
     def test_native_japanese_banner_restores_saved_progress(self):
         self.assertIn('getSharedPreferences("japanese_daily", MODE_PRIVATE)', self.main)
         self.assertIn('.putInt("question_count", miniQuestionNumber)', self.main)

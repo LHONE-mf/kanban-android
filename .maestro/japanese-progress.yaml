@@ -13,7 +13,11 @@ androidWebViewHierarchy: devtools
       text: "Начать с あ・い・う・え・お"
     direction: DOWN
 - tapOn: "Начать с あ・い・う・え・お"
-- tapOn: "あ"
+- scrollUntilVisible:
+    element:
+      text: "Кана あ"
+    direction: DOWN
+- tapOn: "Кана あ"
 - tapOn: "Отметить как изученное"
 - assertVisible: "Изучено 1 / 92 знаков кана"
 - stopApp

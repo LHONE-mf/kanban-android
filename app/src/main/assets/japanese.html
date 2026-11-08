@@ -121,8 +121,16 @@ function grade(remembered){
  if(!reviewItem)return;
  const prev=reviews[reviewItem.kana]||{interval:0};
  const days=remembered?(prev.interval===0?1:prev.interval===1?3:Math.min(60,Math.round(prev.interval*2.2))):0;
- reviews[reviewItem.kana]={interval:days,due:Date.now()+(remembered?days*86400000:60000)};
- try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}catch(e){console.warn(e)}
+ const kana=reviewItem.kana;
+ const previous=reviews[kana];
+ reviews[kana]={interval:days,due:Date.now()+(remembered?days*86400000:60000)};
+ try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}
+ catch(e){
+  if(previous===undefined)delete reviews[kana];else reviews[kana]=previous;
+  console.error('Review progress not saved',e);
+  alert('Не удалось сохранить повторение. Попробуйте ещё раз.');
+  return;
+ }
  nextReview()
 }
 $('again').onclick=()=>grade(false);$('good').onclick=()=>grade(true);

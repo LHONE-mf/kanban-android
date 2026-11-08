@@ -1,0 +1,24 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# After importing a real SAF export containing binary media, confirm that the
+# task still has its attachment and that the restored file can be opened.
+- stopApp
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      id: "Beta persistence smoke task"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "Beta persistence smoke task"
+- extendedWaitUntil:
+    visible: "Редактирование задачи"
+    timeout: 30000
+- scrollUntilVisible:
+    element: "kanban-view-test.txt"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "kanban-view-test.txt"
+- takeScreenshot: ui-screenshots/kanban-restored-attachment

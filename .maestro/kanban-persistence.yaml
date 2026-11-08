@@ -30,4 +30,10 @@ androidWebViewHierarchy: devtools
     direction: DOWN
     timeout: 30000
 - assertVisible: "Beta persistence smoke task"
+- scrollUntilVisible:
+    element:
+      text: "Beta upgrade persistence task"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Beta upgrade persistence task"
 - takeScreenshot: ui-screenshots/kanban-task-persisted

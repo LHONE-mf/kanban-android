@@ -39,6 +39,13 @@ const context = {
 vm.createContext(context);
 vm.runInContext(persist + progress + handler, context);
 const click = () => vm.runInContext("$('markKana').onclick()", context);
+failWrites = true;
+click(); // Failed first save must not mark an unlearned kana.
+assert.equal(context.known.has('あ'), false);
+assert.equal(storage.has(context.storageKey), false);
+assert.equal(labels.progressLabel.textContent, '');
+assert.equal(alerts, 1);
+failWrites = false;
 click();
 assert.equal(storage.get(context.storageKey), '["あ"]');
 assert.equal(labels.progressLabel.textContent, 'Изучено 1 / 1 знаков кана');
@@ -47,7 +54,7 @@ click(); // Failed attempt to unlearn must restore learned state.
 assert.equal(context.known.has('あ'), true);
 assert.equal(storage.get(context.storageKey), '["あ"]');
 assert.equal(labels.progressLabel.textContent, 'Изучено 1 / 1 знаков кана');
-assert.equal(alerts, 1);
+assert.equal(alerts, 2);
 failWrites = false;
 click();
 assert.equal(storage.get(context.storageKey), '[]');

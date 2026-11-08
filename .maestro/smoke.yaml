@@ -1,4 +1,5 @@
 appId: com.kanban.offline
+androidWebViewHierarchy: devtools
 ---
 - launchApp:
     clearState: true

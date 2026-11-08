@@ -83,6 +83,7 @@ jobs:
           name: android-ui-screenshots
           path: ui-screenshots/
           if-no-files-found: warn
+          include-hidden-files: true
       - name: Remove development signing key
         if: always()
         run: rm -f .github/keys/kanban-debug.keystore

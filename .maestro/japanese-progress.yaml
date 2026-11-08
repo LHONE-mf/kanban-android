@@ -34,6 +34,9 @@ androidWebViewHierarchy: devtools
 - stopApp
 - launchApp:
     clearState: false
+- extendedWaitUntil:
+    visible: "日本語 · Учить"
+    timeout: 30000
 - tapOn: "日本語 · Учить"
 - extendedWaitUntil:
     visible: "日本語 · Японский с нуля"

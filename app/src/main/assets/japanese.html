@@ -72,7 +72,7 @@ function renderGroup(){
  $('hiraganaMode').classList.toggle('active',script==='hiragana');$('katakanaMode').classList.toggle('active',script==='katakana');
  $('scriptHint').textContent=script==='hiragana'?'Хирагана используется для японских слов и грамматических окончаний.':'Катакана часто используется для заимствованных слов и иностранных имён.';
  $('groups').replaceChildren(...groups.map((g,i)=>{const b=document.createElement('button');b.textContent=g.name;b.className=i===groupIndex?'active':'';b.onclick=()=>{groupIndex=i;$('detail').hidden=true;renderGroup()};return b}));
- $('kanaGrid').replaceChildren(...groups[groupIndex].items.map((x,i)=>{const b=document.createElement('button');b.className='kana'+(known.has(x.kana)?' done':'');const big=document.createElement('b');big.textContent=x.kana;const small=document.createElement('small');small.textContent=x.roman;b.append(big,small);b.onclick=()=>showDetail(i);return b}))
+ $('kanaGrid').replaceChildren(...groups[groupIndex].items.map((x,i)=>{const b=document.createElement('button');b.className='kana'+(known.has(x.kana)?' done':'');const big=document.createElement('b');big.textContent=x.kana;const small=document.createElement('small');small.textContent=x.roman;b.append(big,small);b.setAttribute('aria-label','Кана '+x.kana);b.onclick=()=>showDetail(i);return b}))
 }
 function speak(kana){if(window.JapaneseSpeech?.postMessage){window.JapaneseSpeech.postMessage(kana)}else if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(kana);u.lang='ja-JP';u.rate=.75;speechSynthesis.cancel();speechSynthesis.speak(u)}else{alert('Озвучивание недоступно на этом устройстве')}}
 $('hearKana').onclick=()=>speak(allKana()[groupIndex].items[detailIndex].kana);

@@ -27,7 +27,6 @@ const context = {
   saveQuizProgress:()=>{saveCalls++;return !fail},
   $:id=>elements[id],
   document:{createElement:()=>({textContent:'',onclick:null})},
-  Math:{...Math,random:()=>0}
 };
 vm.createContext(context);
 vm.runInContext(html.slice(start,end),context);
@@ -49,6 +48,6 @@ assert.equal(context.question.kana,'あ');
 assert.equal(context.answered,false);
 assert.equal(context.mistakeQueue.length,0);
 assert.equal(elements.quizKana.textContent,'あ');
-assert.equal(elements.choices.children.length,5 > 4 ? 4 : 5);
+assert.equal(elements.choices.children.length,4);
 assert.equal(elements.nextQuestion.disabled,true);
 console.log('Japanese quiz new-question persistence rollback and retry: passed');

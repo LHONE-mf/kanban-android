@@ -36,6 +36,25 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py' -v
           python3 tools/build_kanban_js.py --check
           gradle :app:assembleDebug --no-daemon
+      - name: Build sequentially versioned APKs for upgrade regression
+        env:
+          KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
+        run: |
+          set -euo pipefail
+          mkdir -p ui-apks
+          cp app/build/outputs/apk/debug/app-debug.apk ui-apks/kanban-v1.apk
+          KANBAN_VERSION_CODE=2 gradle :app:assembleDebug --no-daemon --rerun-tasks
+          cp app/build/outputs/apk/debug/app-debug.apk ui-apks/kanban-v2.apk
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging ui-apks/kanban-v1.apk | grep -q "versionCode='1'"
+          "$AAPT" dump badging ui-apks/kanban-v2.apk | grep -q "versionCode='2'"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          for apk in ui-apks/kanban-v1.apk ui-apks/kanban-v2.apk; do
+            "$APKSIGNER" verify "$apk"
+          done
+          CERT1=$("$APKSIGNER" verify --print-certs ui-apks/kanban-v1.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          CERT2=$("$APKSIGNER" verify --print-certs ui-apks/kanban-v2.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test -n "$CERT1" && test "$CERT1" = "$CERT2"
       - name: Install Maestro UI test runner
         run: |
           set -euo pipefail
@@ -80,10 +99,10 @@ jobs:
               fi
             }
             trap capture_failure EXIT
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r ui-apks/kanban-v1.apk
             "$HOME/.maestro/bin/maestro" test .maestro/smoke.yaml --debug-output ui-screenshots/maestro-debug
             "$HOME/.maestro/bin/maestro" test .maestro/japanese-progress.yaml --debug-output ui-screenshots/japanese-progress-debug
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r ui-apks/kanban-v2.apk
             "$HOME/.maestro/bin/maestro" test .maestro/japanese-upgrade.yaml --debug-output ui-screenshots/japanese-upgrade-debug
             adb exec-out screencap -p > ui-screenshots/kanban-after-removal.png
             test -s ui-screenshots/kanban-after-removal.png

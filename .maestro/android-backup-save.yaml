@@ -1,8 +1,8 @@
 appId: com.kanban.offline
 androidWebViewHierarchy: devtools
 ---
-# Run after the task-persistence flows. Verify the native Android Save As picker
-# is invoked and success is reported only after writing the selected document.
+# Exercise the real Android SAF document picker, explicitly choose Downloads,
+# then save the JSON backup. The shell runner independently verifies its bytes.
 - stopApp
 - launchApp:
     clearState: false
@@ -16,6 +16,15 @@ androidWebViewHierarchy: devtools
     visible: "(?i)^save$"
     timeout: 30000
 - takeScreenshot: ui-screenshots/kanban-backup-save-picker
+- tapOn: "Show roots"
+- extendedWaitUntil:
+    visible: "(?i)^Downloads$"
+    timeout: 15000
+- tapOn: "(?i)^Downloads$"
+- extendedWaitUntil:
+    visible: "(?i)^save$"
+    timeout: 15000
+- takeScreenshot: ui-screenshots/kanban-backup-save-downloads
 - tapOn: "(?i)^save$"
 - extendedWaitUntil:
     visible: "Бэкап сохранён:"

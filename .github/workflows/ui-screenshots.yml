@@ -38,7 +38,19 @@ jobs:
           gradle :app:assembleDebug --no-daemon
       - name: Install Maestro UI test runner
         run: |
-          curl -fsSL https://get.maestro.mobile.dev | bash
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if curl --retry 3 --retry-all-errors --retry-delay 3 -fsSL https://get.maestro.mobile.dev -o /tmp/install-maestro.sh; then
+              bash /tmp/install-maestro.sh
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Maestro installer download failed after retries"
+              exit 1
+            fi
+            sleep 5
+          done
+          test -x "$HOME/.maestro/bin/maestro"
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Enable KVM acceleration for Android UI tests
         run: |

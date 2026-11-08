@@ -1,0 +1,20 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Create a Kanban task while APK versionCode 1 is installed.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "Быстрое добавление задачи"
+    timeout: 30000
+- tapOn: "Быстрое добавление задачи"
+- inputText: "Beta upgrade persistence task"
+- pressKey: Enter
+- scrollUntilVisible:
+    element:
+      text: "Beta upgrade persistence task"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Beta upgrade persistence task"
+- takeScreenshot: ui-screenshots/kanban-before-upgrade

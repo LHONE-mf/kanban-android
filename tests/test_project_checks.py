@@ -127,7 +127,7 @@ class UiRegressionTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         flow = (ROOT / ".maestro/japanese-progress.yaml").read_text(encoding="utf-8")
         self.assertIn("b.setAttribute('aria-label','Кана '+x.kana)", japanese)
-        self.assertIn('text: "Кана あ"', flow)
+        self.assertGreaterEqual(flow.count('id: "Кана あ"'), 4)
         self.assertIn('visible: "日本語 · Японский с нуля"', flow)
         self.assertIn('clearState: false', flow)
         self.assertGreaterEqual(flow.count('Изучено 1 / 92 знаков кана'), 2)

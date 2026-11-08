@@ -105,6 +105,34 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn('toolbar.addView(japaneseButton', self.main)
         self.assertIn('japaneseButton.text = if (url.endsWith("/japanese.html"))', self.main)
 
+    def test_japanese_learning_progress_survives_navigation(self):
+        japanese = (
+            ROOT / "app/src/main/assets/japanese.html"
+        ).read_text(encoding="utf-8")
+        self.assertIn("settings.domStorageEnabled = true", self.main)
+        self.assertIn("WebViewAssetLoader.Builder()", self.main)
+        self.assertIn("kanban-japanese-hiragana-v1", japanese)
+        self.assertIn("kanban-japanese-quiz-progress-v1", japanese)
+        self.assertIn("kanban-japanese-review-v1", japanese)
+        self.assertIn("localStorage.setItem(storageKey,JSON.stringify([...known]))", japanese)
+        self.assertIn("localStorage.setItem(quizProgressKey,JSON.stringify(", japanese)
+        self.assertIn("localStorage.setItem(reviewKey,JSON.stringify(reviews))", japanese)
+        self.assertIn("localStorage.getItem(storageKey)", japanese)
+        self.assertIn("localStorage.getItem(quizProgressKey)", japanese)
+        self.assertIn("localStorage.getItem(reviewKey)", japanese)
+
+    def test_native_japanese_banner_restores_saved_progress(self):
+        self.assertIn('getSharedPreferences("japanese_daily", MODE_PRIVATE)', self.main)
+        self.assertIn('.putInt("question_count", miniQuestionNumber)', self.main)
+        self.assertIn('.putInt("correct_count", miniCorrectCount)', self.main)
+        self.assertIn('.putInt("current_question", dailyQuestionIndex)', self.main)
+        self.assertIn('.putInt("next_question", miniNextNewIndex)', self.main)
+        self.assertIn('prefs.getInt("question_count", 0)', self.main)
+        self.assertIn('prefs.getInt("correct_count", 0)', self.main)
+        self.assertIn('prefs.getInt("current_question",', self.main)
+        self.assertIn('prefs.getInt("next_question",', self.main)
+        self.assertIn("saveMiniState()", self.main)
+
     def test_japanese_banner_controls_follow_theme(self):
         self.assertIn('findViewWithTag<Button>("mini_close")', self.main)
         self.assertIn('findViewWithTag<LinearLayout>("mini_answers")', self.main)

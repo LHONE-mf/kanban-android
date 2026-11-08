@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private var pendingMicRequest: PermissionRequest? = null
     private lateinit var backupSaver: KanbanBackupSaver
+    private lateinit var attachmentOpener: KanbanAttachmentOpener
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
     private var editingDigest: String? = null
@@ -217,6 +218,26 @@ class MainActivity : ComponentActivity() {
                 val raw = message.data ?: return@addWebMessageListener
                 if (raw.length <= 48_000) {
                     runOnUiThread { backupSaver.handle(raw) }
+                }
+            }
+        }
+
+        // Stream stored attachments into a read-only FileProvider URI and let
+        // Android choose a native viewer. The source IndexedDB record is never changed.
+        attachmentOpener = KanbanAttachmentOpener(this) { event ->
+            webView.evaluateJavascript(
+                "window.kanbanFileOpenNativeResult && window.kanbanFileOpenNativeResult(" +
+                    JSONObject.quote(event.toString()) + ")", null
+            )
+        }
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanFileOpen", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length <= 48_000) {
+                    runOnUiThread { attachmentOpener.handle(raw) }
                 }
             }
         }
@@ -639,6 +660,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::backupSaver.isInitialized) backupSaver.close()
+        if (::attachmentOpener.isInitialized) attachmentOpener.close()
         pendingMicRequest?.deny()
         pendingMicRequest = null
         pendingFiles?.onReceiveValue(null)

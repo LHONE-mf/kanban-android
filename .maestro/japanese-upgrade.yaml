@@ -1,0 +1,30 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Run after japanese-progress.yaml and an adb install -r of the same signed APK.
+# Do not clear app data: an in-place APK upgrade must retain learned kana.
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible: "日本語 · Учить"
+    timeout: 30000
+- tapOn: "日本語 · Учить"
+- extendedWaitUntil:
+    visible: "日本語 · Японский с нуля"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "Изучено 1 / 92 знаков кана"
+    direction: UP
+- assertVisible: "Изучено 1 / 92 знаков кана"
+- scrollUntilVisible:
+    element:
+      text: "Кана あ"
+    direction: DOWN
+- tapOn: "Кана あ"
+- scrollUntilVisible:
+    element:
+      text: "✓ Изучено — снять отметку"
+    direction: DOWN
+- assertVisible: "✓ Изучено — снять отметку"
+- takeScreenshot: ui-screenshots/japanese-progress-after-reinstall

@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
     private var japaneseVoiceReady = false
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private var pendingMicRequest: PermissionRequest? = null
+    private lateinit var backupSaver: KanbanBackupSaver
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
     private var editingDigest: String? = null
@@ -100,6 +101,12 @@ class MainActivity : ComponentActivity() {
         } else null
         pendingFiles?.onReceiveValue(files)
         pendingFiles = null
+    }
+
+    private val backupDocumentPicker = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (::backupSaver.isInitialized) backupSaver.onDestinationPicked(uri)
     }
 
     private val microphonePermission = registerForActivityResult(
@@ -186,6 +193,30 @@ class MainActivity : ComponentActivity() {
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }
+                }
+            }
+        }
+
+        // The backup bridge is restricted to our bundled Kanban page, never arbitrary
+        // web content. Transfer chunks are validated by KanbanBackupSaver.
+        backupSaver = KanbanBackupSaver(
+            this,
+            { filename -> backupDocumentPicker.launch(filename) },
+            { event ->
+                webView.evaluateJavascript(
+                    "window.kanbanBackupNativeResult && window.kanbanBackupNativeResult(" +
+                        JSONObject.quote(event.toString()) + ")", null
+                )
+            }
+        )
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanBackup", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length <= 48_000) {
+                    runOnUiThread { backupSaver.handle(raw) }
                 }
             }
         }
@@ -607,6 +638,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (::backupSaver.isInitialized) backupSaver.close()
         pendingMicRequest?.deny()
         pendingMicRequest = null
         pendingFiles?.onReceiveValue(null)

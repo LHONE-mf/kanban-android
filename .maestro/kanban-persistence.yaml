@@ -15,13 +15,19 @@ androidWebViewHierarchy: devtools
 - tapOn: "Быстрое добавление задачи"
 - inputText: "Beta persistence smoke task"
 - pressKey: Enter
-- extendedWaitUntil:
-    visible: "Beta persistence smoke task"
+- scrollUntilVisible:
+    element:
+      text: "Beta persistence smoke task"
+    direction: DOWN
     timeout: 30000
+- assertVisible: "Beta persistence smoke task"
 - stopApp
 - launchApp:
     clearState: false
-- extendedWaitUntil:
-    visible: "Beta persistence smoke task"
+- scrollUntilVisible:
+    element:
+      text: "Beta persistence smoke task"
+    direction: DOWN
     timeout: 30000
+- assertVisible: "Beta persistence smoke task"
 - takeScreenshot: ui-screenshots/kanban-task-persisted

@@ -44,7 +44,7 @@ androidWebViewHierarchy: devtools
     timeout: 30000
 - takeScreenshot: ui-screenshots/android-attachment-before-open
 - tapOn: "Открыть"
-- extendedWaitUntil:
-    visible: "Открыть файл"
-    timeout: 30000
-- takeScreenshot: ui-screenshots/android-attachment-native-chooser
+# Headless emulator images may have no installed text/plain viewer, and the
+# Android resolver can exit to the launcher without a chooser label.
+# The runner checks native ACTION_VIEW dispatch in Android logcat instead.
+- takeScreenshot: ui-screenshots/android-attachment-after-open

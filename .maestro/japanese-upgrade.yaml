@@ -20,9 +20,10 @@ androidWebViewHierarchy: devtools
 - assertVisible: "Изучено 1 / 92 знаков кана"
 - scrollUntilVisible:
     element:
-      text: "Кана あ"
+      id: "Кана あ"
     direction: DOWN
-- tapOn: "Кана あ"
+- tapOn:
+    id: "Кана あ"
 - scrollUntilVisible:
     element:
       text: "✓ Изучено — снять отметку"

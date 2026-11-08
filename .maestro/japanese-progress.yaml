@@ -24,6 +24,11 @@ androidWebViewHierarchy: devtools
     direction: DOWN
 - assertVisible: "Отметить как изученное"
 - tapOn: "Отметить как изученное"
+- assertVisible: "✓ Изучено — снять отметку"
+- scrollUntilVisible:
+    element:
+      text: "Изучено 1 / 92 знаков кана"
+    direction: UP
 - assertVisible: "Изучено 1 / 92 знаков кана"
 - takeScreenshot: ui-screenshots/japanese-progress-before-restart
 - stopApp
@@ -31,6 +36,11 @@ androidWebViewHierarchy: devtools
     clearState: false
 - tapOn: "日本語 · Учить"
 - extendedWaitUntil:
-    visible: "Изучено 1 / 92 знаков кана"
+    visible: "← Канбан"
     timeout: 30000
+- scrollUntilVisible:
+    element:
+      text: "Изучено 1 / 92 знаков кана"
+    direction: UP
+- assertVisible: "Изучено 1 / 92 знаков кана"
 - takeScreenshot: ui-screenshots/japanese-progress-restored

@@ -36,7 +36,7 @@ androidWebViewHierarchy: devtools
     clearState: false
 - tapOn: "日本語 · Учить"
 - extendedWaitUntil:
-    visible: "← Канбан"
+    visible: "日本語 · Японский с нуля"
     timeout: 30000
 - scrollUntilVisible:
     element:

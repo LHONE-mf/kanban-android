@@ -1,0 +1,23 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Run after the task-persistence flows. Verify the native Android Save As picker
+# is invoked and success is reported only after writing the selected document.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "exportBtn"
+    timeout: 30000
+- tapOn:
+    id: "exportBtn"
+- extendedWaitUntil:
+    visible: "(?i)^save$"
+    timeout: 30000
+- takeScreenshot: ui-screenshots/kanban-backup-save-picker
+- tapOn: "(?i)^save$"
+- extendedWaitUntil:
+    visible: "Бэкап сохранён:"
+    timeout: 30000
+- takeScreenshot: ui-screenshots/kanban-backup-saved

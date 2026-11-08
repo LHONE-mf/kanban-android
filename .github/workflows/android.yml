@@ -44,6 +44,8 @@ jobs:
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax
         run: node --check app/src/main/assets/kanban.js
+      - name: Validate emulator runner shell syntax
+        run: bash -n .github/scripts/run-emulator-ui.sh
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore

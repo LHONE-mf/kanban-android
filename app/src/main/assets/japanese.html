@@ -84,6 +84,7 @@ $('hiraganaMode').onclick=()=>setScript('hiragana');
 $('katakanaMode').onclick=()=>setScript('katakana');
 function shuffle(a){const b=a.slice();for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]]}return b}
 function newQuestion(){
+ const previous={recentQuestions:[...recentQuestions],lastQuizScript,question,answered,quizTurn,mistakeQueue:[...mistakeQueue]};
  const scriptItems=allKana().flatMap(g=>g.items);const pool=scriptItems.filter(x=>known.has(x.kana));const candidates=pool.length>=4?pool:allKana()[0].items;
  const scriptChanged=lastQuizScript!==script;
  if(scriptChanged){recentQuestions=[];lastQuizScript=script}
@@ -97,7 +98,10 @@ function newQuestion(){
  if(dueMistake)mistakeQueue=mistakeQueue.filter(x=>x!==dueMistake);
  recentQuestions.push(question.kana);
  recentQuestions=recentQuestions.slice(-Math.min(8,Math.max(1,candidates.length-1)));
- saveQuizProgress();
+ if(!saveQuizProgress()){
+  recentQuestions=previous.recentQuestions;lastQuizScript=previous.lastQuizScript;question=previous.question;answered=previous.answered;quizTurn=previous.quizTurn;mistakeQueue=previous.mistakeQueue;
+  return;
+ }
  $('quizKana').textContent=question.kana;$('feedback').textContent='';$('nextQuestion').disabled=true;
  const choices=shuffle([question,...shuffle(scriptItems.filter(x=>x.roman!==question.roman)).slice(0,3)]);
  $('choices').replaceChildren(...choices.map(x=>{const b=document.createElement('button');b.textContent=x.roman;b.onclick=()=>answer(b,x.roman);return b}));

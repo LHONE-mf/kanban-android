@@ -2161,6 +2161,86 @@ function initTheme() {
   else applyTheme('light');
 }
 
+// Android saves through SAF, not WebView blob downloads. Transfer at most 32 KiB
+// per message, waiting for native acknowledgment so media-heavy backups can be saved.
+let activeAndroidBackup = null;
+const ANDROID_BACKUP_CHUNK_SIZE = 32 * 1024;
+
+function postAndroidBackup(message) {
+  window.KanbanBackup.postMessage(JSON.stringify(message));
+}
+
+function failAndroidBackup(transfer, error, abortNative = false) {
+  if (activeAndroidBackup !== transfer) return;
+  activeAndroidBackup = null;
+  if (abortNative) {
+    try { postAndroidBackup({ type: 'abort', id: transfer.id }); } catch (_) {}
+  }
+  transfer.reject(error instanceof Error ? error : new Error(String(error)));
+}
+
+async function sendAndroidBackupChunk(transfer) {
+  if (activeAndroidBackup !== transfer) return;
+  try {
+    if (transfer.offset >= transfer.blob.size) {
+      postAndroidBackup({ type: 'finish', id: transfer.id });
+      return;
+    }
+    const bytes = new Uint8Array(
+      await transfer.blob.slice(transfer.offset, transfer.offset + ANDROID_BACKUP_CHUNK_SIZE).arrayBuffer()
+    );
+    if (activeAndroidBackup !== transfer) return;
+    transfer.pendingBytes = bytes.length;
+    postAndroidBackup({
+      type: 'chunk', id: transfer.id, index: transfer.index,
+      data: btoa(String.fromCharCode(...bytes))
+    });
+  } catch (e) {
+    failAndroidBackup(transfer, e, true);
+  }
+}
+
+window.kanbanBackupNativeResult = (raw) => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const transfer = activeAndroidBackup;
+  if (!transfer || event.id !== transfer.id) return;
+  if (event.type === 'ready') {
+    void sendAndroidBackupChunk(transfer);
+  } else if (event.type === 'ack') {
+    if (event.index !== transfer.index + 1 || transfer.pendingBytes <= 0) {
+      failAndroidBackup(transfer, new Error('Ошибка подтверждения сохранения'), true);
+      return;
+    }
+    transfer.offset += transfer.pendingBytes;
+    transfer.pendingBytes = 0;
+    transfer.index++;
+    void sendAndroidBackupChunk(transfer);
+  } else if (event.type === 'saved') {
+    activeAndroidBackup = null;
+    transfer.resolve(true);
+  } else if (event.type === 'cancelled') {
+    activeAndroidBackup = null;
+    transfer.resolve(false);
+  } else if (event.type === 'error') {
+    failAndroidBackup(transfer, new Error(event.message || 'Не удалось сохранить бэкап'));
+  }
+};
+
+function saveBackupViaAndroid(blob, name) {
+  if (activeAndroidBackup) return Promise.reject(new Error('Дождитесь завершения текущего бэкапа'));
+  return new Promise((resolve, reject) => {
+    const id = 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    const transfer = { id, blob, offset: 0, index: 0, pendingBytes: 0, resolve, reject };
+    activeAndroidBackup = transfer;
+    try {
+      postAndroidBackup({ type: 'start', id, name, size: blob.size });
+    } catch (e) {
+      failAndroidBackup(transfer, e);
+    }
+  });
+}
+
 // ============================================================
 // EXPORT JSON (v3 — multi-board)
 // ============================================================
@@ -2181,12 +2261,23 @@ async function exportData() {
         + ',"thumb":' + JSON.stringify(m.thumb || null) + ',"data":"' + await blobToBase64(m.full) + '"}');
     }
     parts.push('}}');
-    const url = URL.createObjectURL(new Blob(parts, { type: 'application/json' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = `kanban-backup-${todayISO()}.json`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast(`Бэкап: ${state.boards.length} досок, ${allTasks.length} узлов, ${n} файлов` + (missing ? `. Файлов не найдено: ${missing}` : ''));
+    const backup = new Blob(parts, { type: 'application/json' });
+    const filename = `kanban-backup-${todayISO()}.json`;
+    if (window.KanbanBackup?.postMessage) {
+      const saved = await saveBackupViaAndroid(backup, filename);
+      if (!saved) { showToast('Сохранение бэкапа отменено'); return; }
+      showToast(`Бэкап сохранён: ${state.boards.length} досок, ${allTasks.length} узлов, ${n} файлов` + (missing ? `. Файлов не найдено: ${missing}` : ''));
+    } else {
+      if (location.origin === 'https://appassets.androidplatform.net') {
+        throw new Error('Сохранение недоступно в этой версии Android WebView');
+      }
+      const url = URL.createObjectURL(backup);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      showToast('Бэкап передан браузеру для загрузки');
+    }
   } catch (e) {
     console.error(e);
     showToast('Ошибка экспорта: ' + (e.message || ''));

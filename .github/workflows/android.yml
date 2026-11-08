@@ -35,6 +35,7 @@ jobs:
           node tests/test_japanese_syntax.cjs
           node tests/test_japanese_load.cjs
           node tests/test_japanese_review_load.cjs
+          node tests/test_japanese_new_question.cjs
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax

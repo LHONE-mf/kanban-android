@@ -37,6 +37,7 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py' -v
           node tests/test_japanese_storage.cjs
           node tests/test_japanese_review.cjs
+          node tests/test_japanese_quiz.cjs
           python3 tools/build_kanban_js.py --check
           gradle :app:assembleDebug --no-daemon
       - name: Build sequentially versioned APKs for upgrade regression

@@ -46,7 +46,7 @@ const groups=[
 ['W + N','わ:wa','を:wo','ん:n']
 ].map(row=>({name:row[0],items:row.slice(1).map(s=>{const [kana,roman]=s.split(':');return {kana,roman}})}));
 const all=groups.flatMap(g=>g.items),storageKey='kanban-japanese-hiragana-v1';
-let known;try{const parsed=JSON.parse(localStorage.getItem(storageKey)||'[]');known=new Set(Array.isArray(parsed)?parsed.filter(x=>typeof x==='string'&&all.some(item=>item.kana===x)):[])}catch(e){known=new Set()}
+let known;try{const parsed=JSON.parse(localStorage.getItem(storageKey)||'[]');known=new Set(Array.isArray(parsed)?parsed.filter(x=>typeof x==='string'):[])}catch(e){known=new Set()}
 const quizProgressKey='kanban-japanese-quiz-progress-v1';
 let savedQuiz={};try{const parsed=JSON.parse(localStorage.getItem(quizProgressKey)||'{}');savedQuiz=parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{}}catch(e){}
 let groupIndex=0,detailIndex=0,score=Math.max(0,Number(savedQuiz.score)||0),total=Math.max(0,Number(savedQuiz.total)||0),question=null,answered=false,reviewItem=null;

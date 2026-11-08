@@ -1,0 +1,50 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# The runner imported a disposable JSON fixture with a real text attachment.
+# Tapping Open must reach Android's native ACTION_VIEW chooser, not a WebView
+# blob download (which silently failed on physical Android devices).
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "importBtn"
+    timeout: 30000
+- tapOn:
+    id: "importBtn"
+- extendedWaitUntil:
+    visible: "Show roots"
+    timeout: 30000
+- tapOn: "Show roots"
+- tapOn: "(?i)^Downloads$"
+- extendedWaitUntil:
+    visible: "kanban-attachment-ci.json"
+    timeout: 30000
+- tapOn: "kanban-attachment-ci.json"
+- extendedWaitUntil:
+    visible:
+      id: "confirmOk"
+    timeout: 30000
+- tapOn:
+    id: "confirmOk"
+- scrollUntilVisible:
+    element:
+      id: "Beta persistence smoke task"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "Beta persistence smoke task"
+- extendedWaitUntil:
+    visible: "Редактирование задачи"
+    timeout: 30000
+- scrollUntilVisible:
+    element: "Открыть"
+    direction: DOWN
+    timeout: 30000
+- takeScreenshot: ui-screenshots/android-attachment-before-open
+- tapOn: "Открыть"
+- extendedWaitUntil:
+    visible: "Открыть файл"
+    timeout: 30000
+- takeScreenshot: ui-screenshots/android-attachment-native-chooser

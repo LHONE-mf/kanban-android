@@ -121,6 +121,18 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("localStorage.getItem(quizProgressKey)", japanese)
         self.assertIn("localStorage.getItem(reviewKey)", japanese)
 
+    def test_japanese_maestro_flow_targets_accessible_kana_and_checks_restart(self):
+        japanese = (
+            ROOT / "app/src/main/assets/japanese.html"
+        ).read_text(encoding="utf-8")
+        flow = (ROOT / ".maestro/japanese-progress.yaml").read_text(encoding="utf-8")
+        self.assertIn("b.setAttribute('aria-label','Кана '+x.kana)", japanese)
+        self.assertIn('text: "Кана あ"', flow)
+        self.assertIn('visible: "日本語 · Японский с нуля"', flow)
+        self.assertIn('clearState: false', flow)
+        self.assertGreaterEqual(flow.count('Изучено 1 / 92 знаков кана'), 2)
+        self.assertGreaterEqual(flow.count('✓ Изучено — снять отметку'), 2)
+
     def test_native_japanese_banner_restores_saved_progress(self):
         self.assertIn('getSharedPreferences("japanese_daily", MODE_PRIVATE)', self.main)
         self.assertIn('.putInt("question_count", miniQuestionNumber)', self.main)

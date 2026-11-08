@@ -27,8 +27,9 @@ jobs:
           keytool -list -keystore .github/keys/kanban-debug.keystore -storepass android -alias androiddebugkey >/dev/null
       - name: Run project regression tests
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Test Japanese progress storage failures
-        run: node tests/test_japanese_storage.cjs
+      - name: Test Japanese progress and review storage failures
+        run: |
+          node tests/test_japanese_storage.cjs
           node tests/test_japanese_review.cjs
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check

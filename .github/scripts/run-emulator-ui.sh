@@ -64,3 +64,5 @@ stage="Kanban persistence after upgrade"
 run_maestro .maestro/kanban-persistence.yaml ui-screenshots/kanban-persistence-debug
 adb exec-out screencap -p > ui-screenshots/kanban-after-removal.png
 test -s ui-screenshots/kanban-after-removal.png
+stage="Android Save As backup"
+run_maestro .maestro/android-backup-save.yaml ui-screenshots/android-backup-save-debug

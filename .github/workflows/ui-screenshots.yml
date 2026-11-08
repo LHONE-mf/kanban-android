@@ -83,6 +83,8 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             "$HOME/.maestro/bin/maestro" test .maestro/smoke.yaml --debug-output ui-screenshots/maestro-debug
             "$HOME/.maestro/bin/maestro" test .maestro/japanese-progress.yaml --debug-output ui-screenshots/japanese-progress-debug
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            "$HOME/.maestro/bin/maestro" test .maestro/japanese-upgrade.yaml --debug-output ui-screenshots/japanese-upgrade-debug
             adb exec-out screencap -p > ui-screenshots/kanban-after-removal.png
             test -s ui-screenshots/kanban-after-removal.png
       - name: Upload screenshots and Maestro diagnostics

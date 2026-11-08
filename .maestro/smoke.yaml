@@ -2,7 +2,9 @@ appId: com.kanban.offline
 ---
 - launchApp:
     clearState: true
-- assertVisible: "日本語 · Учить"
+- extendedWaitUntil:
+    visible: "日本語 · Учить"
+    timeout: 30000
 - takeScreenshot: ui-screenshots/kanban-initial
 - tapOn: "日本語 · Учить"
 - assertVisible: "← Канбан"

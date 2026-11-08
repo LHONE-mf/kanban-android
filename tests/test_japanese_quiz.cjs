@@ -49,4 +49,23 @@ assert.equal(context.total, 1);
 assert.equal(correct.disabled, true);
 assert.equal(elements.nextQuestion.disabled, false);
 assert.equal(JSON.parse(saved.get(context.quizProgressKey)).score, 1);
-console.log('Japanese quiz answer rollback and retry: passed');
+answer(wrong, 'i'); // A completed question must not be counted twice.
+assert.equal(context.total, 1);
+assert.equal(context.score, 1);
+context.answered = false; // Simulate a new question without changing its kana.
+correct.disabled = false;
+wrong.disabled = false;
+elements.nextQuestion.disabled = true;
+failWrites = true;
+answer(wrong, 'i');
+assert.equal(context.total, 1);
+assert.equal(context.mistakeQueue.length, 0);
+assert.equal(wrong.disabled, false);
+failWrites = false;
+answer(wrong, 'i');
+assert.equal(context.total, 2);
+assert.equal(context.score, 1);
+assert.equal(context.mistakeQueue.length, 1);
+assert.equal(context.mistakeQueue[0].kana, 'あ');
+assert.equal(JSON.parse(saved.get(context.quizProgressKey)).mistakeQueue.length, 1);
+console.log('Japanese quiz answer rollback, duplicate guard, and retry: passed');

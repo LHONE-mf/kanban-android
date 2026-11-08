@@ -70,7 +70,16 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 600
           script: |
+            set -euo pipefail
             mkdir -p ui-screenshots
+            capture_failure() {
+              status=$?
+              if [ "$status" -ne 0 ]; then
+                adb exec-out screencap -p > ui-screenshots/emulator-on-failure.png || true
+                adb logcat -d -t 1500 > ui-screenshots/emulator-logcat-on-failure.txt || true
+              fi
+            }
+            trap capture_failure EXIT
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             "$HOME/.maestro/bin/maestro" test .maestro/smoke.yaml --debug-output ui-screenshots/maestro-debug
             "$HOME/.maestro/bin/maestro" test .maestro/japanese-progress.yaml --debug-output ui-screenshots/japanese-progress-debug

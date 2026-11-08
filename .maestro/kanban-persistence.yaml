@@ -12,6 +12,13 @@ androidWebViewHierarchy: devtools
 - extendedWaitUntil:
     visible: "Быстрое добавление задачи"
     timeout: 30000
+# Verify the v1 IndexedDB task immediately after installing APK v2.
+- scrollUntilVisible:
+    element:
+      text: "Beta upgrade persistence task"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Beta upgrade persistence task"
 - tapOn: "Быстрое добавление задачи"
 - inputText: "Beta persistence smoke task"
 - pressKey: Enter

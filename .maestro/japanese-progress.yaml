@@ -13,6 +13,8 @@ androidWebViewHierarchy: devtools
       text: "Начать с あ・い・う・え・お"
     direction: DOWN
 - tapOn: "Начать с あ・い・う・え・お"
+# Capture the kana grid before selecting あ, even if the selector fails.
+- takeScreenshot: ui-screenshots/japanese-first-lesson-grid
 - scrollUntilVisible:
     element:
       text: "Кана あ"

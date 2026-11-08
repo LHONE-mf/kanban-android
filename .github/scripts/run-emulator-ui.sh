@@ -18,7 +18,7 @@ capture_failure() {
     adb pull /sdcard/window.xml ui-screenshots/window-on-failure.xml >/dev/null 2>&1 || true
   else
     echo "### Android UI regression passed" >> "$GITHUB_STEP_SUMMARY"
-    echo "Smoke, Japanese restart, Kanban v1 creation, Japanese v2 upgrade, and Kanban persistence flows completed." >> "$GITHUB_STEP_SUMMARY"
+    echo "Smoke, Japanese restart/upgrade, Kanban persistence, SAF cancellation, saved JSON validation, and restoration after app-data reset completed." >> "$GITHUB_STEP_SUMMARY"
   fi
 }
 trap capture_failure EXIT
@@ -68,3 +68,25 @@ stage="Android Save As cancellation and retry"
 run_maestro .maestro/android-backup-cancel.yaml ui-screenshots/android-backup-cancel-debug
 stage="Android Save As backup"
 run_maestro .maestro/android-backup-save.yaml ui-screenshots/android-backup-save-debug
+
+# Do not trust the WebView success toast alone. Pull the actual document
+# produced by Android's Storage Access Framework and validate its JSON bytes.
+stage="verify saved SAF backup bytes"
+SAVED_BACKUP_PATH="$(adb shell "find /sdcard/Download -maxdepth 1 -type f -name 'kanban-backup-????-??-??.json' -print" | tr -d '\r' | head -n 1)"
+if [[ -z "$SAVED_BACKUP_PATH" ]]; then
+  echo "::error::No Kanban JSON backup was created in Android Downloads"
+  exit 1
+fi
+adb pull "$SAVED_BACKUP_PATH" "$RUNNER_TEMP/kanban-saf-export.json"
+python3 tools/verify_android_backup.py "$RUNNER_TEMP/kanban-saf-export.json" \
+  --expect-title "Beta upgrade persistence task" \
+  --expect-title "Beta persistence smoke task"
+printf "Verified SAF backup file: %s\n" "$SAVED_BACKUP_PATH" > ui-screenshots/backup-verification.txt
+
+# The remaining steps run exclusively on a disposable CI emulator. Keep
+# the exported document in Downloads while clearing the app's internal data,
+# then restore through the *real* Android file picker and verify persistence.
+stage="clear disposable emulator Kanban app data"
+adb shell pm clear com.kanban.offline | grep -q 'Success'
+stage="restore SAF backup and verify tasks after restart"
+run_maestro .maestro/android-backup-restore.yaml ui-screenshots/android-backup-restore-debug

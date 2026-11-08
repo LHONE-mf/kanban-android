@@ -55,7 +55,7 @@ let lastQuizScript=typeof savedQuiz.lastQuizScript==='string'?savedQuiz.lastQuiz
 let quizTurn=Number.isSafeInteger(savedQuiz.quizTurn)&&savedQuiz.quizTurn>=0?savedQuiz.quizTurn:0;
 let mistakeQueue=Array.isArray(savedQuiz.mistakeQueue)?savedQuiz.mistakeQueue.filter(x=>x&&typeof x.kana==='string'&&Number.isSafeInteger(x.due)&&x.due>=0).slice(-30):[];
 score=Math.min(score,total);
-function saveQuizProgress(){try{localStorage.setItem(quizProgressKey,JSON.stringify({score,total,recentQuestions,lastQuizScript,quizTurn,mistakeQueue}))}catch(e){console.warn('Quiz progress not saved',e)}}
+function saveQuizProgress(){try{localStorage.setItem(quizProgressKey,JSON.stringify({score,total,recentQuestions,lastQuizScript,quizTurn,mistakeQueue}));return true}catch(e){console.error('Quiz progress not saved',e);alert('Не удалось сохранить результат тренировки. Проверьте свободное место и повторите попытку.');return false}}
 window.addEventListener('pageshow',()=>{try{document.documentElement.dataset.theme=localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch(e){}});
 const hiraGroups=groups;const katakanaRows=['アイウエオ','カキクケコ','サシスセソ','タチツテト','ナニヌネノ','ハヒフヘホ','マミムメモ','ヤユヨ','ラリルレロ','ワヲン'];
 const kataGroups=hiraGroups.map((g,i)=>({name:g.name,items:[...katakanaRows[i]].map((kana,j)=>({kana,roman:g.items[j].roman}))}));

@@ -14,7 +14,7 @@ function load(value) {
   };
   vm.createContext(context);
   vm.runInContext(source, context);
-  return context.loadedKnown;
+  return Array.from(context.loadedKnown);
 }
 assert.deepEqual(load(null), []);
 assert.deepEqual(load('{not-json'), []);

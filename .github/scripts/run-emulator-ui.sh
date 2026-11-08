@@ -102,3 +102,22 @@ stage="verify native ACTION_VIEW intent was dispatched"
 adb logcat -d -s KanbanAttachmentOpen:I '*:S' > ui-screenshots/attachment-open-intent-log.txt
 grep -Fq 'ACTION_VIEW chooser dispatched' ui-screenshots/attachment-open-intent-log.txt
 echo 'Native ACTION_VIEW intent dispatched successfully.' >> "$GITHUB_STEP_SUMMARY"
+
+# Now export a backup containing a real imported attachment, not just empty
+# media. All destructive reset steps below apply ONLY to the CI emulator.
+stage="export backup with attachment payload"
+adb shell rm -f "$SAVED_BACKUP_PATH"
+run_maestro .maestro/android-backup-save.yaml ui-screenshots/android-backup-media-save-debug
+stage="verify backup contains the original attachment bytes"
+MEDIA_BACKUP_PATH="$(adb shell "find /sdcard/Download -maxdepth 1 -type f -name 'kanban-backup-????-??-??.json' -print" | tr -d '\r' | head -n 1)"
+test -n "$MEDIA_BACKUP_PATH"
+adb pull "$MEDIA_BACKUP_PATH" "$RUNNER_TEMP/kanban-media-export.json"
+python3 tools/verify_android_backup.py "$RUNNER_TEMP/kanban-media-export.json" \
+  --expect-title "Beta upgrade persistence task" \
+  --expect-title "Beta persistence smoke task" \
+  --expect-media "ci_android_attachment_view_test"
+stage="restore media-containing backup on disposable emulator"
+adb shell pm clear com.kanban.offline | grep -q 'Success'
+run_maestro .maestro/android-backup-restore.yaml ui-screenshots/android-backup-media-restore-debug
+stage="verify restored task retains its file attachment"
+run_maestro .maestro/android-attachment-restored.yaml ui-screenshots/android-attachment-restored-debug

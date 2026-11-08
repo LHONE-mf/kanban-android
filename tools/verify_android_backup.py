@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 
-def verify(path: Path, expected_titles: list[str]) -> None:
+def verify(path: Path, expected_titles: list[str], expected_media: list[str] | None = None) -> None:
     with path.open("r", encoding="utf-8") as source:
         backup = json.load(source)
 
@@ -54,6 +54,18 @@ def verify(path: Path, expected_titles: list[str]) -> None:
             raise AssertionError(f"Media is missing its base64 payload: {media_id}")
         base64.b64decode(data.split(",", 1)[1], validate=True)
 
+    for media_id in expected_media or []:
+        if media_id not in media:
+            raise AssertionError(f"Expected attachment missing from exported backup: {media_id}")
+        matching = [task for task in tasks if any(
+            f.get("id") == media_id for f in task.get("files", [])
+        )]
+        if not matching:
+            raise AssertionError(f"Exported attachment {media_id} has no owning task")
+        data = media[media_id]["data"].split(",", 1)[1]
+        if not base64.b64decode(data, validate=True):
+            raise AssertionError(f"Exported attachment {media_id} is empty")
+
     print(
         f"Verified SAF backup JSON: {len(boards)} boards, "
         f"{len(tasks)} tasks, {len(media)} media entries; "
@@ -65,8 +77,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("backup", type=Path, help="JSON file pulled from the Android document provider")
     parser.add_argument("--expect-title", action="append", default=[], dest="expected_titles")
+    parser.add_argument("--expect-media", action="append", default=[], dest="expected_media")
     args = parser.parse_args()
-    verify(args.backup, args.expected_titles)
+    verify(args.backup, args.expected_titles, args.expected_media)
 
 
 if __name__ == "__main__":

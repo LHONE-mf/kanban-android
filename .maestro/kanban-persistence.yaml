@@ -9,7 +9,6 @@ androidWebViewHierarchy: devtools
 - extendedWaitUntil:
     visible: "日本語 · Учить"
     timeout: 30000
-- tapOn: "← Канбан"
 - extendedWaitUntil:
     visible: "Быстрое добавление задачи"
     timeout: 30000

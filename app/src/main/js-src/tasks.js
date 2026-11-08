@@ -246,10 +246,100 @@ window.kanbanExternalEditResult = async function(payload) {
     showToast('Не удалось обновить вложение: ' + error.message);
   }
 };
+// Android WebView does not execute downloads from blob: anchor links. Send
+// saved non-media attachments to Android in acknowledged 32 KiB chunks instead.
+let activeAndroidFileOpen = null;
+const ANDROID_FILE_OPEN_CHUNK_SIZE = 32 * 1024;
+
+function postAndroidFileOpen(message) {
+  window.KanbanFileOpen.postMessage(JSON.stringify(message));
+}
+
+function failAndroidFileOpen(transfer, message, abort = false) {
+  if (activeAndroidFileOpen !== transfer) return;
+  activeAndroidFileOpen = null;
+  if (abort) {
+    try { postAndroidFileOpen({ type: 'abort', id: transfer.id }); } catch (_) {}
+  }
+  showToast('Не удалось открыть файл: ' + message);
+}
+
+async function sendAndroidFileOpenChunk(transfer) {
+  if (activeAndroidFileOpen !== transfer) return;
+  try {
+    if (transfer.offset >= transfer.blob.size) {
+      postAndroidFileOpen({ type: 'finish', id: transfer.id });
+      return;
+    }
+    const bytes = new Uint8Array(await transfer.blob.slice(
+      transfer.offset, transfer.offset + ANDROID_FILE_OPEN_CHUNK_SIZE
+    ).arrayBuffer());
+    if (activeAndroidFileOpen !== transfer) return;
+    transfer.pendingBytes = bytes.length;
+    postAndroidFileOpen({
+      type: 'chunk', id: transfer.id, index: transfer.index,
+      data: btoa(String.fromCharCode(...bytes))
+    });
+  } catch (error) {
+    failAndroidFileOpen(transfer, error.message || 'Ошибка чтения файла', true);
+  }
+}
+
+window.kanbanFileOpenNativeResult = (raw) => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const transfer = activeAndroidFileOpen;
+  if (!transfer || transfer.id !== event.id) return;
+  if (event.type === 'ready') {
+    void sendAndroidFileOpenChunk(transfer);
+  } else if (event.type === 'ack') {
+    if (event.index !== transfer.index + 1 || transfer.pendingBytes <= 0) {
+      failAndroidFileOpen(transfer, 'Неверное подтверждение передачи', true);
+      return;
+    }
+    transfer.offset += transfer.pendingBytes;
+    transfer.pendingBytes = 0;
+    transfer.index++;
+    void sendAndroidFileOpenChunk(transfer);
+  } else if (event.type === 'opened' || event.type === 'cancelled') {
+    activeAndroidFileOpen = null;
+  } else if (event.type === 'error') {
+    failAndroidFileOpen(transfer, event.message || 'Не удалось запустить приложение');
+  }
+};
+
 async function openFile(f, title) {
   if (/^(image|video)\//.test(f.type)) return openLightbox({ title, files: [f] }, f);
   const m = await mediaGet(f.id).catch(() => null);
-  if (!m) { showToast('Файл не найден'); return; }
+  if (!m?.full) { showToast('Файл не найден'); return; }
+
+  if (window.KanbanFileOpen?.postMessage) {
+    if (activeAndroidFileOpen) {
+      showToast('Дождитесь открытия предыдущего файла');
+      return;
+    }
+    if (!m.full.size || m.full.size > MAX_VIDEO_SIZE) {
+      showToast('Открытие файлов поддерживается до 50 МБ');
+      return;
+    }
+    const id = 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    const transfer = { id, blob: m.full, offset: 0, index: 0, pendingBytes: 0 };
+    activeAndroidFileOpen = transfer;
+    try {
+      postAndroidFileOpen({
+        type: 'start', id, name: f.name || 'attachment.bin',
+        mime: f.type || m.type || 'application/octet-stream', size: m.full.size
+      });
+    } catch (error) {
+      failAndroidFileOpen(transfer, error.message || 'Ошибка передачи');
+    }
+    return;
+  }
+
+  if (location.origin === 'https://appassets.androidplatform.net') {
+    showToast('Открытие недоступно: обновите Android System WebView');
+    return;
+  }
   const url = createTrackedURL(m.full), a = document.createElement('a');
   a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => revokeTrackedURL(url), 4000);

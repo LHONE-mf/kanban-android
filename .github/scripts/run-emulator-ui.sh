@@ -22,14 +22,36 @@ capture_failure() {
   fi
 }
 trap capture_failure EXIT
+
+# If an Android system Quickstep ANR obscures the app, save the evidence,
+# dismiss only that verified system dialog, and retry this flow once.
+# Do not retry ordinary Maestro failures or silently skip any assertions.
+run_maestro() {
+  local flow="$1" debug="$2"
+  if "$HOME/.maestro/bin/maestro" test "$flow" --debug-output "$debug"; then
+    return 0
+  fi
+  local dump_path="$debug/quickstep-anr.xml"
+  mkdir -p "$debug"
+  adb shell uiautomator dump /sdcard/ci-quickstep-anr.xml >/dev/null 2>&1 || return 1
+  adb pull /sdcard/ci-quickstep-anr.xml "$dump_path" >/dev/null 2>&1 || return 1
+  local coords x y
+  coords="$(python3 tools/ci_launcher_anr.py "$dump_path")" || return 1
+  read -r x y <<< "$coords"
+  echo "::warning::Quickstep system ANR obscured $flow; closing launcher dialog and retrying once"
+  adb exec-out screencap -p > "$debug/quickstep-anr.png" || true
+  adb shell input tap "$x" "$y"
+  sleep 3
+  "$HOME/.maestro/bin/maestro" test "$flow" --debug-output "${debug}-retry"
+}
 stage="install APK v1"
 adb install -r ui-apks/kanban-v1.apk
 stage="navigation smoke"
-"$HOME/.maestro/bin/maestro" test .maestro/smoke.yaml --debug-output ui-screenshots/maestro-debug
+run_maestro .maestro/smoke.yaml ui-screenshots/maestro-debug
 stage="Japanese restart persistence"
-"$HOME/.maestro/bin/maestro" test .maestro/japanese-progress.yaml --debug-output ui-screenshots/japanese-progress-debug
+run_maestro .maestro/japanese-progress.yaml ui-screenshots/japanese-progress-debug
 stage="Kanban task creation on v1"
-"$HOME/.maestro/bin/maestro" test .maestro/kanban-before-upgrade.yaml --debug-output ui-screenshots/kanban-before-upgrade-debug
+run_maestro .maestro/kanban-before-upgrade.yaml ui-screenshots/kanban-before-upgrade-debug
 stage="upgrade to APK v2"
 adb install -r ui-apks/kanban-v2.apk
 stage="verify installed APK version and app data"
@@ -37,8 +59,8 @@ adb shell pm path com.kanban.offline | grep -q '^package:'
 adb shell dumpsys package com.kanban.offline > ui-screenshots/package-after-upgrade.txt
 grep -q 'versionCode=2' ui-screenshots/package-after-upgrade.txt
 stage="Japanese progress after upgrade"
-"$HOME/.maestro/bin/maestro" test .maestro/japanese-upgrade.yaml --debug-output ui-screenshots/japanese-upgrade-debug
+run_maestro .maestro/japanese-upgrade.yaml ui-screenshots/japanese-upgrade-debug
 stage="Kanban persistence after upgrade"
-"$HOME/.maestro/bin/maestro" test .maestro/kanban-persistence.yaml --debug-output ui-screenshots/kanban-persistence-debug
+run_maestro .maestro/kanban-persistence.yaml ui-screenshots/kanban-persistence-debug
 adb exec-out screencap -p > ui-screenshots/kanban-after-removal.png
 test -s ui-screenshots/kanban-after-removal.png

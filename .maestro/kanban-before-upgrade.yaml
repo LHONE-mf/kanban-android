@@ -6,9 +6,11 @@ androidWebViewHierarchy: devtools
 - launchApp:
     clearState: false
 - extendedWaitUntil:
-    visible: "Быстрое добавление задачи"
+    visible:
+      id: "quickAdd"
     timeout: 30000
-- tapOn: "Быстрое добавление задачи"
+- tapOn:
+    id: "quickAdd"
 - inputText: "Beta upgrade persistence task"
 - pressKey: Enter
 - scrollUntilVisible:

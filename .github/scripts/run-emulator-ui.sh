@@ -18,7 +18,7 @@ capture_failure() {
     adb pull /sdcard/window.xml ui-screenshots/window-on-failure.xml >/dev/null 2>&1 || true
   else
     echo "### Android UI regression passed" >> "$GITHUB_STEP_SUMMARY"
-    echo "Smoke, Japanese restart/upgrade, Kanban persistence, SAF cancellation, saved JSON validation, and restoration after app-data reset completed." >> "$GITHUB_STEP_SUMMARY"
+    echo "Smoke, Japanese restart/upgrade, Kanban persistence, SAF save/restore, and native attachment viewer all completed." >> "$GITHUB_STEP_SUMMARY"
   fi
 }
 trap capture_failure EXIT
@@ -90,3 +90,9 @@ stage="clear disposable emulator Kanban app data"
 adb shell pm clear com.kanban.offline | grep -q 'Success'
 stage="restore SAF backup and verify tasks after restart"
 run_maestro .maestro/android-backup-restore.yaml ui-screenshots/android-backup-restore-debug
+stage="prepare disposable Android attachment fixture"
+python3 tools/create_android_attachment_fixture.py \
+  "$RUNNER_TEMP/kanban-saf-export.json" "$RUNNER_TEMP/kanban-attachment-ci.json"
+adb push "$RUNNER_TEMP/kanban-attachment-ci.json" /sdcard/Download/kanban-attachment-ci.json
+stage="open stored attachment in native Android viewer"
+run_maestro .maestro/android-attachment-open.yaml ui-screenshots/android-attachment-open-debug

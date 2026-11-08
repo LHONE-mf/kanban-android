@@ -123,6 +123,10 @@ jobs:
             "$HOME/.maestro/bin/maestro" test .maestro/kanban-before-upgrade.yaml --debug-output ui-screenshots/kanban-before-upgrade-debug
             stage="upgrade to APK v2"
             adb install -r ui-apks/kanban-v2.apk
+            stage="verify installed APK version and app data"
+            adb shell pm path com.kanban.offline | grep -q '^package:'
+            adb shell dumpsys package com.kanban.offline > ui-screenshots/package-after-upgrade.txt
+            grep -q 'versionCode=2' ui-screenshots/package-after-upgrade.txt
             stage="Japanese progress after upgrade"
             "$HOME/.maestro/bin/maestro" test .maestro/japanese-upgrade.yaml --debug-output ui-screenshots/japanese-upgrade-debug
             stage="Kanban persistence after upgrade"

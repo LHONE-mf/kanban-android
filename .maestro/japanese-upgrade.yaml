@@ -3,6 +3,7 @@ androidWebViewHierarchy: devtools
 ---
 # Run after japanese-progress.yaml and an adb install -r of the same signed APK.
 # Do not clear app data: an in-place APK upgrade must retain learned kana.
+- stopApp
 - launchApp:
     clearState: false
 - extendedWaitUntil:

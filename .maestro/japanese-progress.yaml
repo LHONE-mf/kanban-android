@@ -1,0 +1,17 @@
+appId: com.kanban.offline
+---
+# Mark a kana, restart the Android activity, and verify WebView storage survives.
+- launchApp:
+    clearState: true
+- tapOn: "日本語 · Учить"
+- assertVisible: "Изучено 0 / 92 знаков кана"
+- tapOn: "Начать с あ・い・う・え・お"
+- tapOn: "あ"
+- tapOn: "Отметить как изученное"
+- assertVisible: "Изучено 1 / 92 знаков кана"
+- stopApp
+- launchApp:
+    clearState: false
+- tapOn: "日本語 · Учить"
+- assertVisible: "Изучено 1 / 92 знаков кана"
+- takeScreenshot: ui-screenshots/japanese-progress-restored

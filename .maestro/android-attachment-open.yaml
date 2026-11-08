@@ -38,12 +38,17 @@ androidWebViewHierarchy: devtools
 - extendedWaitUntil:
     visible: "Редактирование задачи"
     timeout: 30000
+- hideKeyboard
 - scrollUntilVisible:
-    element: "Открыть"
+    element:
+      id: "Открыть файл kanban-view-test.txt"
     direction: DOWN
     timeout: 30000
+- assertVisible:
+    id: "Открыть файл kanban-view-test.txt"
 - takeScreenshot: ui-screenshots/android-attachment-before-open
-- tapOn: "Открыть"
+- tapOn:
+    id: "Открыть файл kanban-view-test.txt"
 # Headless emulator images may have no installed text/plain viewer, and the
 # Android resolver can exit to the launcher without a chooser label.
 # The runner checks native ACTION_VIEW dispatch in Android logcat instead.

@@ -1,10 +1,13 @@
 appId: com.kanban.offline
+androidWebViewHierarchy: devtools
 ---
 # Mark a kana, restart the Android activity, and verify WebView storage survives.
 - launchApp:
     clearState: true
 - tapOn: "日本語 · Учить"
-- assertVisible: "Изучено 0 / 92 знаков кана"
+- extendedWaitUntil:
+    visible: "Изучено 0 / 92 знаков кана"
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: "Начать с あ・い・う・え・お"

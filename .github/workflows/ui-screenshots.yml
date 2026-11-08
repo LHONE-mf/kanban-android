@@ -95,8 +95,17 @@ jobs:
             capture_failure() {
               status=$?
               if [ "$status" -ne 0 ]; then
+                echo "::error::Android UI regression failed (exit $status) at: ${BASH_COMMAND}"
+                echo "### Android UI regression failed" >> "$GITHUB_STEP_SUMMARY"
+                echo "Check the android-ui-screenshots artifact for Maestro diagnostics, screenshot, package info, and logcat." >> "$GITHUB_STEP_SUMMARY"
                 adb exec-out screencap -p > ui-screenshots/emulator-on-failure.png || true
                 adb logcat -d -t 1500 > ui-screenshots/emulator-logcat-on-failure.txt || true
+                adb shell dumpsys package com.kanban.offline > ui-screenshots/package-on-failure.txt || true
+                adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1 || true
+                adb pull /sdcard/window.xml ui-screenshots/window-on-failure.xml >/dev/null 2>&1 || true
+              else
+                echo "### Android UI regression passed" >> "$GITHUB_STEP_SUMMARY"
+                echo "Smoke, Japanese restart, Kanban v1 creation, Japanese v2 upgrade, and Kanban persistence flows completed." >> "$GITHUB_STEP_SUMMARY"
               fi
             }
             trap capture_failure EXIT

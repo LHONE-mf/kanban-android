@@ -67,9 +67,12 @@ class AndroidProjectTests(unittest.TestCase):
     def test_fileprovider_paths_are_restricted(self):
         paths = ET.parse(ROOT / "app/src/main/res/xml/editable_file_paths.xml").getroot()
         self.assertEqual(paths.tag, "paths")
-        self.assertEqual(len(paths), 1)
-        self.assertEqual(paths[0].tag, "cache-path")
-        self.assertEqual(paths[0].attrib.get("path"), "editable/")
+        self.assertEqual(len(paths), 2)
+        self.assertEqual({p.tag for p in paths}, {"cache-path"})
+        self.assertEqual(
+            {(p.attrib.get("name"), p.attrib.get("path")) for p in paths},
+            {("editable", "editable/"), ("opened", "attachment-open/")}
+        )
 
 
 class UiRegressionTests(unittest.TestCase):
@@ -147,6 +150,19 @@ class UiRegressionTests(unittest.TestCase):
             self.assertIn('id: "Beta upgrade persistence task"', flow)
             self.assertNotIn('- pressKey: Enter', flow)
         self.assertIn('id: "Beta persistence smoke task"', after)
+
+    def test_saved_files_open_through_read_only_android_provider(self):
+        native = (
+            ROOT / "app/src/main/java/com/kanban/offline/KanbanAttachmentOpener.kt"
+        ).read_text(encoding="utf-8")
+        tasks = (ROOT / "app/src/main/js-src/tasks.js").read_text(encoding="utf-8")
+        self.assertIn('WebViewCompat.addWebMessageListener(webView, "KanbanFileOpen"', self.main)
+        self.assertIn('FileProvider.getUriForFile(', native)
+        self.assertIn('Intent.ACTION_VIEW', native)
+        self.assertIn('Intent.FLAG_GRANT_READ_URI_PERMISSION', native)
+        self.assertNotIn('Intent.FLAG_GRANT_WRITE_URI_PERMISSION', native)
+        self.assertIn('window.KanbanFileOpen.postMessage', tasks)
+        self.assertIn("kanbanFileOpenNativeResult", tasks)
 
     def test_native_japanese_banner_restores_saved_progress(self):
         self.assertIn('getSharedPreferences("japanese_daily", MODE_PRIVATE)', self.main)

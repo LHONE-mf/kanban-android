@@ -3019,11 +3019,24 @@ async function init() {
   }, 2000);
   setTimeout(() => mediaCleanupOrphans(), 2000);
   initPomo();
-  $('#quickAdd').addEventListener('keydown', async (e) => {
+  const quickAddInput = $('#quickAdd');
+  const quickAddButton = $('#quickAddSubmit');
+  async function submitQuickAdd() {
+    if (!quickAddInput.value.trim() || quickAddButton.disabled) return;
+    quickAddButton.disabled = true;
+    try {
+      if (await quickAddTask(quickAddInput.value)) quickAddInput.value = '';
+    } finally {
+      quickAddButton.disabled = false;
+    }
+  }
+  quickAddInput.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing) return;
     e.preventDefault();
-    if (await quickAddTask(e.target.value)) e.target.value = '';
+    void submitQuickAdd();
   });
+  quickAddButton.addEventListener('click', submitQuickAdd);
+  quickAddButton.disabled = false;
   registerServiceWorker();
 }
 

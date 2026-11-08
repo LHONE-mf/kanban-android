@@ -95,4 +95,10 @@ python3 tools/create_android_attachment_fixture.py \
   "$RUNNER_TEMP/kanban-saf-export.json" "$RUNNER_TEMP/kanban-attachment-ci.json"
 adb push "$RUNNER_TEMP/kanban-attachment-ci.json" /sdcard/Download/kanban-attachment-ci.json
 stage="open stored attachment in native Android viewer"
+# Clear pre-existing logs so the native intent assertion belongs to this flow.
+adb logcat -c
 run_maestro .maestro/android-attachment-open.yaml ui-screenshots/android-attachment-open-debug
+stage="verify native ACTION_VIEW intent was dispatched"
+adb logcat -d -s KanbanAttachmentOpen:I '*:S' > ui-screenshots/attachment-open-intent-log.txt
+grep -Fq 'ACTION_VIEW chooser dispatched' ui-screenshots/attachment-open-intent-log.txt
+echo 'Native ACTION_VIEW intent dispatched successfully.' >> "$GITHUB_STEP_SUMMARY"

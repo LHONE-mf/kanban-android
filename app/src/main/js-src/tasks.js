@@ -181,7 +181,10 @@ function renderFiles() {
     row.innerHTML = `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${escapeHtml(it.f.name)}${it.f.size ? ' · ' + fmtSize(it.f.size) : ''}${it.old ? '' : ' (новый)'}</span>${it.old ? '<button type="button" class="media-remove" data-open="1">Открыть</button><button type="button" class="media-remove" data-edit="1">Изменить</button>' : ''}<button type="button" class="media-remove" data-rm="1" aria-label="Убрать файл">×</button>`;
     row.querySelector('[data-rm]').onclick = () => { if (it.old) tempFiles = tempFiles.filter(x => x !== it.f); else newFiles = newFiles.filter(x => x !== it.f); renderFiles(); };
     const op = row.querySelector('[data-open]');
-    if (op) op.onclick = () => openFile(it.f, $('#taskTitle').value);
+    if (op) {
+      op.setAttribute('aria-label', 'Открыть файл ' + it.f.name);
+      op.onclick = () => openFile(it.f, $('#taskTitle').value);
+    }
     const edit = row.querySelector('[data-edit]');
     if (edit) edit.onclick = () => editAttachmentExternally(it.f);
     box.appendChild(row);

@@ -76,7 +76,7 @@ class IntegrityTests(unittest.TestCase):
 
             # A second attachment ID makes a single-payload assertion ambiguous.
             with self.assertRaisesRegex(AssertionError, "requires one expected media ID"):
-                verify(path, ["Task"], ["binary", "other"],
+                verify(path, ["Task"], ["binary", "binary"],
                        expected_media_hex=payload.hex())
 
 

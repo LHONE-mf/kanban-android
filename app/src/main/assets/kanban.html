@@ -47,7 +47,7 @@
     <select id="boardSelect" class="select board-select" aria-label="Выбор доски"></select>
     <button class="btn btn-ghost btn-icon" id="addBoardBtn" title="Новая доска" aria-label="Новая доска">+</button>
   </div>
-  <details class="mobile-actions"><summary aria-label="Дополнительные действия">⋮</summary><div class="actions header-actions">
+  <details class="mobile-actions" open><summary aria-label="Дополнительные действия">⋮</summary><div class="actions header-actions">
     <button class="btn btn-ghost btn-icon" id="focusBtn" title="Таймер фокуса (Pomodoro)" aria-label="Таймер фокуса">🍅</button>
     <button class="btn btn-ghost btn-icon" id="themeBtn" aria-label="Переключить тему" aria-pressed="false">◐</button>
     <button class="btn btn-ghost" id="exportBtn" title="Полный бэкап: доски, структура, карта, файлы">Экспорт</button>
@@ -69,7 +69,7 @@
 <div class="toolbar" id="kanbanToolbar">
   <input type="text" id="quickAdd" class="input" placeholder="Быстро: Отчёт #работа !h завтра ↵" aria-label="Быстрое добавление задачи" title="#тег · !h/!m/!l приоритет · сегодня/завтра/+3d/ГГГГ-ММ-ДД">
   <button type="button" id="quickAddSubmit" class="btn btn-secondary btn-small" aria-label="Добавить задачу" disabled>Добавить</button>
-  <details class="mobile-filters"><summary>⚙ Фильтры и сортировка</summary><div class="mobile-filters-content"><input type="search" id="searchInput" class="input search-input" placeholder="Поиск по названию, описанию, тегам, чек-листу" aria-label="Поиск задач">
+  <details class="mobile-filters" open><summary>⚙ Фильтры и сортировка</summary><div class="mobile-filters-content"><input type="search" id="searchInput" class="input search-input" placeholder="Поиск по названию, описанию, тегам, чек-листу" aria-label="Поиск задач">
   <select id="tagFilter" class="select" aria-label="Фильтр по тегу"><option value="">Все теги</option></select>
   <select id="priorityFilter" class="select" aria-label="Фильтр по приоритету">
     <option value="">Любой приоритет</option>
@@ -297,6 +297,7 @@
 </div>
 <div class="toast-container" id="toasts" aria-live="polite"></div>
 
+<script>if (matchMedia("(max-width: 600px)").matches) document.querySelectorAll(".mobile-actions, .mobile-filters").forEach(el => { el.open = false; });</script>
 <script src="kanban.js"></script>
 </body>
 </html>

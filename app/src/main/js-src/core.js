@@ -184,7 +184,7 @@ async function deleteBoard(id) {
     delete state._tasksByBoard[id];
     if (wasActive) state.activeBoardId = state.boards[0].id;
     await persistBoards();
-    tasks.forEach(t => t.files.forEach(f => scheduleMediaDelete(f.id, 0)));
+    tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' }); t.files.forEach(f => scheduleMediaDelete(f.id, 0)); });
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message);
     return;

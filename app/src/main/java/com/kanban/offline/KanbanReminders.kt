@@ -64,6 +64,11 @@ object KanbanReminders {
         val repeat = json.optString("repeat", "none").takeIf {
             it in setOf("none", "daily", "weekly", "monthly")
         } ?: "none"
+        // Zero means cancel, including recurring alarms. Never treat Unix epoch as a repeat anchor.
+        if (json.optLong("at") <= 0L) {
+            prefs.edit().remove(id).apply()
+            return
+        }
         val at = ReminderSchedule.nextTime(json.optLong("at"), repeat, System.currentTimeMillis())
         if (at <= System.currentTimeMillis() || at > System.currentTimeMillis() + 366L * 24 * 3600_000) {
             prefs.edit().remove(id).apply()

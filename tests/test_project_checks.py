@@ -188,5 +188,70 @@ class UiRegressionTests(unittest.TestCase):
 
 
 
+class ReminderRegressionTests(unittest.TestCase):
+    """Guard offline reminder wiring and preservation of existing task data."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = ROOT
+        cls.manifest = ET.parse(ROOT / "app/src/main/AndroidManifest.xml").getroot()
+        cls.native = (ROOT / "app/src/main/java/com/kanban/offline/KanbanReminders.kt").read_text(encoding="utf-8")
+        cls.activity = (ROOT / "app/src/main/java/com/kanban/offline/MainActivity.kt").read_text(encoding="utf-8")
+        cls.tasks = (ROOT / "app/src/main/js-src/tasks.js").read_text(encoding="utf-8")
+        cls.views = (ROOT / "app/src/main/js-src/views.js").read_text(encoding="utf-8")
+        cls.core = (ROOT / "app/src/main/js-src/core.js").read_text(encoding="utf-8")
+        cls.startup = (ROOT / "app/src/main/js-src/android-extras.js").read_text(encoding="utf-8")
+        cls.html = (ROOT / "app/src/main/assets/kanban.html").read_text(encoding="utf-8")
+
+    def test_reminder_receivers_are_not_exported_and_recover_after_restart(self):
+        ns = "{http://schemas.android.com/apk/res/android}"
+        receivers = {r.get(ns + "name"): r for r in self.manifest.findall(".//receiver")}
+        self.assertIn(".KanbanReminderReceiver", receivers)
+        self.assertIn(".KanbanReminderBootReceiver", receivers)
+        self.assertEqual(receivers[".KanbanReminderReceiver"].get(ns + "exported"), "false")
+        self.assertEqual(receivers[".KanbanReminderBootReceiver"].get(ns + "exported"), "false")
+        actions = {a.get(ns + "name") for a in receivers[".KanbanReminderBootReceiver"].findall(".//action")}
+        self.assertEqual(actions, {
+            "android.intent.action.BOOT_COMPLETED",
+            "android.intent.action.MY_PACKAGE_REPLACED",
+        })
+        self.assertIn("KanbanReminders.restore(context)", self.native)
+        self.assertIn("Object.values(state._tasksByBoard).flat().forEach(syncNativeReminder)", self.startup)
+
+    def test_reminder_bridge_is_origin_restricted(self):
+        self.assertIn('WebViewCompat.addWebMessageListener(webView, "KanbanReminders"', self.activity)
+        self.assertIn("if (!isMainFrame || sourceOrigin.toString()", self.activity)
+        self.assertIn('webView.url?.endsWith("/kanban.html")', self.activity)
+        self.assertIn("window.KanbanReminders.postMessage", self.tasks)
+
+    def test_recurring_reminders_are_persisted_and_scheduled_offline(self):
+        for repeat in ("none", "daily", "weekly", "monthly"):
+            with self.subTest(repeat=repeat):
+                self.assertIn('value="' + repeat + '"', self.html)
+                self.assertIn('"' + repeat + '"', self.native)
+        self.assertIn('id="taskReminder"', self.html)
+        self.assertIn('id="taskReminderRepeat"', self.html)
+        self.assertIn("reminderRepeat: ['daily', 'weekly', 'monthly'].includes", self.core)
+        self.assertIn("reminder: typeof t.reminder === 'string'", self.core)
+        self.assertIn("setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP", self.native)
+        self.assertIn("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE", self.native)
+        self.assertNotIn("SCHEDULE_EXACT_ALARM", self.native)
+
+    def test_completion_and_deletion_cancel_pending_reminders(self):
+        self.assertIn("task.reminder && !task.completedAt", self.tasks)
+        self.assertIn("gone.forEach(t => syncNativeReminder({ ...t, reminder: '' }))", self.tasks)
+        self.assertIn("syncNativeReminder(candidate)", self.views)
+        self.assertIn("syncNativeReminder(m)", self.views)
+        self.assertIn("tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' })", self.core)
+        self.assertIn("alarm.cancel(intent(context, id))", self.native)
+
+    def test_backup_and_attachment_data_are_not_replaced_by_reminders(self):
+        transfer = (ROOT / "app/src/main/js-src/data-transfer.js").read_text(encoding="utf-8")
+        self.assertIn("JSON.stringify(allTasks)", transfer)
+        self.assertIn("JSON.stringify(state.boards)", transfer)
+        self.assertIn("files, completedAt: null", self.tasks)
+        self.assertIn("syncNativeReminder(copy)", self.tasks)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -4,6 +4,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Only the newest build on a branch matters during rapid development.
+# Separate groups for push and pull requests avoid cancelling unrelated checks.
+concurrency:
+  group: android-apk-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   statuses: write

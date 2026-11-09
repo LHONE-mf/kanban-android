@@ -652,6 +652,16 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
         })
         panel.addView(row)
+        // Keep the board usable: expand the mini lesson only when requested.
+        row.visibility = View.GONE
+        header.isClickable = true
+        header.isFocusable = true
+        header.contentDescription = "Развернуть тренировку японского"
+        header.setOnClickListener {
+            row.visibility = if (row.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            header.contentDescription = if (row.visibility == View.VISIBLE)
+                "Свернуть тренировку японского" else "Развернуть тренировку японского"
+        }
         // Set field before renderMiniQuestion(), which locates the banner by tag.
         dailyBanner = panel
         renderMiniQuestion()

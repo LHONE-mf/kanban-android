@@ -58,6 +58,19 @@ class ReminderScheduleTest {
         assertEquals(at(2027, 5, 31), may)
     }
 
+    @Test fun monthlyAnchorSurvivesSeveralDeliveryCycles() {
+        val anchor = at(2027, 1, 31)
+        val february = ReminderSchedule.nextTime(anchor, "monthly", at(2027, 1, 31, 10))
+        assertEquals(at(2027, 2, 28), february)
+        // The persisted record must retain anchor, not replace it with February 28.
+        val march = ReminderSchedule.nextTime(anchor, "monthly", february + 1000)
+        assertEquals(at(2027, 3, 31), march)
+        val april = ReminderSchedule.nextTime(anchor, "monthly", march + 1000)
+        assertEquals(at(2027, 4, 30), april)
+        val may = ReminderSchedule.nextTime(anchor, "monthly", april + 1000)
+        assertEquals(at(2027, 5, 31), may)
+    }
+
     @Test fun leapYearMonthlyRecurrence() {
         assertEquals(at(2028, 2, 29), ReminderSchedule.nextTime(
             at(2028, 1, 31), "monthly", at(2028, 2, 1)))

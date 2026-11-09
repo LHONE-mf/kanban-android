@@ -16,9 +16,25 @@ androidWebViewHierarchy: devtools
 - extendedWaitUntil:
     visible: "Редактирование задачи"
     timeout: 30000
-- scrollUntilVisible:
-    element: "kanban-view-test.txt"
-    direction: DOWN
-    timeout: 30000
-- assertVisible: "kanban-view-test.txt"
+# A filename is part of a longer file-row label, and a WebView element may
+# be clipped by the editor even when it is in the accessibility tree. Swipe
+# inside the scrolling body and assert the exact accessible Open control.
+- hideKeyboard
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
+- assertVisible: "Открыть файл kanban-view-test.txt"
 - takeScreenshot: ui-screenshots/kanban-restored-attachment

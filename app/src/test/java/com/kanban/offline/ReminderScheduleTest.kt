@@ -106,4 +106,21 @@ class ReminderScheduleTest {
             ReminderSchedule.nextTime(original, "weekly", berlin(2027, 10, 24, 10)))
     }
 
+    @Test fun monthlyReminderKeepsLocalClockAcrossDst() {
+        val zone = TimeZone.getTimeZone("Europe/Berlin")
+        TimeZone.setDefault(zone)
+        fun berlin(year: Int, month: Int, day: Int, hour: Int): Long =
+            Calendar.getInstance(zone).apply {
+                clear()
+                set(year, month - 1, day, hour, 0)
+            }.timeInMillis
+        val anchor = berlin(2027, 1, 31, 9)
+        assertEquals(berlin(2027, 2, 28, 9),
+            ReminderSchedule.nextTime(anchor, "monthly", berlin(2027, 2, 1, 9)))
+        assertEquals(berlin(2027, 3, 31, 9),
+            ReminderSchedule.nextTime(anchor, "monthly", berlin(2027, 2, 28, 10)))
+        assertEquals(berlin(2027, 4, 30, 9),
+            ReminderSchedule.nextTime(anchor, "monthly", berlin(2027, 3, 31, 10)))
+    }
+
 }

@@ -18,6 +18,7 @@ android {
         applicationId = "com.kanban.offline"
         minSdk = 29
         targetSdk = 35
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // A higher code is required for Android to accept an in-place update.
         versionCode = System.getenv("KANBAN_VERSION_CODE")?.toIntOrNull() ?: 1
         versionName = "0.2.0"
@@ -67,4 +68,6 @@ dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.activity:activity-ktx:1.9.3")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

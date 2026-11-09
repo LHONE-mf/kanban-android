@@ -121,3 +121,33 @@ body.japanese-learning .card { border-radius: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .task-card { transition: none; }
 }
+
+/* Android task editor: keep actions visible while fields scroll above the keyboard. */
+#taskModal .modal-content {
+  min-height: 0;
+}
+#taskModal .modal-body {
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+#taskModal .modal-footer {
+  position: relative;
+  z-index: 1;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+@media (max-width: 600px) {
+  #taskModal {
+    padding: 8px;
+    align-items: center;
+  }
+  #taskModal .modal-content {
+    max-height: calc(100dvh - 16px);
+  }
+  #taskModal .modal-header {
+    padding-block: 12px;
+  }
+  #taskModal .modal-footer {
+    padding-top: 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+}

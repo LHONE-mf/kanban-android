@@ -103,6 +103,16 @@ adb logcat -d -s KanbanAttachmentOpen:I '*:S' > ui-screenshots/attachment-open-i
 grep -Fq 'ACTION_VIEW chooser dispatched' ui-screenshots/attachment-open-intent-log.txt
 echo 'Native ACTION_VIEW intent dispatched successfully.' >> "$GITHUB_STEP_SUMMARY"
 
+# ACTION_VIEW can leave the system resolver or an external viewer in front.
+# Maestro stopApp only stops our package; it cannot dismiss another app.
+# Return to the home screen, then explicitly foreground Kanban before the
+# next Save As flow. This preserves all IndexedDB data on the CI emulator.
+stage="return from external attachment viewer to Kanban"
+adb shell input keyevent KEYCODE_HOME
+adb shell am start -W -n com.kanban.offline/.MainActivity > ui-screenshots/attachment-return-to-kanban.txt
+adb shell dumpsys activity activities > ui-screenshots/attachment-return-activity.txt
+grep -q 'com.kanban.offline' ui-screenshots/attachment-return-activity.txt
+
 # Now export a backup containing a real imported attachment, not just empty
 # media. All destructive reset steps below apply ONLY to the CI emulator.
 stage="export backup with attachment payload"

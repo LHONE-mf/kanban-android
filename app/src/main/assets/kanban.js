@@ -1050,8 +1050,23 @@ function mmSavePosition(key, x, cy) {
 function mmLayout() {
   const ROW = 50, XG = 70, nodes = {}, edges = [];
   const collapsed = getCollapsedKeys();
-  const wOf = d => d === 0 ? 200 : d === 1 ? 220 : 250;
-  const xOf = d => { let x = 0; for (let i = 0; i < d; i++) x += wOf(i) + XG; return x; };
+  // Size each node to its complete label, including room for attachment badges.
+  // Reserve the widest node at each depth so adjacent levels never overlap.
+  const measure = document.createElement('canvas').getContext('2d');
+  const widths = {};
+  const labelOf = (key, item, depth) => depth === 0 ? state.boardName
+    : key.startsWith('col:') ? `${item.title} · ${kids('', item.id).length}` : item.title;
+  const measureWidth = (key, item, depth) => {
+    const files = key.startsWith('task:') ? (item.files?.length || 0) : 0;
+    measure.font = `${depth < 2 ? '600 ' : ''}13px sans-serif`;
+    return Math.max(120, Math.ceil(measure.measureText(labelOf(key, item, depth)).width) + 24 + (files ? 54 : 0));
+  };
+  const collectWidths = (key, depth, item) => {
+    widths[depth] = Math.max(widths[depth] || 0, measureWidth(key, item, depth));
+    if (!collapsed.has(key)) mmKids(key).forEach(([childKey, child]) => collectWidths(childKey, depth + 1, child));
+  };
+  collectWidths('root', 0, null);
+  const xOf = d => { let x = 0; for (let i = 0; i < d; i++) x += widths[i] + XG; return x; };
   let row = 0;
   const place = (key, d, item, color) => {
     const c = key.startsWith('col:') ? item.color : color;
@@ -1063,7 +1078,7 @@ function mmLayout() {
       const ys = ch.map(([k, it]) => { const y = place(k, d + 1, it, c); edges.push([key, k]); return y; });
       cy = (ys[0] + ys[ys.length - 1]) / 2;
     }
-    nodes[key] = { key, d, item, x: xOf(d), w: wOf(d), cy, color: c,
+    nodes[key] = { key, d, item, x: xOf(d), w: measureWidth(key, item, d), cy, color: c,
       hasKids: allKids.length > 0, isCollapsed: collapsed.has(key) };
     return cy;
   };
@@ -1109,7 +1124,7 @@ function renderMindmap() {
     const toggle = n.hasKids
       ? `<g class="mm-toggle" data-toggle="${escapeHtml(n.key)}"><circle cx="${n.x + n.w + 12}" cy="${n.cy}" r="10" fill="var(--surface)" stroke="var(--border-strong)" stroke-width="1.5"/><text x="${n.x + n.w + 12}" y="${n.cy}" text-anchor="middle" dominant-baseline="central" font-size="12" fill="var(--text-muted)" font-weight="600">${n.isCollapsed ? '+' : '−'}</text></g>`
       : '';
-    h += `<g class="mm-node ${cls}${mm.sel === n.key ? ' sel' : ''}${nf ? ' has-files' : ''}" data-key="${escapeHtml(n.key)}" style="--status-color:${escapeHtml(n.color || 'var(--text)')}"><rect x="${n.x}" y="${n.cy - NH / 2}" width="${n.w}" height="${NH}" rx="8"/><text x="${n.x + 12}" y="${n.cy}" dominant-baseline="middle">${escapeHtml(truncate(label, nf ? 22 : 28))}</text>${nf ? `<g class="mm-badge" data-files="${escapeHtml(t.id)}"><rect x="${n.x + n.w - 48}" y="${n.cy - 11}" width="42" height="22" rx="11"/><text x="${n.x + n.w - 27}" y="${n.cy}" text-anchor="middle" dominant-baseline="middle">📎${nf}</text></g>` : ''}${toggle}</g>`;
+    h += `<g class="mm-node ${cls}${mm.sel === n.key ? ' sel' : ''}${nf ? ' has-files' : ''}" data-key="${escapeHtml(n.key)}" style="--status-color:${escapeHtml(n.color || 'var(--text)')}"><rect x="${n.x}" y="${n.cy - NH / 2}" width="${n.w}" height="${NH}" rx="8"/><text x="${n.x + 12}" y="${n.cy}" dominant-baseline="middle">${escapeHtml(label)}</text>${nf ? `<g class="mm-badge" data-files="${escapeHtml(t.id)}"><rect x="${n.x + n.w - 48}" y="${n.cy - 11}" width="42" height="22" rx="11"/><text x="${n.x + n.w - 27}" y="${n.cy}" text-anchor="middle" dominant-baseline="middle">📎${nf}</text></g>` : ''}${toggle}</g>`;
   });
   svg.innerHTML = `<g id="mmVp">${h}</g>`;
   if (mm.fitBoard !== state.activeBoardId) { mmFit(); if (svg.getBoundingClientRect().width) mm.fitBoard = state.activeBoardId; }

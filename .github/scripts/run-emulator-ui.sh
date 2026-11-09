@@ -31,6 +31,17 @@ run_maestro() {
   if "$HOME/.maestro/bin/maestro" test "$flow" --debug-output "$debug"; then
     return 0
   fi
+  # Maestro 2.x occasionally loses its driver transport before the first
+  # command (DeviceServerDiedException during deviceInfo). At that point no
+  # app interactions have occurred, so restarting this flow once is safe.
+  # Never retry real UI assertion failures or a crash mid-flow.
+  if grep -R -Fq --include='maestro.log' "Device server died during 'deviceInfo'" "$debug" 2>/dev/null; then
+    echo "::warning::Maestro driver died during startup of $flow; retrying once"
+    adb wait-for-device
+    sleep 2
+    "$HOME/.maestro/bin/maestro" test "$flow" --debug-output "${debug}-driver-retry"
+    return $?
+  fi
   local dump_path="$debug/quickstep-anr.xml"
   mkdir -p "$debug"
   adb shell uiautomator dump /sdcard/ci-quickstep-anr.xml >/dev/null 2>&1 || return 1

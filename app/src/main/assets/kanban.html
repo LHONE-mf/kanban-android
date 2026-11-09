@@ -160,12 +160,12 @@
       <input type="hidden" id="taskId"><input type="hidden" id="taskColumnId">
       <div class="field">
         <label class="label" for="taskTitle">Название *</label>
-        <input type="text" id="taskTitle" maxlength="200" placeholder="Что нужно сделать?">
+        <input type="text" id="taskTitle" maxlength="200" required autocomplete="off" enterkeyhint="next" aria-describedby="taskTitleError" placeholder="Что нужно сделать?">
         <div class="field-error" id="taskTitleError" hidden>Введите название</div>
       </div>
       <div class="field">
         <label class="label" for="taskDesc">Описание</label>
-        <textarea id="taskDesc" maxlength="5000" placeholder="Детали, ссылки, заметки"></textarea>
+        <textarea id="taskDesc" maxlength="5000" rows="4" placeholder="Детали, ссылки, заметки"></textarea>
       </div>
       <div class="field">
         <label class="label" for="taskParent">Родитель (колонка или узел)</label>
@@ -179,12 +179,12 @@
       <div class="field-row">
         <div class="field">
           <label class="label" for="taskDeadline">Срок</label>
-          <input type="date" id="taskDeadline">
+          <input type="date" id="taskDeadline" aria-describedby="taskDeadlineError">
           <div class="field-error" id="taskDeadlineError" hidden>Некорректная дата</div>
         </div>
         <div class="field">
           <label class="label">Приоритет</label>
-          <div class="chips" id="priorityChips" role="group">
+          <div class="chips" id="priorityChips" role="group" aria-label="Приоритет задачи">
             <button type="button" class="chip" data-priority="none">Без</button>
             <button type="button" class="chip" data-priority="low">Низкий</button>
             <button type="button" class="chip" data-priority="medium">Средний</button>

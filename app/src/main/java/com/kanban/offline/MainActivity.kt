@@ -1,6 +1,7 @@
 package com.kanban.offline
 
 import android.Manifest
+import android.os.Build
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -218,6 +219,25 @@ class MainActivity : ComponentActivity() {
                 val raw = message.data ?: return@addWebMessageListener
                 if (raw.length <= 48_000) {
                     runOnUiThread { backupSaver.handle(raw) }
+                }
+            }
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanReminders", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length <= 1024) runOnUiThread {
+                    try {
+                        KanbanReminders.update(this, raw)
+                        if (Build.VERSION.SDK_INT >= 33 &&
+                            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+                            org.json.JSONObject(raw).optLong("at") > System.currentTimeMillis()) {
+                            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 9101)
+                        }
+                    } catch (_: Exception) { }
                 }
             }
         }

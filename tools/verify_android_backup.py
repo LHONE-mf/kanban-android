@@ -72,7 +72,7 @@ def verify(path: Path, expected_titles: list[str], expected_media: list[str] | N
         media_id = expected_media[0]
         encoded = media[media_id]["data"].split(",", 1)[1]
         actual = base64.b64decode(encoded, validate=True)
-        expected = expected_media_text.encode("utf-8")
+        expected = expected_media_text.replace(chr(92) + "n", chr(10)).encode("utf-8")
         if actual != expected:
             raise AssertionError(
                 f"Attachment bytes changed during SAF export: "

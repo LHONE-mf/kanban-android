@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 
-def verify(path: Path, expected_titles: list[str], expected_media: list[str] | None = None, expected_media_text: str | None = None) -> None:
+def verify(path: Path, expected_titles: list[str], expected_media: list[str] | None = None, expected_media_text: str | None = None, expected_media_hex: str | None = None) -> None:
     with path.open("r", encoding="utf-8") as source:
         backup = json.load(source)
 
@@ -66,13 +66,17 @@ def verify(path: Path, expected_titles: list[str], expected_media: list[str] | N
         if not base64.b64decode(data, validate=True):
             raise AssertionError(f"Exported attachment {media_id} is empty")
 
-    if expected_media_text is not None:
+    if expected_media_text is not None and expected_media_hex is not None:
+        raise AssertionError("Choose either text or hexadecimal attachment verification")
+
+    if expected_media_text is not None or expected_media_hex is not None:
         if len(expected_media or []) != 1:
             raise AssertionError("Exact media-text check requires one expected media ID")
         media_id = expected_media[0]
         encoded = media[media_id]["data"].split(",", 1)[1]
         actual = base64.b64decode(encoded, validate=True)
-        expected = expected_media_text.replace(chr(92) + "n", chr(10)).encode("utf-8")
+        expected = (expected_media_text.replace(chr(92) + "n", chr(10)).encode("utf-8")
+                    if expected_media_text is not None else bytes.fromhex(expected_media_hex))
         if actual != expected:
             raise AssertionError(
                 f"Attachment bytes changed during SAF export: "
@@ -95,8 +99,10 @@ def main() -> None:
         "--expect-media-text",
         help="Exact UTF-8 attachment content expected after SAF export",
     )
+    parser.add_argument("--expect-media-hex", help="Exact binary attachment bytes in hexadecimal")
     args = parser.parse_args()
-    verify(args.backup, args.expected_titles, args.expected_media, args.expect_media_text)
+    verify(args.backup, args.expected_titles, args.expected_media,
+           args.expect_media_text, args.expect_media_hex)
 
 
 if __name__ == "__main__":

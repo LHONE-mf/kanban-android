@@ -2,10 +2,21 @@ package com.kanban.offline
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
 import java.util.Calendar
 import java.util.TimeZone
 
 class ReminderScheduleTest {
+    private lateinit var previousZone: TimeZone
+
+    @Before fun useUtc() {
+        previousZone = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    }
+
+    @After fun restoreZone() { TimeZone.setDefault(previousZone) }
+
     private fun at(year: Int, month: Int, day: Int, hour: Int = 9): Long =
         Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
             clear()

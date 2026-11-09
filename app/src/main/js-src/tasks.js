@@ -1,10 +1,11 @@
 // Native notifications are optional; the browser version remains fully functional.
 function syncNativeReminder(task) {
   if (!window.KanbanReminders || !task?.id) return;
-  const at = task.reminder ? new Date(task.reminder).getTime() : 0;
+  const at = task.reminder && !task.completedAt ? new Date(task.reminder).getTime() : 0;
   try {
     window.KanbanReminders.postMessage(JSON.stringify({
-      id: task.id, title: task.title, at: Number.isFinite(at) ? at : 0
+      id: task.id, title: task.title, at: Number.isFinite(at) ? at : 0,
+      repeat: task.reminderRepeat || 'none'
     }));
   } catch (_) {}
 }
@@ -48,7 +49,7 @@ async function deleteTask(taskId) {
 function captureModalSnapshot() {
   return JSON.stringify({
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
-    deadline: $('#taskDeadline').value, reminder: $('#taskReminder').value, priority: editingPriority, checklist: tempChecklist,
+    deadline: $('#taskDeadline').value, reminder: $('#taskReminder').value, reminderRepeat: $('#taskReminderRepeat').value, priority: editingPriority, checklist: tempChecklist,
     parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
   });
 }
@@ -68,7 +69,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
 
-  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; tagsEl.value = '';
+  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; $('#taskReminderRepeat').value = 'none'; tagsEl.value = '';
   fileInput.value = '';
   $('#taskTitleError').hidden = true; $('#taskDeadlineError').hidden = true; $('#taskReminderError').hidden = true;
   setPriorityChips('none'); renderChecklistUI();
@@ -78,7 +79,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     if (!task) return;
     $('#taskModalTitle').textContent = 'Редактирование задачи';
     titleEl.value = task.title; descEl.value = task.desc || '';
-    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; tagsEl.value = task.tags.join(', ');
+    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; $('#taskReminderRepeat').value = task.reminderRepeat || 'none'; tagsEl.value = task.tags.join(', ');
     colIdEl.value = task.columnId; setPriorityChips(task.priority);
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
@@ -380,6 +381,7 @@ async function _saveTask() {
   const reminderAt = reminder ? new Date(reminder).getTime() : 0;
   $('#taskReminderError').hidden = !reminder || (Number.isFinite(reminderAt) && reminderAt > Date.now());
   if (!$('#taskReminderError').hidden) return;
+  const reminderRepeat = $('#taskReminderRepeat').value;
 
   const pv = $('#taskParent').value, parentId = pv.startsWith('task:') ? pv.slice(5) : '';
   const par = parentId ? state.tasks.find(t => t.id === parentId) : null;
@@ -399,7 +401,7 @@ async function _saveTask() {
     id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : state.activeBoardId,
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
-    priority: editingPriority, deadline, reminder, files,
+    priority: editingPriority, deadline, reminder, reminderRepeat, files,
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),

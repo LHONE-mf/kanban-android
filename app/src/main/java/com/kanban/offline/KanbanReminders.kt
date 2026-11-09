@@ -14,6 +14,32 @@ import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.util.Calendar
 
+/** Pure recurrence calculation; calendar arithmetic respects local daylight-saving changes. */
+internal object ReminderSchedule {
+    fun nextTime(at: Long, repeat: String, now: Long): Long {
+        if (repeat == "none" || repeat !in setOf("daily", "weekly", "monthly")) return at
+        val date = Calendar.getInstance().apply { timeInMillis = at }
+        val originalDay = date.get(Calendar.DAY_OF_MONTH)
+        if (repeat == "monthly") {
+            // Jump directly from the original anchor, avoiding drift from short months.
+            val anchor = Calendar.getInstance().apply { timeInMillis = at }
+            var months = 0
+            while (date.timeInMillis <= now) {
+                months++
+                date.timeInMillis = anchor.timeInMillis
+                date.set(Calendar.DAY_OF_MONTH, 1)
+                date.add(Calendar.MONTH, months)
+                date.set(Calendar.DAY_OF_MONTH, minOf(originalDay, date.getActualMaximum(Calendar.DAY_OF_MONTH)))
+            }
+        } else {
+            while (date.timeInMillis <= now) {
+                date.add(if (repeat == "daily") Calendar.DAY_OF_MONTH else Calendar.WEEK_OF_YEAR, 1)
+            }
+        }
+        return date.timeInMillis
+    }
+}
+
 /** Local, offline task reminders. No server or background WebView required. */
 object KanbanReminders {
     private const val PREFS = "kanban_native_reminders"
@@ -27,25 +53,6 @@ object KanbanReminders {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-    private fun nextTime(at: Long, repeat: String, now: Long): Long {
-        if (repeat == "none") return at
-        if (repeat !in setOf("daily", "weekly", "monthly")) return at
-        val original = Calendar.getInstance().apply { timeInMillis = at }
-        val day = original.get(Calendar.DAY_OF_MONTH)
-        val date = Calendar.getInstance().apply { timeInMillis = at }
-        while (date.timeInMillis <= now) {
-            when (repeat) {
-                "daily" -> date.add(Calendar.DAY_OF_MONTH, 1)
-                "weekly" -> date.add(Calendar.WEEK_OF_YEAR, 1)
-                "monthly" -> {
-                    date.set(Calendar.DAY_OF_MONTH, 1)
-                    date.add(Calendar.MONTH, 1)
-                    date.set(Calendar.DAY_OF_MONTH, minOf(day, date.getActualMaximum(Calendar.DAY_OF_MONTH)))
-                }
-            }
-        }
-        return date.timeInMillis
-    }
 
     fun update(context: Context, raw: String) {
         val json = JSONObject(raw)
@@ -57,7 +64,7 @@ object KanbanReminders {
         val repeat = json.optString("repeat", "none").takeIf {
             it in setOf("none", "daily", "weekly", "monthly")
         } ?: "none"
-        val at = nextTime(json.optLong("at"), repeat, System.currentTimeMillis())
+        val at = ReminderSchedule.nextTime(json.optLong("at"), repeat, System.currentTimeMillis())
         if (at <= System.currentTimeMillis() || at > System.currentTimeMillis() + 366L * 24 * 3600_000) {
             prefs.edit().remove(id).apply()
             return
@@ -83,7 +90,7 @@ object KanbanReminders {
         if (json.optLong("at") > System.currentTimeMillis() + 60_000) return
         prefs.edit().remove(id).apply()
         if (json.optString("repeat", "none") != "none") {
-            val next = nextTime(json.optLong("at"), json.optString("repeat"), System.currentTimeMillis())
+            val next = ReminderSchedule.nextTime(json.optLong("at"), json.optString("repeat"), System.currentTimeMillis())
             if (next > System.currentTimeMillis()) update(context, json.put("at", next).toString())
         }
         if (Build.VERSION.SDK_INT >= 33 &&

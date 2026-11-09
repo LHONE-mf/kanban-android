@@ -6,6 +6,7 @@ androidWebViewHierarchy: devtools
 - stopApp
 - launchApp:
     clearState: false
+- tapOn: "⋮"
 - extendedWaitUntil:
     visible:
       id: "exportBtn"
@@ -28,6 +29,7 @@ androidWebViewHierarchy: devtools
 - tapOn: "(?i)^save$"
 # The toast is intentionally transient; verifying its visibility is unreliable
 # in Maestro's WebView hierarchy. The shell runner validates the actual file.
+- tapOn: "⋮"
 - extendedWaitUntil:
     visible:
       id: "exportBtn"

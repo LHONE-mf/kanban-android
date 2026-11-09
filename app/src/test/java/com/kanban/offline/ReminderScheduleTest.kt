@@ -80,4 +80,30 @@ class ReminderScheduleTest {
         val due = at(2026, 11, 9)
         assertEquals(due, ReminderSchedule.nextTime(due, "invalid", due + 1000))
     }
+    @Test fun dailyReminderKeepsLocalClockAcrossSpringDst() {
+        val zone = TimeZone.getTimeZone("Europe/Berlin")
+        TimeZone.setDefault(zone)
+        fun berlin(year: Int, month: Int, day: Int, hour: Int): Long =
+            Calendar.getInstance(zone).apply {
+                clear()
+                set(year, month - 1, day, hour, 0)
+            }.timeInMillis
+        val original = berlin(2027, 3, 27, 9)
+        assertEquals(berlin(2027, 3, 28, 9),
+            ReminderSchedule.nextTime(original, "daily", berlin(2027, 3, 27, 10)))
+    }
+
+    @Test fun weeklyReminderKeepsLocalClockAcrossAutumnDst() {
+        val zone = TimeZone.getTimeZone("Europe/Berlin")
+        TimeZone.setDefault(zone)
+        fun berlin(year: Int, month: Int, day: Int, hour: Int): Long =
+            Calendar.getInstance(zone).apply {
+                clear()
+                set(year, month - 1, day, hour, 0)
+            }.timeInMillis
+        val original = berlin(2027, 10, 24, 9)
+        assertEquals(berlin(2027, 10, 31, 9),
+            ReminderSchedule.nextTime(original, "weekly", berlin(2027, 10, 24, 10)))
+    }
+
 }

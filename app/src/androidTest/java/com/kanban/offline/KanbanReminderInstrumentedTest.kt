@@ -49,6 +49,7 @@ class KanbanReminderInstrumentedTest {
         val record = JSONObject(requireNotNull(prefs.getString(id, null)))
         assertEquals("daily", record.getString("repeat"))
         assertEquals(at, record.getLong("at"))
+        assertEquals(at, record.getLong("anchorAt"))
     }
 
     @Test fun firingOneTimeReminderShowsNativeNotification() {
@@ -71,6 +72,7 @@ class KanbanReminderInstrumentedTest {
         val record = JSONObject(requireNotNull(prefs.getString(id, null)))
         assertEquals("daily", record.getString("repeat"))
         assertTrue(record.getLong("at") > System.currentTimeMillis())
+        assertTrue("Original repeat anchor must survive firing", record.getLong("anchorAt") < record.getLong("at"))
         assertTrue(context.getSystemService(NotificationManager::class.java)
             .activeNotifications.any { it.id == id.hashCode() })
     }

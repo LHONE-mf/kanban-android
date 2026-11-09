@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 
-def verify(path: Path, expected_titles: list[str], expected_media: list[str] | None = None) -> None:
+def verify(path: Path, expected_titles: list[str], expected_media: list[str] | None = None, expected_media_text: str | None = None) -> None:
     with path.open("r", encoding="utf-8") as source:
         backup = json.load(source)
 
@@ -66,6 +66,19 @@ def verify(path: Path, expected_titles: list[str], expected_media: list[str] | N
         if not base64.b64decode(data, validate=True):
             raise AssertionError(f"Exported attachment {media_id} is empty")
 
+    if expected_media_text is not None:
+        if len(expected_media or []) != 1:
+            raise AssertionError("Exact media-text check requires one expected media ID")
+        media_id = expected_media[0]
+        encoded = media[media_id]["data"].split(",", 1)[1]
+        actual = base64.b64decode(encoded, validate=True)
+        expected = expected_media_text.encode("utf-8")
+        if actual != expected:
+            raise AssertionError(
+                f"Attachment bytes changed during SAF export: "
+                f"expected {len(expected)} bytes, got {len(actual)}"
+            )
+
     print(
         f"Verified SAF backup JSON: {len(boards)} boards, "
         f"{len(tasks)} tasks, {len(media)} media entries; "
@@ -78,8 +91,12 @@ def main() -> None:
     parser.add_argument("backup", type=Path, help="JSON file pulled from the Android document provider")
     parser.add_argument("--expect-title", action="append", default=[], dest="expected_titles")
     parser.add_argument("--expect-media", action="append", default=[], dest="expected_media")
+    parser.add_argument(
+        "--expect-media-text",
+        help="Exact UTF-8 attachment content expected after SAF export",
+    )
     args = parser.parse_args()
-    verify(args.backup, args.expected_titles, args.expected_media)
+    verify(args.backup, args.expected_titles, args.expected_media, args.expect_media_text)
 
 
 if __name__ == "__main__":

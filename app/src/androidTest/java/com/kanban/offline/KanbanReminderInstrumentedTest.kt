@@ -39,7 +39,7 @@ class KanbanReminderInstrumentedTest {
         val record = JSONObject(requireNotNull(prefs.getString(id, null)))
         assertEquals("weekly", record.getString("repeat"))
         assertEquals(at, record.getLong("at"))
-        KanbanReminders.update(context, JSONObject().put("id", id).put("at", 0).toString())
+        KanbanReminders.update(context, JSONObject().put("id", id).put("at", 0).put("repeat", "weekly").toString())
         assertNull(prefs.getString(id, null))
     }
 

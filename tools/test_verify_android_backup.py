@@ -69,6 +69,16 @@ class IntegrityTests(unittest.TestCase):
             verify(path, ["Task"], ["binary"], expected_media_hex=payload.hex())
             with self.assertRaisesRegex(AssertionError, "Attachment bytes changed"):
                 verify(path, ["Task"], ["binary"], expected_media_hex="00ff800a0d002b")
+            # The binary check must reject a conflicting text expectation.
+            with self.assertRaisesRegex(AssertionError, "Choose either text or hexadecimal"):
+                verify(path, ["Task"], ["binary"],
+                       expected_media_text="text", expected_media_hex=payload.hex())
+
+            # A second attachment ID makes a single-payload assertion ambiguous.
+            with self.assertRaisesRegex(AssertionError, "requires one expected media ID"):
+                verify(path, ["Task"], ["binary", "other"],
+                       expected_media_hex=payload.hex())
+
 
 
 if __name__ == "__main__":

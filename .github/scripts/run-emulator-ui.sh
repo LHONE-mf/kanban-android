@@ -112,8 +112,21 @@ stage="open stored attachment in native Android viewer"
 adb logcat -c
 run_maestro .maestro/android-attachment-open.yaml ui-screenshots/android-attachment-open-debug
 stage="verify native ACTION_VIEW intent was dispatched"
-adb logcat -d -s KanbanAttachmentOpen:I '*:S' > ui-screenshots/attachment-open-intent-log.txt
-grep -Fq 'ACTION_VIEW chooser dispatched' ui-screenshots/attachment-open-intent-log.txt
+# The native intent can arrive just after Maestro reports its tap as done.
+# Give Android a short bounded window to emit the expected log entry.
+intent_seen=false
+for attempt in 1 2 3 4 5; do
+  adb logcat -d -s KanbanAttachmentOpen:I '*:S' > ui-screenshots/attachment-open-intent-log.txt
+  if grep -Fq 'ACTION_VIEW chooser dispatched' ui-screenshots/attachment-open-intent-log.txt; then
+    intent_seen=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$intent_seen" != true ]]; then
+  echo "::error::No native ACTION_VIEW dispatch found after five checks"
+  exit 1
+fi
 echo 'Native ACTION_VIEW intent dispatched successfully.' >> "$GITHUB_STEP_SUMMARY"
 
 # ACTION_VIEW can leave the system resolver or an external viewer in front.

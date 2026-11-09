@@ -52,6 +52,8 @@ jobs:
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
         run: gradle :app:compileDebugKotlin --no-daemon
+      - name: Run executable reminder recurrence unit tests
+        run: gradle :app:testDebugUnitTest --no-daemon
       - name: Build development APK
         env:
           KANBAN_VERSION_CODE: ${{ github.run_number }}

@@ -108,10 +108,15 @@ echo 'Native ACTION_VIEW intent dispatched successfully.' >> "$GITHUB_STEP_SUMMA
 # Return to the home screen, then explicitly foreground Kanban before the
 # next Save As flow. This preserves all IndexedDB data on the CI emulator.
 stage="return from external attachment viewer to Kanban"
+# The API 35 emulator resolves text/plain to com.android.htmlviewer, which
+# can remain above our activity even after a HOME + am start cycle. Only in
+# this disposable CI emulator, close that external viewer after verifying
+# ACTION_VIEW was dispatched. Never clear Kanban data or uninstall the APK.
+adb shell am force-stop com.android.htmlviewer
 adb shell input keyevent KEYCODE_HOME
 adb shell am start -W -n com.kanban.offline/.MainActivity > ui-screenshots/attachment-return-to-kanban.txt
 adb shell dumpsys activity activities > ui-screenshots/attachment-return-activity.txt
-grep -q 'com.kanban.offline' ui-screenshots/attachment-return-activity.txt
+grep -q 'topResumedActivity=.*com.kanban.offline/.MainActivity' ui-screenshots/attachment-return-activity.txt
 
 # Now export a backup containing a real imported attachment, not just empty
 # media. All destructive reset steps below apply ONLY to the CI emulator.

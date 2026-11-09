@@ -69,13 +69,16 @@ object KanbanReminders {
             prefs.edit().remove(id).apply()
             return
         }
-        // Persist the original calendar anchor so Jan 31 -> Feb 28 -> Mar 31.\n        val anchorAt = json.optLong("anchorAt").takeIf { it > 0L } ?: json.optLong("at")\n        val at = ReminderSchedule.nextTime(anchorAt, repeat, System.currentTimeMillis())
+        // Persist the original calendar anchor so Jan 31 -> Feb 28 -> Mar 31.
+        val anchorAt = json.optLong("anchorAt").takeIf { it > 0L } ?: json.optLong("at")
+        val at = ReminderSchedule.nextTime(anchorAt, repeat, System.currentTimeMillis())
         if (at <= System.currentTimeMillis() || at > System.currentTimeMillis() + 366L * 24 * 3600_000) {
             prefs.edit().remove(id).apply()
             return
         }
         val title = json.optString("title").take(200).ifBlank { "Задача" }
-        val record = JSONObject().put("id", id).put("title", title).put("at", at)\n            .put("anchorAt", anchorAt).put("repeat", repeat)
+        val record = JSONObject().put("id", id).put("title", title).put("at", at)
+            .put("anchorAt", anchorAt).put("repeat", repeat)
         prefs.edit().putString(id, record.toString()).apply()
         // setAndAllowWhileIdle is intentionally inexact; no special exact-alarm permission.
         alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent(context, id))
@@ -95,7 +98,8 @@ object KanbanReminders {
         if (json.optLong("at") > System.currentTimeMillis() + 60_000) return
         prefs.edit().remove(id).apply()
         if (json.optString("repeat", "none") != "none") {
-            val anchorAt = json.optLong("anchorAt").takeIf { it > 0L } ?: json.optLong("at")\n            val next = ReminderSchedule.nextTime(anchorAt, json.optString("repeat"), System.currentTimeMillis())
+            val anchorAt = json.optLong("anchorAt").takeIf { it > 0L } ?: json.optLong("at")
+            val next = ReminderSchedule.nextTime(anchorAt, json.optString("repeat"), System.currentTimeMillis())
             if (next > System.currentTimeMillis()) update(context, json.put("at", next).toString())
         }
         if (Build.VERSION.SDK_INT >= 33 &&

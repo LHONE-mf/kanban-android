@@ -6,6 +6,7 @@ androidWebViewHierarchy: devtools
 - stopApp
 - launchApp:
     clearState: false
+- tapOn: "⋮"
 - extendedWaitUntil:
     visible:
       id: "exportBtn"
@@ -19,8 +20,11 @@ androidWebViewHierarchy: devtools
 - extendedWaitUntil:
     visible: "Сохранение бэкапа отменено"
     timeout: 30000
-- assertVisible:
-    id: "exportBtn"
+- tapOn: "⋮"
+- extendedWaitUntil:
+    visible:
+      id: "exportBtn"
+    timeout: 30000
 - tapOn:
     id: "exportBtn"
 - extendedWaitUntil:

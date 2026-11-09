@@ -39,11 +39,26 @@ androidWebViewHierarchy: devtools
     visible: "Редактирование задачи"
     timeout: 30000
 - hideKeyboard
-- scrollUntilVisible:
-    element:
-      id: "Открыть файл kanban-view-test.txt"
-    direction: DOWN
-    timeout: 30000
+# Maestro's WebView hierarchy reports clipped elements as visible. Its
+# scrollUntilVisible can therefore return without scrolling the inner modal,
+# then tap below the viewport (on the Android Home navigation area).
+# Swipe within the modal's scrollable content, never its sticky footer.
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 28%"
+    duration: 470
 - assertVisible:
     id: "Открыть файл kanban-view-test.txt"
 - takeScreenshot: ui-screenshots/android-attachment-before-open

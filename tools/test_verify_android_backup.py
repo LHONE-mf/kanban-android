@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Regression tests for SAF attachment byte verification."""
 import base64
+import binascii
 import json
 import tempfile
 import unittest
@@ -30,6 +31,24 @@ class IntegrityTests(unittest.TestCase):
             write(TEXT.replace("あ", "?").encode("utf-8"))
             with self.assertRaisesRegex(AssertionError, "Attachment bytes changed"):
                 verify(path, ["Task"], ["m"], TEXT.replace("\n", "\\n"))
+            # A syntactically valid JSON export must still reject corrupted media.
+            data["media"]["m"]["data"] = "data:text/plain;base64,%%%invalid"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaises((ValueError, binascii.Error)):
+                verify(path, ["Task"], ["m"])
+
+            # A payload without a task referencing it is not a restorable attachment.
+            write(TEXT.encode("utf-8"))
+            data["tasks"][0]["files"] = []
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "has no owning task"):
+                verify(path, ["Task"], ["m"])
+
+            # Missing media must be detected rather than silently ignored.
+            data["media"].clear()
+            path.write_text(json.dumps(data), encoding="utf-8")
+            with self.assertRaisesRegex(AssertionError, "Expected attachment missing"):
+                verify(path, ["Task"], ["m"])
 
 if __name__ == "__main__":
     unittest.main()

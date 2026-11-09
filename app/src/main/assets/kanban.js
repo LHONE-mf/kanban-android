@@ -986,6 +986,7 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
   const stateIdx = state.tasks.findIndex(t => t.id === taskId);
   if (stateIdx !== -1) state.tasks[stateIdx] = candidate;
+  syncNativeReminder(candidate);
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
@@ -1000,6 +1001,7 @@ async function markTaskDone(taskId) {
   try { await dbPutTask(candidate); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
   state.tasks[idx] = candidate;
+  syncNativeReminder(candidate);
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
@@ -1230,7 +1232,7 @@ async function mmMove(id, tk) {
       }
     });
     if (!changed.length) return renderMindmap();
-    const put = list => list.forEach(m => { const i = state.tasks.findIndex(x => x.id === m.id); if (i > -1) state.tasks[i] = m; });
+    const put = list => list.forEach(m => { const i = state.tasks.findIndex(x => x.id === m.id); if (i > -1) state.tasks[i] = m; syncNativeReminder(m); });
     try { await dbPutTasks(changed); }
     catch (e) { showToast('Не удалось переместить: ' + e.message); return renderMindmap(); }
     put(changed);
@@ -1998,6 +2000,7 @@ async function duplicateTask(taskId) {
   try { await dbPutTask(copy); }
   catch (e) { showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
+  syncNativeReminder(copy);
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
   showToast('Задача продублирована');
 }

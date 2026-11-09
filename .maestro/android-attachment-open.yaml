@@ -59,11 +59,11 @@ androidWebViewHierarchy: devtools
     start: "50%, 62%"
     end: "50%, 28%"
     duration: 470
-- assertVisible:
-    id: "Открыть файл kanban-view-test.txt"
+# aria-label is exposed as accessibility *text* in the WebView hierarchy,
+# not as Android resource-id. Target the exact name to avoid other buttons.
+- assertVisible: "Открыть файл kanban-view-test.txt"
 - takeScreenshot: ui-screenshots/android-attachment-before-open
-- tapOn:
-    id: "Открыть файл kanban-view-test.txt"
+- tapOn: "Открыть файл kanban-view-test.txt"
 # Headless emulator images may have no installed text/plain viewer, and the
 # Android resolver can exit to the launcher without a chooser label.
 # The runner checks native ACTION_VIEW dispatch in Android logcat instead.

@@ -197,6 +197,8 @@
         <label class="label" for="taskReminder">🔔 Напомнить (локальное уведомление)</label>
         <input type="datetime-local" id="taskReminder" aria-label="Дата и время напоминания">
         <div class="field-error" id="taskReminderError" hidden>Выберите время в будущем</div>
+        <label class="label" for="taskReminderRepeat">Повторять</label>
+        <select id="taskReminderRepeat"><option value="none">Не повторять</option><option value="daily">Каждый день</option><option value="weekly">Каждую неделю</option><option value="monthly">Каждый месяц</option></select>
       </div>
       <div class="field">
         <label class="label" for="taskTags">Теги</label>

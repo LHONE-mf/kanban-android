@@ -5,6 +5,8 @@ androidWebViewHierarchy: devtools
 # disposable CI emulator's app data. Restore from the SAF Downloads document.
 - launchApp:
     clearState: false
+# Import is in the compact overflow menu on narrow Android screens.
+- tapOn: "⋮"
 - extendedWaitUntil:
     visible:
       id: "importBtn"

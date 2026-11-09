@@ -1,12 +1,10 @@
 name: Android UI Smoke Tests and Screenshots
 
-# Run manually when investigating layout, themes, or system-bar issues.
-# Emulator boot is significantly slower than normal CI checks.
+# Full Maestro regression is intentionally manual: it boots an emulator,
+# builds two APKs, tests upgrade persistence, SAF backup/restore and attachments.
+# Fast APK/unit tests still run automatically on every push in android.yml.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - ui-testing
 
 permissions:
   contents: read

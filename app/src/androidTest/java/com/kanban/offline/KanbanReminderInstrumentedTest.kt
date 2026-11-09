@@ -39,6 +39,7 @@ class KanbanReminderInstrumentedTest {
         val record = JSONObject(requireNotNull(prefs.getString(id, null)))
         assertEquals("weekly", record.getString("repeat"))
         assertEquals(at, record.getLong("at"))
+        assertEquals("Initial reminder must preserve its recurrence anchor", at, record.getLong("anchorAt"))
         KanbanReminders.update(context, JSONObject().put("id", id).put("at", 0).put("repeat", "weekly").toString())
         assertNull(prefs.getString(id, null))
     }

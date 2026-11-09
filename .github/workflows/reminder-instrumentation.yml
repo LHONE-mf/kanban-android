@@ -1,0 +1,62 @@
+name: Reminder instrumentation
+on:
+  push:
+    branches: [ui-testing]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  reminders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Restore stable development signing key
+        run: |
+          base64 --decode .github/keys/kanban-debug.keystore.b64 > .github/keys/kanban-debug.keystore
+          chmod 600 .github/keys/kanban-debug.keystore
+      - name: Run reminder tests on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          disable-animations: true
+          script: |
+            gradle :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+            adb shell pm grant com.kanban.offline android.permission.POST_NOTIFICATIONS
+            adb shell am instrument -w com.kanban.offline.test/androidx.test.runner.AndroidJUnitRunner | tee reminder-instrumentation.log
+            grep -q '^OK (4 tests)' reminder-instrumentation.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reminder-instrumentation-log
+          path: reminder-instrumentation.log
+          if-no-files-found: ignore
+      - name: Publish instrumentation result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$CURRENT_JOB_STATUS" = "success" ]; then STATE=success; else STATE=failure; fi
+          jq -n --arg state "$STATE" --arg context "android/reminder-instrumentation" --arg target_url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" '{state:$state,context:$context,target_url:$target_url}' > /tmp/reminder-status.json
+          curl --fail --silent --show-error --retry 3 -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GH_TOKEN" -X POST "https://api.github.com/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" --data-binary @/tmp/reminder-status.json >/dev/null || true
+      - name: Remove signing key
+        if: always()
+        run: rm -f .github/keys/kanban-debug.keystore

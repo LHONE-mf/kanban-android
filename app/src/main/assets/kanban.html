@@ -47,7 +47,7 @@
     <select id="boardSelect" class="select board-select" aria-label="Выбор доски"></select>
     <button class="btn btn-ghost btn-icon" id="addBoardBtn" title="Новая доска" aria-label="Новая доска">+</button>
   </div>
-  <div class="actions header-actions">
+  <details class="mobile-actions"><summary aria-label="Дополнительные действия">⋮</summary><div class="actions header-actions">
     <button class="btn btn-ghost btn-icon" id="focusBtn" title="Таймер фокуса (Pomodoro)" aria-label="Таймер фокуса">🍅</button>
     <button class="btn btn-ghost btn-icon" id="themeBtn" aria-label="Переключить тему" aria-pressed="false">◐</button>
     <button class="btn btn-ghost" id="exportBtn" title="Полный бэкап: доски, структура, карта, файлы">Экспорт</button>
@@ -56,7 +56,7 @@
     <button class="btn btn-ghost btn-icon" id="settingsBtn" aria-label="Настройки доски">⚙</button>
     <button class="btn btn-danger btn-small" id="clearBtn">Очистить</button>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
-  </div>
+  </div></details>
 </header>
 
 <nav class="view-tabs" role="tablist">
@@ -69,7 +69,7 @@
 <div class="toolbar" id="kanbanToolbar">
   <input type="text" id="quickAdd" class="input" placeholder="Быстро: Отчёт #работа !h завтра ↵" aria-label="Быстрое добавление задачи" title="#тег · !h/!m/!l приоритет · сегодня/завтра/+3d/ГГГГ-ММ-ДД">
   <button type="button" id="quickAddSubmit" class="btn btn-secondary btn-small" aria-label="Добавить задачу" disabled>Добавить</button>
-  <input type="search" id="searchInput" class="input search-input" placeholder="Поиск по названию, описанию, тегам, чек-листу" aria-label="Поиск задач">
+  <details class="mobile-filters"><summary>⚙ Фильтры и сортировка</summary><div class="mobile-filters-content"><input type="search" id="searchInput" class="input search-input" placeholder="Поиск по названию, описанию, тегам, чек-листу" aria-label="Поиск задач">
   <select id="tagFilter" class="select" aria-label="Фильтр по тегу"><option value="">Все теги</option></select>
   <select id="priorityFilter" class="select" aria-label="Фильтр по приоритету">
     <option value="">Любой приоритет</option>
@@ -97,6 +97,7 @@
   </select>
   <button class="btn btn-secondary btn-small" id="myDayBtn" title="Просроченные и сегодняшние задачи">🔥 Мой день</button>
    <span class="storage-info" id="storageInfo" title="Использование хранилища">…</span>
+  </div></details>
 </div>
 
 <div class="board" id="board"></div>

@@ -6,6 +6,7 @@ androidWebViewHierarchy: devtools
 - stopApp
 - launchApp:
     clearState: false
+- tapOn: "⋮"
 - extendedWaitUntil:
     visible:
       id: "exportBtn"

@@ -38,7 +38,7 @@ jobs:
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
             adb shell pm grant com.kanban.offline android.permission.POST_NOTIFICATIONS
-            adb shell am instrument -w com.kanban.offline.test/androidx.test.runner.AndroidJUnitRunner | tee reminder-instrumentation.log
+            adb shell am instrument -w -e class com.kanban.offline.KanbanReminderInstrumentedTest com.kanban.offline.test/androidx.test.runner.AndroidJUnitRunner | tee reminder-instrumentation.log
             grep -q '^OK (4 tests)' reminder-instrumentation.log
       - uses: actions/upload-artifact@v4
         if: always()

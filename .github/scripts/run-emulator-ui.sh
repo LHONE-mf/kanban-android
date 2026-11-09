@@ -142,12 +142,7 @@ python3 tools/verify_android_backup.py "$RUNNER_TEMP/kanban-media-export.json" \
   --expect-title "Beta upgrade persistence task" \
   --expect-title "Beta persistence smoke task" \
   --expect-media "ci_android_attachment_view_test" \
-  --expect-media-text 
-adb shell pm clear com.kanban.offline | grep -q 'Success'
-run_maestro .maestro/android-backup-restore.yaml ui-screenshots/android-backup-media-restore-debug
-stage="verify restored task retains its file attachment"
-run_maestro .maestro/android-attachment-restored.yaml ui-screenshots/android-attachment-restored-debug
-Kanban Android attachment viewer regression.\\nСтрока あ\\n'
+  --expect-media-text "$(python3 -c 'print("Kanban Android attachment viewer regression.\\nСтрока あ\\n", end="")')"
 stage="restore media-containing backup on disposable emulator"
 adb shell pm clear com.kanban.offline | grep -q 'Success'
 run_maestro .maestro/android-backup-restore.yaml ui-screenshots/android-backup-media-restore-debug

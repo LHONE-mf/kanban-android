@@ -533,6 +533,7 @@ function sanitizeTask(t) {
     tags: Array.isArray(t.tags) ? t.tags.map(String).filter(Boolean) : [],
     priority: PRIORITY_LABELS[t.priority] ? t.priority : 'none',
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
+    reminder: typeof t.reminder === 'string' ? t.reminder : '',
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
       ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
@@ -1537,6 +1538,17 @@ function switchView(view) {
   saveUIState();
 }
 
+// Native notifications are optional; the browser version remains fully functional.
+function syncNativeReminder(task) {
+  if (!window.KanbanReminders || !task?.id) return;
+  const at = task.reminder ? new Date(task.reminder).getTime() : 0;
+  try {
+    window.KanbanReminders.postMessage(JSON.stringify({
+      id: task.id, title: task.title, at: Number.isFinite(at) ? at : 0
+    }));
+  } catch (_) {}
+}
+
 // ============================================================
 // TASK OPS
 // ============================================================
@@ -1548,6 +1560,7 @@ async function deleteTask(taskId) {
   catch (e) { showToast('Не удалось удалить: ' + e.message); return; }
   const kept = state.tasks.filter(t => !ids.has(t.id));
   state.tasks.length = 0; state.tasks.push(...kept);
+  gone.forEach(t => syncNativeReminder({ ...t, reminder: '' }));
   const files = gone.flatMap(t => t.files);
   const undoId = pushUndo({
     onExpire: () => files.forEach(f => scheduleMediaDelete(f.id, 0)),
@@ -1557,6 +1570,7 @@ async function deleteTask(taskId) {
       try { await dbPutTasks(gone); }
       catch (e) { showToast('Не удалось восстановить: ' + e.message); return false; }
       (state._tasksByBoard[root.boardId] || state.tasks).push(...gone);
+      gone.forEach(syncNativeReminder);
       notifyOtherTabs(); renderBoard();
       return true;
     }
@@ -1574,7 +1588,7 @@ async function deleteTask(taskId) {
 function captureModalSnapshot() {
   return JSON.stringify({
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
-    deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
+    deadline: $('#taskDeadline').value, reminder: $('#taskReminder').value, priority: editingPriority, checklist: tempChecklist,
     parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
   });
 }
@@ -1594,9 +1608,9 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
 
-  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; tagsEl.value = '';
+  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; tagsEl.value = '';
   fileInput.value = '';
-  $('#taskTitleError').hidden = true; $('#taskDeadlineError').hidden = true;
+  $('#taskTitleError').hidden = true; $('#taskDeadlineError').hidden = true; $('#taskReminderError').hidden = true;
   setPriorityChips('none'); renderChecklistUI();
 
   if (taskId) {
@@ -1604,7 +1618,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     if (!task) return;
     $('#taskModalTitle').textContent = 'Редактирование задачи';
     titleEl.value = task.title; descEl.value = task.desc || '';
-    deadlineEl.value = task.deadline || ''; tagsEl.value = task.tags.join(', ');
+    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; tagsEl.value = task.tags.join(', ');
     colIdEl.value = task.columnId; setPriorityChips(task.priority);
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
@@ -1902,6 +1916,10 @@ async function _saveTask() {
   if (!title) { $('#taskTitle').focus(); return; }
   $('#taskDeadlineError').hidden = isValidISODate(deadline);
   if (!isValidISODate(deadline)) return;
+  const reminder = $('#taskReminder').value;
+  const reminderAt = reminder ? new Date(reminder).getTime() : 0;
+  $('#taskReminderError').hidden = !reminder || (Number.isFinite(reminderAt) && reminderAt > Date.now());
+  if (!$('#taskReminderError').hidden) return;
 
   const pv = $('#taskParent').value, parentId = pv.startsWith('task:') ? pv.slice(5) : '';
   const par = parentId ? state.tasks.find(t => t.id === parentId) : null;
@@ -1921,7 +1939,7 @@ async function _saveTask() {
     id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : state.activeBoardId,
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
-    priority: editingPriority, deadline, files,
+    priority: editingPriority, deadline, reminder, files,
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
@@ -1932,6 +1950,7 @@ async function _saveTask() {
 
   const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
   if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
+  syncNativeReminder(candidate);
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   await syncKids(candidate).catch(() => {});
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();

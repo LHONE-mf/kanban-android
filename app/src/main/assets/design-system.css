@@ -151,3 +151,45 @@ body.japanese-learning .card { border-radius: 16px; }
     padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
 }
+
+
+/* Compact mobile workspace: show the board first, with optional controls. */
+.mobile-actions > summary, .mobile-filters > summary { display: none; }
+.mobile-actions > .header-actions { display: flex; }
+.mobile-filters > .mobile-filters-content { display: contents; }
+@media (max-width: 600px) {
+  .header { align-items: center; flex-wrap: nowrap; gap: 8px; padding: 8px 12px; }
+  .header-left { min-width: 0; flex: 1; }
+  .header-left .board-select { min-width: 0; max-width: 46vw; }
+  .mobile-actions { position: relative; flex: none; }
+  .mobile-actions > summary, .mobile-filters > summary {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 40px; padding: 6px 12px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface-2); color: var(--text);
+    list-style: none;
+  }
+  .mobile-actions > summary::-webkit-details-marker,
+  .mobile-filters > summary::-webkit-details-marker { display: none; }
+  .mobile-actions > .header-actions { display: none; }
+  .mobile-actions[open] > .header-actions {
+    display: flex; position: absolute; right: 0; top: calc(100% + 6px);
+    width: min(300px, 90vw); padding: 12px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow-lg); z-index: 90;
+  }
+  #kanbanToolbar { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; padding: 8px 12px; }
+  #quickAdd { min-width: 0; width: 100%; }
+  #quickAddSubmit { white-space: nowrap; }
+  .mobile-filters { grid-column: 1 / -1; min-width: 0; }
+  .mobile-filters > summary { justify-content: flex-start; }
+  .mobile-filters > .mobile-filters-content { display: none; }
+  .mobile-filters[open] > .mobile-filters-content {
+    display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+    gap: 8px; margin-top: 8px;
+  }
+  .mobile-filters-content > * { min-width: 0; max-width: 100%; }
+  .mobile-filters-content #searchInput,
+  .mobile-filters-content #deadlineFilter { grid-column: 1 / -1; width: 100%; }
+  .mobile-filters-content .storage-info { justify-self: end; align-self: center; }
+}

@@ -66,4 +66,5 @@ android {
 dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.activity:activity-ktx:1.9.3")
+    testImplementation("junit:junit:4.13.2")
 }

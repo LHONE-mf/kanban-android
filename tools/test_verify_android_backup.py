@@ -31,6 +31,25 @@ class IntegrityTests(unittest.TestCase):
             write(TEXT.replace("あ", "?").encode("utf-8"))
             with self.assertRaisesRegex(AssertionError, "Attachment bytes changed"):
                 verify(path, ["Task"], ["m"], TEXT.replace("\n", "\\n"))
+
+    def test_binary_attachment_exact_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "backup.json"
+            payload = bytes([0, 255, 128, 10, 13, 0, 42])
+            backup = {
+                "version": 4, "app": "kanban-mindmap",
+                "exportedAt": "2026-11-09T00:00:00Z",
+                "activeBoardId": "b", "boards": [{"id": "b"}],
+                "tasks": [{"id": "t", "boardId": "b", "title": "Task",
+                           "files": [{"id": "binary"}]}],
+                "media": {"binary": {"data": "data:application/octet-stream;base64,"
+                           + base64.b64encode(payload).decode("ascii")}}
+            }
+            path.write_text(json.dumps(backup), encoding="utf-8")
+            verify(path, ["Task"], ["binary"], expected_media_hex=payload.hex())
+            with self.assertRaisesRegex(AssertionError, "Attachment bytes changed"):
+                verify(path, ["Task"], ["binary"], expected_media_hex="00ff800a0d002b")
+
             # A syntactically valid JSON export must still reject corrupted media.
             data["media"]["m"]["data"] = "data:text/plain;base64,%%%invalid"
             path.write_text(json.dumps(data), encoding="utf-8")

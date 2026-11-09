@@ -457,6 +457,7 @@ async function duplicateTask(taskId) {
   try { await dbPutTask(copy); }
   catch (e) { showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
+  syncNativeReminder(copy);
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
   showToast('Задача продублирована');
 }

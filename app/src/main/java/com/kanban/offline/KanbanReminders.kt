@@ -12,8 +12,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
+import java.util.Calendar
 
-/** Local, offline, one-time task reminders. No server or background WebView required. */
+/** Local, offline task reminders. No server or background WebView required. */
 object KanbanReminders {
     private const val PREFS = "kanban_native_reminders"
     private const val CHANNEL = "kanban_task_reminders"
@@ -26,6 +27,26 @@ object KanbanReminders {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+    private fun nextTime(at: Long, repeat: String, now: Long): Long {
+        if (repeat == "none") return at
+        if (repeat !in setOf("daily", "weekly", "monthly")) return at
+        val original = Calendar.getInstance().apply { timeInMillis = at }
+        val day = original.get(Calendar.DAY_OF_MONTH)
+        val date = Calendar.getInstance().apply { timeInMillis = at }
+        while (date.timeInMillis <= now) {
+            when (repeat) {
+                "daily" -> date.add(Calendar.DAY_OF_MONTH, 1)
+                "weekly" -> date.add(Calendar.WEEK_OF_YEAR, 1)
+                "monthly" -> {
+                    date.set(Calendar.DAY_OF_MONTH, 1)
+                    date.add(Calendar.MONTH, 1)
+                    date.set(Calendar.DAY_OF_MONTH, minOf(day, date.getActualMaximum(Calendar.DAY_OF_MONTH)))
+                }
+            }
+        }
+        return date.timeInMillis
+    }
+
     fun update(context: Context, raw: String) {
         val json = JSONObject(raw)
         val id = json.optString("id").take(200)
@@ -33,13 +54,16 @@ object KanbanReminders {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val alarm = context.getSystemService(AlarmManager::class.java)
         alarm.cancel(intent(context, id))
-        val at = json.optLong("at")
+        val repeat = json.optString("repeat", "none").takeIf {
+            it in setOf("none", "daily", "weekly", "monthly")
+        } ?: "none"
+        val at = nextTime(json.optLong("at"), repeat, System.currentTimeMillis())
         if (at <= System.currentTimeMillis() || at > System.currentTimeMillis() + 366L * 24 * 3600_000) {
             prefs.edit().remove(id).apply()
             return
         }
         val title = json.optString("title").take(200).ifBlank { "Задача" }
-        val record = JSONObject().put("id", id).put("title", title).put("at", at)
+        val record = JSONObject().put("id", id).put("title", title).put("at", at).put("repeat", repeat)
         prefs.edit().putString(id, record.toString()).apply()
         // setAndAllowWhileIdle is intentionally inexact; no special exact-alarm permission.
         alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent(context, id))
@@ -58,6 +82,10 @@ object KanbanReminders {
         val json = JSONObject(raw)
         if (json.optLong("at") > System.currentTimeMillis() + 60_000) return
         prefs.edit().remove(id).apply()
+        if (json.optString("repeat", "none") != "none") {
+            val next = nextTime(json.optLong("at"), json.optString("repeat"), System.currentTimeMillis())
+            if (next > System.currentTimeMillis()) update(context, json.put("at", next).toString())
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(NotificationManager::class.java)

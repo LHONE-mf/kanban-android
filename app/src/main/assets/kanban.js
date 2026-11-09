@@ -184,7 +184,7 @@ async function deleteBoard(id) {
     delete state._tasksByBoard[id];
     if (wasActive) state.activeBoardId = state.boards[0].id;
     await persistBoards();
-    tasks.forEach(t => t.files.forEach(f => scheduleMediaDelete(f.id, 0)));
+    tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' }); t.files.forEach(f => scheduleMediaDelete(f.id, 0)); });
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message);
     return;
@@ -3215,6 +3215,8 @@ async function init() {
   catch (e) { console.error(e); alert('Не удалось открыть базу данных: ' + e.message); return; }
 
   await loadData();
+  // Reconcile persisted tasks with native alarms after an APK upgrade or WebView restart.
+  Object.values(state._tasksByBoard).flat().forEach(syncNativeReminder);
   loadUIState();
   updateBoardSelect();
 

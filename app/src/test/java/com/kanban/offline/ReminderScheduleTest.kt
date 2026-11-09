@@ -1,0 +1,46 @@
+package com.kanban.offline
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import java.util.Calendar
+import java.util.TimeZone
+
+class ReminderScheduleTest {
+    private fun at(year: Int, month: Int, day: Int, hour: Int = 9): Long =
+        Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            clear()
+            set(year, month - 1, day, hour, 0)
+        }.timeInMillis
+
+    @Test fun oneTimeDoesNotAdvance() {
+        val due = at(2026, 11, 9)
+        assertEquals(due, ReminderSchedule.nextTime(due, "none", due + 1000))
+    }
+
+    @Test fun dailySkipsMissedOccurrences() {
+        assertEquals(at(2026, 11, 13), ReminderSchedule.nextTime(
+            at(2026, 11, 9), "daily", at(2026, 11, 12, 10)))
+    }
+
+    @Test fun weeklyPreservesDayOfWeek() {
+        assertEquals(at(2026, 11, 23), ReminderSchedule.nextTime(
+            at(2026, 11, 9), "weekly", at(2026, 11, 16, 10)))
+    }
+
+    @Test fun monthlyDoesNotDriftAfterFebruary() {
+        assertEquals(at(2027, 3, 31), ReminderSchedule.nextTime(
+            at(2027, 1, 31), "monthly", at(2027, 2, 28, 10)))
+        assertEquals(at(2027, 2, 28), ReminderSchedule.nextTime(
+            at(2027, 1, 31), "monthly", at(2027, 1, 31, 10)))
+    }
+
+    @Test fun leapYearMonthlyRecurrence() {
+        assertEquals(at(2028, 2, 29), ReminderSchedule.nextTime(
+            at(2028, 1, 31), "monthly", at(2028, 2, 1)))
+    }
+
+    @Test fun unsupportedRecurrenceIsNotScheduledAsRepeat() {
+        val due = at(2026, 11, 9)
+        assertEquals(due, ReminderSchedule.nextTime(due, "invalid", due + 1000))
+    }
+}

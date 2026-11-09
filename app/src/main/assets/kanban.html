@@ -194,6 +194,11 @@
         </div>
       </div>
       <div class="field">
+        <label class="label" for="taskReminder">🔔 Напомнить (локальное уведомление)</label>
+        <input type="datetime-local" id="taskReminder" aria-label="Дата и время напоминания">
+        <div class="field-error" id="taskReminderError" hidden>Выберите время в будущем</div>
+      </div>
+      <div class="field">
         <label class="label" for="taskTags">Теги</label>
         <input type="text" id="taskTags" maxlength="500" placeholder="через запятую: срочно, баг, идея">
       </div>

@@ -232,6 +232,8 @@ async function init() {
   catch (e) { console.error(e); alert('Не удалось открыть базу данных: ' + e.message); return; }
 
   await loadData();
+  // Reconcile persisted tasks with native alarms after an APK upgrade or WebView restart.
+  Object.values(state._tasksByBoard).flat().forEach(syncNativeReminder);
   loadUIState();
   updateBoardSelect();
 

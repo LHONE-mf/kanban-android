@@ -55,6 +55,8 @@ run_maestro() {
   sleep 3
   "$HOME/.maestro/bin/maestro" test "$flow" --debug-output "${debug}-retry"
 }
+stage="unit test SAF attachment integrity verifier"
+python3 tools/test_verify_android_backup.py
 stage="install APK v1"
 adb install -r ui-apks/kanban-v1.apk
 stage="navigation smoke"

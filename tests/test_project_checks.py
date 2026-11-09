@@ -61,7 +61,11 @@ class AndroidProjectTests(unittest.TestCase):
         permissions = {
             p.get(ns + "name", "") for p in manifest.findall("uses-permission")
         }
-        self.assertEqual(permissions, {"android.permission.RECORD_AUDIO"})
+        self.assertEqual(permissions, {
+            "android.permission.RECORD_AUDIO",
+            "android.permission.POST_NOTIFICATIONS",
+            "android.permission.RECEIVE_BOOT_COMPLETED",
+        })
         self.assertFalse(manifest.findall("uses-feature"))
 
     def test_fileprovider_paths_are_restricted(self):

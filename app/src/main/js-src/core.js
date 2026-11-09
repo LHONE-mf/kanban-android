@@ -533,6 +533,7 @@ function sanitizeTask(t) {
     tags: Array.isArray(t.tags) ? t.tags.map(String).filter(Boolean) : [],
     priority: PRIORITY_LABELS[t.priority] ? t.priority : 'none',
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
+    reminder: typeof t.reminder === 'string' ? t.reminder : '',
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
       ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))

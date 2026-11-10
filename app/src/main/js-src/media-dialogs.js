@@ -1,27 +1,39 @@
 // ============================================================
 // IMAGE PROCESSING
 // ============================================================
-function compressImage(file, maxDim, quality) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > maxDim || height > maxDim) {
-        const ratio = Math.min(maxDim / width, maxDim / height);
-        width = Math.round(width * ratio); height = Math.round(height * ratio);
-      }
+// Full-size photos are stored as JPEGs capped at 2 MiB. Never silently keep
+// a 10-15 MB source photo if decoding or conversion fails.
+async function compressImage(file, maxDim, quality) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  try {
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('Не удалось прочитать изображение'));
+      img.src = url;
+    });
+    if (!img.width || !img.height) throw new Error('Изображение повреждено');
+    const scale = Math.min(1, maxDim / img.width, maxDim / img.height);
+    for (const shrink of [1, 0.8, 0.65]) {
       const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
+      canvas.width = Math.max(1, Math.round(img.width * scale * shrink));
+      canvas.height = Math.max(1, Math.round(img.height * scale * shrink));
       const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('compress failed')), 'image/jpeg', quality);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('load failed')); };
-    img.src = url;
-  });
+      if (!ctx) throw new Error('Не удалось обработать изображение');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      for (const q of [quality, 0.68, 0.52]) {
+        const blob = await new Promise((resolve, reject) =>
+          canvas.toBlob(result => result ? resolve(result) : reject(new Error('Не удалось сжать изображение')), 'image/jpeg', q)
+        );
+        if (blob.type !== 'image/jpeg') throw new Error('Преобразование в JPEG не поддерживается');
+        if (blob.size <= 2 * 1024 * 1024) return blob;
+      }
+    }
+    throw new Error('Не удалось уменьшить фото до 2 МБ');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 function generateThumb(blob, maxDim, quality) {
   return new Promise((resolve, reject) => {
@@ -47,32 +59,59 @@ function generateThumb(blob, maxDim, quality) {
 // ============================================================
 // LIGHTBOX
 // ============================================================
-async function openLightbox(task, f) {
-  f = f || (task.files || []).find(x => /^(image|video)\//.test(x.type));
-  if (!f) return;
-  const token = ++lightboxToken;
+let lightboxGallery = [];
+let lightboxIndex = 0;
+let lightboxTitle = '';
+let lastLightboxFocus = null;
+
+async function openLightbox(task, file) {
+  const items = (task.files || []).filter(f => /^(image|video)\//.test(f.type));
+  if (!items.length) return;
   const lightbox = $('#lightbox');
-  const content = $('#lightboxContent');
+  if (!lightbox.classList.contains('open')) lastLightboxFocus = document.activeElement;
+  lightboxGallery = items;
+  lightboxTitle = task.title || 'Вложение';
+  const selected = file ? items.findIndex(item => item.id === file.id) : 0;
+  lightboxIndex = selected < 0 ? 0 : selected;
+  lightbox.classList.add('open');
+  $('#lightboxClose').focus();
+  await showLightboxItem();
+}
+async function showLightboxItem() {
+  const token = ++lightboxToken;
+  const lightbox = $('#lightbox'), content = $('#lightboxContent');
   if (lightbox.dataset.url) { revokeTrackedURL(lightbox.dataset.url); delete lightbox.dataset.url; }
   content.innerHTML = '<div style="color:#fff;font-size:13px">Загрузка…</div>';
-  lightbox.classList.add('open');
+  const multiple = lightboxGallery.length > 1;
+  $('#lightboxPrev').hidden = !multiple;
+  $('#lightboxNext').hidden = !multiple;
+  $('#lightboxCounter').textContent = multiple ? (lightboxIndex + 1) + ' / ' + lightboxGallery.length : '';
+  const file = lightboxGallery[lightboxIndex];
+  if (!file) return;
   try {
-    const media = await mediaGet(f.id);
+    const media = await mediaGet(file.id);
     if (token !== lightboxToken) return;
-    if (!media) { closeLightbox(); return; }
-    content.innerHTML = '';
+    if (!media) { content.textContent = 'Файл не найден'; return; }
     const url = createTrackedURL(media.full);
+    content.innerHTML = '';
     if (media.type.startsWith('image/')) {
       const img = document.createElement('img');
-      img.src = url; img.alt = task.title;
+      img.src = url; img.alt = lightboxTitle;
       content.appendChild(img);
     } else if (media.type.startsWith('video/')) {
       const vid = document.createElement('video');
-      vid.src = url; vid.controls = true; vid.autoplay = true;
+      vid.src = url; vid.controls = true;
       content.appendChild(vid);
-    }
+    } else { revokeTrackedURL(url); content.textContent = 'Формат не поддерживается'; return; }
     lightbox.dataset.url = url;
-  } catch (e) { closeLightbox(); }
+  } catch (_) {
+    if (token === lightboxToken) content.textContent = 'Не удалось открыть файл';
+  }
+}
+function stepLightbox(delta) {
+  if (!$('#lightbox').classList.contains('open') || lightboxGallery.length < 2) return;
+  lightboxIndex = (lightboxIndex + delta + lightboxGallery.length) % lightboxGallery.length;
+  void showLightboxItem();
 }
 function closeLightbox() {
   lightboxToken++;
@@ -81,6 +120,10 @@ function closeLightbox() {
   if (url) { revokeTrackedURL(url); delete lightbox.dataset.url; }
   $('#lightboxContent').innerHTML = '';
   lightbox.classList.remove('open');
+  lightboxGallery = [];
+  $('#lightboxCounter').textContent = '';
+  if (lastLightboxFocus?.isConnected) lastLightboxFocus.focus();
+  lastLightboxFocus = null;
 }
 
 // ============================================================

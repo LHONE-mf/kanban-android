@@ -504,7 +504,7 @@ button { font-family: inherit; }
   color: var(--text-muted); text-transform: uppercase;
   letter-spacing: 0.06em; margin-bottom: 6px;
 }
-.field input[type="text"], .field input[type="date"],
+.field input[type="text"], .field input[type="date"], .field input[type="datetime-local"],
 .field textarea, .field select {
   width: 100%; padding: 8px 10px; background: var(--surface-2);
   border: 1px solid var(--border); border-radius: var(--radius);
@@ -521,6 +521,10 @@ button { font-family: inherit; }
 .field-error { color: var(--danger); font-size: 12px; margin-top: 4px; }
 
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.task-date-presets { margin-top: 8px; gap: 6px; }
+.task-date-presets .chip {
+  min-height: 40px; padding: 7px 10px; touch-action: manipulation;
+}
 .chip {
   appearance: none; padding: 5px 12px; border-radius: var(--radius);
   border: 1px solid var(--border); background: transparent;

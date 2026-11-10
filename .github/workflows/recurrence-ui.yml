@@ -39,6 +39,8 @@ jobs:
         run: |
           python3 tools/build_kanban_js.py --check
           node tests/test_recurring_tasks.cjs
+          node tests/test_task_repeat_controls.cjs
+          node tests/test_task_date_presets.cjs
           node tests/test_global_search.cjs
           gradle :app:assembleDebug --no-daemon
       - name: Install Maestro

@@ -51,6 +51,7 @@ jobs:
           node tests/test_android_file_open.cjs
           node tests/test_photo_attachments.cjs
           node tests/test_notification_navigation.cjs
+          node tests/test_android_back_task_save.cjs
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax

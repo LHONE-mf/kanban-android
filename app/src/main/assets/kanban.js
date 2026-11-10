@@ -1891,6 +1891,19 @@ function applyTaskReminderPreset(preset, now = new Date()) {
   return true;
 }
 
+// WebView native selects may target the wrong menu on Android. The visible
+// buttons are the source of truth; the hidden select preserves stored values.
+function setTaskRepeat(value) {
+  if (!['none', 'daily', 'weekly', 'monthly'].includes(value)) return false;
+  $('#taskRepeat').value = value;
+  $('#taskRepeatChoices [data-task-repeat]').forEach(button => {
+    const active = button.dataset.taskRepeat === value;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  return true;
+}
+
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
   lastFocusBeforeModal = document.activeElement;
   editingTaskId = taskId;
@@ -1907,7 +1920,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
 
-  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; $('#taskReminderRepeat').value = 'none'; $('#taskRepeat').value = 'none'; tagsEl.value = '';
+  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; $('#taskReminderRepeat').value = 'none'; setTaskRepeat('none'); tagsEl.value = '';
   fileInput.value = '';
   $('#taskTitleError').hidden = true; $('#taskDeadlineError').hidden = true; $('#taskReminderError').hidden = true;
   setPriorityChips('none'); renderChecklistUI();
@@ -1917,7 +1930,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     if (!task) return;
     $('#taskModalTitle').textContent = 'Редактирование задачи';
     titleEl.value = task.title; descEl.value = task.desc || '';
-    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; $('#taskReminderRepeat').value = task.reminderRepeat || 'none'; $('#taskRepeat').value = task.taskRepeat || 'none'; tagsEl.value = task.tags.join(', ');
+    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; $('#taskReminderRepeat').value = task.reminderRepeat || 'none'; setTaskRepeat(task.taskRepeat || 'none'); tagsEl.value = task.tags.join(', ');
     colIdEl.value = task.columnId; setPriorityChips(task.priority);
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
@@ -3358,6 +3371,10 @@ function bindEvents() {
   $('#taskReminderPresets').addEventListener('click', event => {
     const button = event.target.closest('button[data-reminder-preset]');
     if (button) applyTaskReminderPreset(button.dataset.reminderPreset);
+  });
+  $('#taskRepeatChoices').addEventListener('click', event => {
+    const button = event.target.closest('button[data-task-repeat]');
+    if (button) setTaskRepeat(button.dataset.taskRepeat);
   });
   $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;

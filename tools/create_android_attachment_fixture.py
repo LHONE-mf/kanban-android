@@ -14,13 +14,13 @@ from pathlib import Path
 def small_png(red: int, green: int, blue: int) -> bytes:
     """A genuine 48x48 PNG for disposable offline gallery/zoom tests."""
     size = 48
-    raw = b"".join(b"\\x00" + bytes((red, green, blue)) * size for _ in range(size))
+    raw = b"".join(b"\x00" + bytes((red, green, blue)) * size for _ in range(size))
 
     def chunk(name: bytes, payload: bytes) -> bytes:
         return (struct.pack(">I", len(payload)) + name + payload
                 + struct.pack(">I", zlib.crc32(name + payload) & 0xffffffff))
 
-    return (b"\\x89PNG\\r\\n\\x1a\\n" +
+    return (b"\x89PNG\r\n\x1a\n" +
             chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)) +
             chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 

@@ -17,7 +17,7 @@ let renders=0, groupRenders=0;
 const context={
   writingMode:'trace',showGuide:true,writingRevealed:false,writingStrokes:[[1]],writeIndex:0,script:'hiragana',
   reviews:{},reviewKey:'test-reviews',localStorage:{setItem(){}},Date,
-  allKana:()=>[{items:[{kana:'あ',roman:'a'},{kana:'い',roman:'i'},{kana:'う',roman:'u'}]}],Math:{random:()=>0},
+  allKana:()=>[{items:[{kana:'あ',roman:'a'},{kana:'い',roman:'i'},{kana:'う',roman:'u'}]}],Math:{random:()=>0,floor:Math.floor},
   $:id=>elements[id],drawWriting:()=>renders++,renderGroup:()=>groupRenders++
 };
 vm.createContext(context);

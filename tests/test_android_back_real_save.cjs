@@ -20,7 +20,7 @@ const original = {
 const state = {tasks:[original],activeBoardId:'b1'};
 const inputs = Object.fromEntries([
   ['taskTitle','Updated task'], ['taskDeadline',''], ['taskReminder',originalReminder],
-  ['taskReminderRepeat','none'],['taskTags',''],['taskParent','col:col'],
+  ['taskReminderRepeat','none'],['taskRepeat','weekly'],['taskTags',''],['taskParent','col:col'],
   ['taskDesc','Updated description']
 ].map(([id,value])=>[id,{value,focus(){this.focused=true}}]));
 for (const id of ['taskTitleError','taskDeadlineError','taskReminderError']) inputs[id]={hidden:true};
@@ -52,6 +52,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   await tick();
   assert.equal(saved.length,1,'Back should persist edits despite an unchanged expired reminder');
   assert.equal(saved[0].title,'Updated task');
+  assert.equal(saved[0].taskRepeat,'weekly','Back must preserve selected task recurrence');
   assert.equal(modal.open,false,'Back must close editor only after the save succeeds');
 
   // A newly-entered past reminder is invalid and must keep the editor open with feedback.

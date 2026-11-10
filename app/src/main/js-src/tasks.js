@@ -198,7 +198,7 @@ async function deleteTask(taskId) {
 function captureModalSnapshot() {
   return JSON.stringify({
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
-    deadline: $('#taskDeadline').value, reminder: $('#taskReminder').value, reminderRepeat: $('#taskReminderRepeat').value, priority: editingPriority, checklist: tempChecklist,
+    deadline: $('#taskDeadline').value, reminder: $('#taskReminder').value, reminderRepeat: $('#taskReminderRepeat').value, taskRepeat: $('#taskRepeat').value, priority: editingPriority, checklist: tempChecklist,
     parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
   });
 }
@@ -252,7 +252,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
 
-  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; $('#taskReminderRepeat').value = 'none'; tagsEl.value = '';
+  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; $('#taskReminderRepeat').value = 'none'; $('#taskRepeat').value = 'none'; tagsEl.value = '';
   fileInput.value = '';
   $('#taskTitleError').hidden = true; $('#taskDeadlineError').hidden = true; $('#taskReminderError').hidden = true;
   setPriorityChips('none'); renderChecklistUI();
@@ -262,7 +262,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     if (!task) return;
     $('#taskModalTitle').textContent = 'Редактирование задачи';
     titleEl.value = task.title; descEl.value = task.desc || '';
-    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; $('#taskReminderRepeat').value = task.reminderRepeat || 'none'; tagsEl.value = task.tags.join(', ');
+    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; $('#taskReminderRepeat').value = task.reminderRepeat || 'none'; $('#taskRepeat').value = task.taskRepeat || 'none'; tagsEl.value = task.tags.join(', ');
     colIdEl.value = task.columnId; setPriorityChips(task.priority);
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
@@ -589,6 +589,10 @@ async function _saveTask() {
     return;
   }
   const reminderRepeat = $('#taskReminderRepeat').value;
+  const taskRepeat = $('#taskRepeat').value;
+  const repeatAnchor = existing && existing.deadline === deadline && existing.taskRepeat === taskRepeat
+    ? (existing.repeatAnchor || deadline || (reminder ? reminder.slice(0, 10) : ''))
+    : (deadline || (reminder ? reminder.slice(0, 10) : ''));
 
   const pv = $('#taskParent').value, parentId = pv.startsWith('task:') ? pv.slice(5) : '';
   const par = parentId ? state.tasks.find(t => t.id === parentId) : null;
@@ -606,18 +610,16 @@ async function _saveTask() {
     id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : state.activeBoardId,
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
-    priority: editingPriority, deadline, reminder, reminderRepeat, files,
+    priority: editingPriority, deadline, reminder, reminderRepeat, taskRepeat,
+    repeatFrom: existing?.repeatFrom || '', repeatAnchor, files,
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  try { await dbPutTask(candidate); }
+  try { await persistTaskChanges([candidate]); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
-  const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
-  if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
-  syncNativeReminder(candidate);
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   await syncKids(candidate).catch(() => {});
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
@@ -658,7 +660,7 @@ async function duplicateTask(taskId) {
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',
     tags: [...src.tags], checklist: src.checklist.map(c => ({ id: 'cl_' + generateId(), text: c.text, checked: c.checked })),
-    files, completedAt: null,
+    files, completedAt: null, repeatFrom: '', repeatAnchor: src.deadline || '',
     order: maxOrder + 1, createdAt: Date.now(), updatedAt: Date.now(),
     boardId: src.boardId || state.activeBoardId
   };

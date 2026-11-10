@@ -377,9 +377,14 @@ async function handleImport(file) {
   const ok = await confirmDialog('Импорт данных', message);
   if (!ok) return;
 
+  const previousTasks = Object.values(state._tasksByBoard).flat();
   try { await dbReplaceAll(plan); }
   catch (e) { console.error(e); alert('Не удалось записать данные: ' + e.message + '\nСтарые данные сохранены.'); return; }
 
+  // The native alarm store is separate from IndexedDB. Update it only after
+  // the replacement commits, and cancel old IDs before scheduling imported ones.
+  previousTasks.forEach(t => syncNativeReminder({ ...t, reminder: '' }));
+  plan.tasks.forEach(syncNativeReminder);
   undoStack.length = 0; for (const t of pendingMediaDeletes.values()) clearTimeout(t); pendingMediaDeletes.clear(); apStop();
   rebucket(plan.tasks, plan.boards, plan.activeBoardId);
   applyActiveBoard();
@@ -409,6 +414,8 @@ async function clearActiveBoard() {
   if (!ok) return;
   try { await dbClearActiveBoardTasks(state.activeBoardId); }
   catch (e) { showToast('Ошибка очистки: ' + e.message); return; }
+  // Clear native alarms only after IndexedDB has removed these tasks.
+  state.tasks.forEach(t => syncNativeReminder({ ...t, reminder: '' }));
   state.tasks.flatMap(t => t.files).forEach(f => scheduleMediaDelete(f.id, 0));
   state.tasks.length = 0;
   thumbCache.clear();

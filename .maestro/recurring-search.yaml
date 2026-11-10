@@ -140,6 +140,9 @@ androidWebViewHierarchy: devtools
 - assertVisible: "Редактирование задачи"
 - takeScreenshot: ui-screenshots/recurring-global-search-navigation
 
+# Task editor focuses its title; dismiss IME before Android Back.
+# Otherwise Back closes the keyboard rather than saving the editor.
+- hideKeyboard
 # After opening an exact result, create a second, empty board through the UI.
 # Selecting it must return 0 matches; switching back restores the original two.
 - pressKey: Back
@@ -150,9 +153,7 @@ androidWebViewHierarchy: devtools
     visible:
       id: "textPromptInput"
     timeout: 30000
-- tapOn:
-    id: "textPromptInput"
-- inputText: "CI second board"
+- hideKeyboard
 - tapOn:
     id: "textPromptSubmit"
 - extendedWaitUntil:
@@ -169,7 +170,7 @@ androidWebViewHierarchy: devtools
     timeout: 30000
 - tapOn:
     id: "globalSearchBoardFilter"
-- tapOn: "CI second board"
+- tapOn: "Новая доска"
 - assertVisible: "Найдено задач: 0"
 - assertNotVisible:
     id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска$'

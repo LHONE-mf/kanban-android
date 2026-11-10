@@ -621,7 +621,7 @@ function rebucket(allTasks, boards, activeBoardId) {
   state.boards = boards;
   state.activeBoardId = activeBoardId;
 
-  const byId = {};
+  const byId = Object.create(null);
   boards.forEach(b => { byId[b.id] = []; });
   const fallback = boards[0].id;
   const toFix = [];
@@ -3253,13 +3253,13 @@ async function buildImportPlan(data) {
   if (!activeBoardId || !validBoardIds.has(activeBoardId)) activeBoardId = boards[0].id;
   const fallbackBoard = boards[0].id;
 
-  const colsByBoard = {};
+  const colsByBoard = Object.create(null);
   boards.forEach(b => { colsByBoard[b.id] = new Set(b.columns.map(c => c.id)); });
   const oldColMap = { todo: 0, inprogress: 1, done: 2 };
 
   const tasks = [];
   const seenTid = new Set();
-  const media = {};
+  const media = Object.create(null);
   let skippedTasks = 0, brokenMedia = 0;
 
   for (let i = 0; i < rawTasks.length; i++) {

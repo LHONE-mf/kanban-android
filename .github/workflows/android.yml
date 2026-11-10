@@ -49,6 +49,7 @@ jobs:
           node tests/test_japanese_writing.cjs
           node tests/test_android_backup.cjs
           node tests/test_japanese_backup.cjs
+          node tests/test_import_record_ids.cjs
           node tests/test_reminder_data_replacement.cjs
           node tests/test_reminder_board_rename.cjs
           node tests/test_board_deletion.cjs

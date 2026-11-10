@@ -621,7 +621,7 @@ function rebucket(allTasks, boards, activeBoardId) {
   state.boards = boards;
   state.activeBoardId = activeBoardId;
 
-  const byId = {};
+  const byId = Object.create(null);
   boards.forEach(b => { byId[b.id] = []; });
   const fallback = boards[0].id;
   const toFix = [];

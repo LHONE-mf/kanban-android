@@ -13,10 +13,16 @@ is historical context, not a current test report.
   cancelled deletion, and deleting an empty or the last board.
 - [x] Chromium at 360px verifies actual IndexedDB abort/clone-error rollback,
   successful deletion, reload persistence, and unchanged Japanese progress.
-- [ ] Targeted Android flow: delete a board after moving a recurring task,
+- [x] Targeted Android flow: delete a board after moving a recurring task,
   verify cross-board search, then restart and verify the surviving task.
+  Passed at `d9a740c`: [focused Android run](https://github.com/LHONE-mf/kanban-android/actions/runs/42889859826).
 - [ ] Physical-device upgrade and broader acceptance checklist in
   `TESTING_ANDROID.md`; no signing or storage migration is part of this change.
+- [x] Imported board/media IDs that match Object property names remain
+  enumerable and keep stable references. Executable coverage uses the real
+  import, rebucketing and export functions, including a complete round-trip
+  and legacy task-array compatibility. Chromium also verifies real file import,
+  confirmation, backup download, attachments and database reload in both themes.
 
 ## M4 search
 

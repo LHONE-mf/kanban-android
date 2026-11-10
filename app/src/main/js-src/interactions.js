@@ -83,11 +83,7 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await dbPutTasks(toUpdate);
-        toUpdate.forEach(cand => {
-          const idx = state.tasks.findIndex(x => x.id === cand.id);
-          if (idx !== -1) state.tasks[idx] = cand;
-        });
+        await persistTaskChanges(toUpdate);
         for (const c of toUpdate) await syncKids(c);
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }

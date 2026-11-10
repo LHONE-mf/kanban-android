@@ -17,6 +17,7 @@ let renders=0, groupRenders=0;
 const context={
   writingMode:'trace',showGuide:true,writingRevealed:false,writingStrokes:[[1]],writeIndex:0,script:'hiragana',
   reviews:{},reviewKey:'test-reviews',localStorage:{setItem(){}},Date,
+  allKana:()=>[{items:[{kana:'あ',roman:'a'}]}],
   $:id=>elements[id],drawWriting:()=>renders++,renderGroup:()=>groupRenders++
 };
 vm.createContext(context);

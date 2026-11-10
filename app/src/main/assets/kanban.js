@@ -1548,6 +1548,7 @@ function syncNativeReminder(task) {
   try {
     window.KanbanReminders.postMessage(JSON.stringify({
       id: task.id, title: task.title, at: Number.isFinite(at) ? at : 0,
+      boardId: task.boardId || '', boardName: getBoard(task.boardId)?.name || 'Моя доска',
       repeat: task.reminderRepeat || 'none'
     }));
   } catch (_) {}
@@ -3281,6 +3282,38 @@ async function registerServiceWorker() {
   catch (e) { console.info('[kanban] sw.js не найден:', e.message); }
 }
 
+// Notification taps may arrive before IndexedDB has finished loading.
+let notificationUiReady = false;
+let notificationOpening = false;
+window.kanbanApplyPendingNotification = async () => {
+  if (!notificationUiReady || notificationOpening || !window.__kanbanNotificationPending) return;
+  const target = window.__kanbanNotificationPending;
+  delete window.__kanbanNotificationPending;
+  notificationOpening = true;
+  try {
+    const taskId = typeof target.taskId === 'string' ? target.taskId : '';
+    const boardId = typeof target.boardId === 'string' ? target.boardId : '';
+    const board = state.boards.find(b => b.id === boardId &&
+      (state._tasksByBoard[b.id] || []).some(t => t.id === taskId)) ||
+      // A task may have been moved after the reminder was scheduled.
+      state.boards.find(b => (state._tasksByBoard[b.id] || []).some(t => t.id === taskId));
+    if (!board) { showToast('Задача из уведомления не найдена'); return; }
+    if ($('#taskModal').classList.contains('open')) {
+      if (isModalDirty() &&
+          !await confirmDialog('Открыть задачу из уведомления?', 'Несохранённые изменения будут потеряны.')) return;
+      closeModal('taskModal');
+    }
+    if (state.activeBoardId !== board.id) await switchBoard(board.id);
+    switchView('kanban');
+    openTaskModal(taskId);
+  } catch (error) {
+    showToast('Не удалось открыть задачу: ' + (error.message || error));
+  } finally {
+    notificationOpening = false;
+    if (window.__kanbanNotificationPending) void window.kanbanApplyPendingNotification();
+  }
+};
+
 // ============================================================
 // INIT
 // ============================================================
@@ -3339,6 +3372,8 @@ async function init() {
   });
   quickAddButton.addEventListener('click', submitQuickAdd);
   quickAddButton.disabled = false;
+  notificationUiReady = true;
+  void window.kanbanApplyPendingNotification();
   registerServiceWorker();
 }
 

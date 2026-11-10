@@ -5,6 +5,7 @@ name: Android UI Smoke Tests and Screenshots
 # edit to this workflow on ui-testing triggers a one-off audit run.
 # Ordinary code pushes still use only the fast APK/unit tests.
 # This audit run also checks Android Back-to-save and saved-photo gallery controls.
+# Verify the photo-filled task card through its title, not through its thumbnail.
 on:
   workflow_dispatch:
   push:

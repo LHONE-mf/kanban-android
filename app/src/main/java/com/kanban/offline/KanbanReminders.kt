@@ -206,7 +206,6 @@ object KanbanReminders {
         val boardName = json.optString("boardName", "Моя доска").ifBlank { "Моя доска" }
         val title = json.optString("title", "Задача")
         val date = ReminderNotificationText.formatDate(firedAt)
-        val taskId = json.optString("taskId").ifBlank { id }
         val openIntent = Intent(context, MainActivity::class.java).apply {
             action = "com.kanban.offline.OPEN_TASK"
             data = Uri.parse("kanban://reminder/task/${Uri.encode(taskId)}")

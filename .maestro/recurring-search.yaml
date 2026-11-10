@@ -1,0 +1,81 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Disposable emulator only. Exercise the actual WebView -> IndexedDB path:
+# weekly task -> completion -> new occurrence -> restart -> global search.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "quickAdd"
+    timeout: 30000
+- tapOn:
+    id: "quickAdd"
+- inputText: "CI weekly recurring task"
+- tapOn:
+    id: "quickAddSubmit"
+- scrollUntilVisible:
+    element:
+      id: "CI weekly recurring task"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "CI weekly recurring task"
+- extendedWaitUntil:
+    visible: "Редактирование задачи"
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: "taskRepeat"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "taskRepeat"
+- tapOn: "Каждую неделю"
+- scrollUntilVisible:
+    element:
+      id: "saveTaskBtn"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "saveTaskBtn"
+- assertNotVisible: "Редактирование задачи"
+- scrollUntilVisible:
+    element:
+      id: "Отметить выполненной: CI weekly recurring task"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "Отметить выполненной: CI weekly recurring task"
+- scrollUntilVisible:
+    element:
+      id: "CI weekly recurring task (повтор)"
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: "CI weekly recurring task (повтор)"
+- takeScreenshot: ui-screenshots/recurring-next-occurrence
+- stopApp
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      id: "CI weekly recurring task (повтор)"
+    direction: DOWN
+    timeout: 30000
+- assertVisible:
+    id: "CI weekly recurring task (повтор)"
+# Search tab should find the new task after restart and open its editor.
+- tapOn: "🔎 Поиск"
+- extendedWaitUntil:
+    visible:
+      id: "globalSearchInput"
+    timeout: 30000
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "weekly recurring"
+- hideKeyboard
+- assertVisible: "Найдено задач: 2"
+- tapOn: "CI weekly recurring task"
+- assertVisible: "Редактирование задачи"
+- takeScreenshot: ui-screenshots/recurring-global-search-navigation

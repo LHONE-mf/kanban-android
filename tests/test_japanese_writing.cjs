@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync('app/src/main/assets/japanese.html', 'utf8');
-const ids = ['writingTrace','writingRecall','writingHira','writingKata','writingReveal','writingUndo','writingClear','writingGrade','writingRetry','writingGood','writingFeedback','writingTryAgain','writingTryAgainRow','writingPrev','writingNext','writeCanvas'];
+const ids = ['writingTrace','writingRecall','writingHira','writingKata','writingReveal','writingUndo','writingClear','writingGrade','writingRetry','writingGood','writingFeedback','writingTryAgain','writingTryAgainRow','writingPrev','writingNext','writingRandom','writeCanvas'];
 for (const id of ids) assert(html.includes('id="'+id+'"'), 'Missing writing control: '+id);
 const start = html.indexOf('function resetWriting(){');
 const end = html.indexOf('\nupdateProgress();renderGroup();', start);
@@ -17,7 +17,7 @@ let renders=0, groupRenders=0;
 const context={
   writingMode:'trace',showGuide:true,writingRevealed:false,writingStrokes:[[1]],writeIndex:0,script:'hiragana',
   reviews:{},reviewKey:'test-reviews',localStorage:{setItem(){}},Date,
-  allKana:()=>[{items:[{kana:'あ',roman:'a'}]}],
+  allKana:()=>[{items:[{kana:'あ',roman:'a'},{kana:'い',roman:'i'},{kana:'う',roman:'u'}]}],Math:{random:()=>0},
   $:id=>elements[id],drawWriting:()=>renders++,renderGroup:()=>groupRenders++
 };
 vm.createContext(context);
@@ -46,6 +46,9 @@ assert.equal(elements.writingTryAgainRow.hidden,true);
 elements.writingNext.onclick();
 assert.equal(context.writingRevealed,false,'Next character must hide the answer');
 assert.equal(context.writingStrokes.length,0,'Next character must clear the canvas');
+elements.writingRandom.onclick();
+assert.equal(context.writeIndex,2,'Random challenge should select a different kana');
+assert.equal(context.writingStrokes.length,0,'Random challenge clears the drawing');
 elements.writingKata.onclick();
 assert.equal(context.script,'katakana');
 assert.equal(context.writeIndex,0);

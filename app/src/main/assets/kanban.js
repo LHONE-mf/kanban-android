@@ -109,8 +109,7 @@ function normalizeTree(tasks) {
 async function syncKids(t) {
   const ch = subtree(t.id).filter(d => d.columnId !== t.columnId).map(d => applyColumnChange(d, t.columnId));
   if (!ch.length) return;
-  await dbPutTasks(ch);
-  ch.forEach(c => { const i = state.tasks.findIndex(x => x.id === c.id); if (i > -1) state.tasks[i] = c; });
+  await persistTaskChanges(ch);
 }
 
 function applyActiveBoard() {
@@ -535,6 +534,9 @@ function sanitizeTask(t) {
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
     reminder: typeof t.reminder === 'string' ? t.reminder : '',
     reminderRepeat: ['daily', 'weekly', 'monthly'].includes(t.reminderRepeat) ? t.reminderRepeat : 'none',
+    taskRepeat: ['daily', 'weekly', 'monthly'].includes(t.taskRepeat) ? t.taskRepeat : 'none',
+    repeatFrom: typeof t.repeatFrom === 'string' ? t.repeatFrom : '',
+    repeatAnchor: typeof t.repeatAnchor === 'string' && DATE_RE.test(t.repeatAnchor) ? t.repeatAnchor : '',
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
       ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
@@ -920,7 +922,9 @@ function createTaskCard(task, column) {
     <div class="task-title">${escapeHtml(task.title)}</div>
     ${descHtml}${mediaHtml}${task.files.some(isAudio) ? '<div class="task-audio"></div>' : ''}${tagsHtml}${checklistHtml}
     <div class="task-footer">
-      ${deadlineHtml}${priorityHtml}${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
+      ${deadlineHtml}${task.taskRepeat && task.taskRepeat !== 'none'
+        ? `<span class="task-footer-item" title="Повторяющаяся задача">🔁 ${escapeHtml({daily:'Ежедневно',weekly:'Еженедельно',monthly:'Ежемесячно'}[task.taskRepeat] || '')}</span>`
+        : ''}${priorityHtml}${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
       <span class="task-id">#${escapeHtml(task.id.slice(-4))}</span>
     </div>
     <div class="task-quick-actions">
@@ -982,11 +986,8 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   const targetCol = state.columns[newIdx];
   const candidate = applyColumnChange(task, targetCol.id);
   candidate.order = topOrder(targetCol.id);
-  try { await dbPutTask(candidate); }
+  try { await persistTaskChanges([candidate]); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  const stateIdx = state.tasks.findIndex(t => t.id === taskId);
-  if (stateIdx !== -1) state.tasks[stateIdx] = candidate;
-  syncNativeReminder(candidate);
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
@@ -998,10 +999,8 @@ async function markTaskDone(taskId) {
   if (idx === -1 || state.tasks[idx].columnId === doneCol.id) return;
   const candidate = applyColumnChange(state.tasks[idx], doneCol.id);
   candidate.order = topOrder(doneCol.id);
-  try { await dbPutTask(candidate); }
+  try { await persistTaskChanges([candidate]); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  state.tasks[idx] = candidate;
-  syncNativeReminder(candidate);
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
@@ -1554,6 +1553,154 @@ function syncNativeReminder(task) {
   } catch (_) {}
 }
 
+// RECURRING TASKS
+// Completion creates the next *task*, independently of recurring notifications.
+// Store previous and next occurrences atomically; never reuse attachment IDs.
+const TASK_REPEAT_VALUES = ['daily', 'weekly', 'monthly'];
+const activeTaskWrites = new Set();
+function nextTaskRepeatDate(baseISO, repeat, completedAt, anchorISO = baseISO) {
+  if (!TASK_REPEAT_VALUES.includes(repeat)) return '';
+  const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    toISO(parseISO(s)) === s;
+  const done = new Date(completedAt);
+  const today = new Date(done.getFullYear(), done.getMonth(), done.getDate());
+  const baseline = validDate(baseISO) ? parseISO(baseISO) : today;
+  let next;
+  if (repeat === 'monthly') {
+    const anchor = validDate(anchorISO) ? parseISO(anchorISO) : baseline;
+    const anchorDay = anchor.getDate();
+    const makeMonth = month => {
+      const first = new Date(anchor.getFullYear(), anchor.getMonth() + month, 1);
+      const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+      return new Date(first.getFullYear(), first.getMonth(), Math.min(anchorDay, last));
+    };
+    const monthOffset = (baseline.getFullYear() - anchor.getFullYear()) * 12 +
+      baseline.getMonth() - anchor.getMonth();
+    next = makeMonth(Math.max(0, monthOffset + 1));
+    // Jump straight to near today's month rather than iterating over years.
+    if (next <= today) {
+      const offset = (today.getFullYear() - anchor.getFullYear()) * 12 +
+        today.getMonth() - anchor.getMonth();
+      next = makeMonth(Math.max(monthOffset + 1, offset));
+      if (next <= today) next = makeMonth(Math.max(monthOffset + 1, offset + 1));
+    }
+  } else {
+    const interval = repeat === 'weekly' ? 7 : 1;
+    next = new Date(baseline.getFullYear(), baseline.getMonth(),
+      baseline.getDate() + interval);
+    if (next <= today) {
+      const days = Math.round(
+        (Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) -
+         Date.UTC(baseline.getFullYear(), baseline.getMonth(), baseline.getDate())) / 86400000
+      );
+      const jumps = Math.max(1, Math.floor(days / interval) + 1);
+      next = new Date(baseline.getFullYear(), baseline.getMonth(),
+        baseline.getDate() + jumps * interval);
+    }
+  }
+  return toISO(next);
+}
+function shiftTaskRepeatDate(value, fromDate, toDate, withTime, completedAt) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}/.test(value)) return '';
+  const old = withTime ? new Date(value) : parseISO(value);
+  if (Number.isNaN(old.getTime())) return '';
+  const from = parseISO(fromDate), to = parseISO(toDate);
+  const diff = Math.round(
+    (Date.UTC(to.getFullYear(), to.getMonth(), to.getDate()) -
+     Date.UTC(from.getFullYear(), from.getMonth(), from.getDate())) / 86400000
+  );
+  old.setDate(old.getDate() + diff);
+  // Don't schedule a notification that is already overdue when a task repeats.
+  if (withTime && old.getTime() <= completedAt) return '';
+  return withTime ? formatTaskLocalDate(old, true) : toISO(old);
+}
+function makeRecurringTaskCopies(source, boardTasks, board, completedAt) {
+  if (!TASK_REPEAT_VALUES.includes(source.taskRepeat)) return [];
+  const reference = /^\d{4}-\d{2}-\d{2}$/.test(source.deadline || '') ? source.deadline
+    : (source.reminder ? source.reminder.slice(0, 10) : toISO(new Date(completedAt)));
+  const anchor = source.repeatAnchor || reference;
+  const nextDate = nextTaskRepeatDate(reference, source.taskRepeat, completedAt, anchor);
+  if (!nextDate) return [];
+  const todo = board.columns.find(c => !c.isDone);
+  if (!todo) return []; // A board with only Done columns cannot host a fresh task.
+  const originals = [source];
+  const ids = new Set([source.id]);
+  let changed;
+  do {
+    changed = false;
+    for (const task of boardTasks) {
+      if (!ids.has(task.id) && ids.has(task.parentId)) {
+        originals.push(task); ids.add(task.id); changed = true;
+      }
+    }
+  } while (changed);
+  const freshIds = new Map(originals.map(t => [t.id, generateId()]));
+  const currentOrder = boardTasks.filter(t => !t.parentId && t.columnId === todo.id)
+    .map(t => t.order ?? 0);
+  const firstOrder = currentOrder.length ? Math.min(...currentOrder) - 1 : 0;
+  return originals.map((original, index) => {
+    const isRoot = index === 0;
+    const parent = boardTasks.find(t => t.id === source.parentId);
+    const parentStillOpen = parent && board.columns.some(c => c.id === parent.columnId && !c.isDone);
+    return {
+      ...original,
+      id: freshIds.get(original.id),
+      parentId: isRoot ? (parentStillOpen ? source.parentId : '') : freshIds.get(original.parentId),
+      boardId: source.boardId,
+      columnId: todo.id,
+      order: isRoot ? firstOrder : original.order,
+      createdAt: completedAt,
+      updatedAt: completedAt,
+      completedAt: null,
+      repeatFrom: original.id,
+      repeatAnchor: isRoot ? anchor : (original.repeatAnchor || original.deadline || reference),
+      deadline: isRoot ? nextDate : shiftTaskRepeatDate(original.deadline, reference, nextDate, false, completedAt),
+      reminder: shiftTaskRepeatDate(original.reminder, reference, nextDate, true, completedAt),
+      tags: [...(original.tags || [])],
+      checklist: (original.checklist || []).map(c => ({
+        ...c, id: 'cl_' + generateId(), checked: false
+      })),
+      // Retain media on the historical occurrence. Sharing IDs risks deletion of
+      // an attachment when either copy gets removed.
+      files: []
+    };
+  });
+}
+// The same atomic helper is used by card actions, drag/drop, modal save, and
+// native Mark Done reconciliation. Never update UI state on failed storage.
+async function persistTaskChanges(updates, boardTasks = state.tasks,
+  board = state.boards.find(b => b.id === state.activeBoardId)) {
+  if (!updates.length) return { created: [] };
+  if (!board) throw new Error('Доска не найдена');
+  const ids = updates.map(t => t.id);
+  if (ids.some(id => activeTaskWrites.has(id))) throw new Error('Задача уже сохраняется');
+  ids.forEach(id => activeTaskWrites.add(id));
+  try {
+    const created = [];
+    for (const candidate of updates) {
+      const original = boardTasks.find(t => t.id === candidate.id);
+      if (!original || original.completedAt || !candidate.completedAt ||
+          !TASK_REPEAT_VALUES.includes(candidate.taskRepeat)) continue;
+      if (boardTasks.some(t => t.repeatFrom === candidate.id) ||
+          created.some(t => t.repeatFrom === candidate.id)) continue;
+      created.push(...makeRecurringTaskCopies({
+        ...candidate, columnId: original.columnId
+      }, boardTasks, board, candidate.completedAt));
+    }
+    const write = [...updates, ...created];
+    await dbPutTasks(write);
+    for (const task of write) {
+      const index = boardTasks.findIndex(t => t.id === task.id);
+      if (index >= 0) boardTasks[index] = task;
+      else boardTasks.push(task);
+      syncNativeReminder(task);
+    }
+    return { created };
+  } finally {
+    ids.forEach(id => activeTaskWrites.delete(id));
+  }
+}
+
 // ============================================================
 // TASK OPS
 // ============================================================
@@ -1593,7 +1740,7 @@ async function deleteTask(taskId) {
 function captureModalSnapshot() {
   return JSON.stringify({
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
-    deadline: $('#taskDeadline').value, reminder: $('#taskReminder').value, reminderRepeat: $('#taskReminderRepeat').value, priority: editingPriority, checklist: tempChecklist,
+    deadline: $('#taskDeadline').value, reminder: $('#taskReminder').value, reminderRepeat: $('#taskReminderRepeat').value, taskRepeat: $('#taskRepeat').value, priority: editingPriority, checklist: tempChecklist,
     parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
   });
 }
@@ -1647,7 +1794,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
 
-  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; $('#taskReminderRepeat').value = 'none'; tagsEl.value = '';
+  titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; $('#taskReminder').value = ''; $('#taskReminderRepeat').value = 'none'; $('#taskRepeat').value = 'none'; tagsEl.value = '';
   fileInput.value = '';
   $('#taskTitleError').hidden = true; $('#taskDeadlineError').hidden = true; $('#taskReminderError').hidden = true;
   setPriorityChips('none'); renderChecklistUI();
@@ -1657,7 +1804,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     if (!task) return;
     $('#taskModalTitle').textContent = 'Редактирование задачи';
     titleEl.value = task.title; descEl.value = task.desc || '';
-    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; $('#taskReminderRepeat').value = task.reminderRepeat || 'none'; tagsEl.value = task.tags.join(', ');
+    deadlineEl.value = task.deadline || ''; $('#taskReminder').value = task.reminder || ''; $('#taskReminderRepeat').value = task.reminderRepeat || 'none'; $('#taskRepeat').value = task.taskRepeat || 'none'; tagsEl.value = task.tags.join(', ');
     colIdEl.value = task.columnId; setPriorityChips(task.priority);
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
@@ -1984,6 +2131,10 @@ async function _saveTask() {
     return;
   }
   const reminderRepeat = $('#taskReminderRepeat').value;
+  const taskRepeat = $('#taskRepeat').value;
+  const repeatAnchor = existing && existing.deadline === deadline && existing.taskRepeat === taskRepeat
+    ? (existing.repeatAnchor || deadline || (reminder ? reminder.slice(0, 10) : ''))
+    : (deadline || (reminder ? reminder.slice(0, 10) : ''));
 
   const pv = $('#taskParent').value, parentId = pv.startsWith('task:') ? pv.slice(5) : '';
   const par = parentId ? state.tasks.find(t => t.id === parentId) : null;
@@ -2001,18 +2152,16 @@ async function _saveTask() {
     id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : state.activeBoardId,
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
-    priority: editingPriority, deadline, reminder, reminderRepeat, files,
+    priority: editingPriority, deadline, reminder, reminderRepeat, taskRepeat,
+    repeatFrom: existing?.repeatFrom || '', repeatAnchor, files,
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  try { await dbPutTask(candidate); }
+  try { await persistTaskChanges([candidate]); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
-  const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
-  if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
-  syncNativeReminder(candidate);
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   await syncKids(candidate).catch(() => {});
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
@@ -2053,7 +2202,7 @@ async function duplicateTask(taskId) {
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',
     tags: [...src.tags], checklist: src.checklist.map(c => ({ id: 'cl_' + generateId(), text: c.text, checked: c.checked })),
-    files, completedAt: null,
+    files, completedAt: null, repeatFrom: '', repeatAnchor: src.deadline || '',
     order: maxOrder + 1, createdAt: Date.now(), updatedAt: Date.now(),
     boardId: src.boardId || state.activeBoardId
   };
@@ -2964,11 +3113,7 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await dbPutTasks(toUpdate);
-        toUpdate.forEach(cand => {
-          const idx = state.tasks.findIndex(x => x.id === cand.id);
-          if (idx !== -1) state.tasks[idx] = cand;
-        });
+        await persistTaskChanges(toUpdate);
         for (const c of toUpdate) await syncKids(c);
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
@@ -3619,12 +3764,7 @@ window.kanbanReceiveTaskActions = async (raw) => {
           const root = candidates.find(t => t.id === action.taskId);
           if (root) root.order = orders.length ? Math.min(...orders) - 1 : 0;
           try {
-            await dbPutTasks(candidates);
-            for (const candidate of candidates) {
-              const index = tasks.findIndex(t => t.id === candidate.id);
-              if (index >= 0) tasks[index] = candidate;
-              syncNativeReminder(candidate);
-            }
+            await persistTaskChanges(candidates, tasks, board);
             changed = true;
           } catch (error) {
             showToast('Не удалось завершить задачу: ' + (error.message || error));

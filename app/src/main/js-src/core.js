@@ -109,8 +109,7 @@ function normalizeTree(tasks) {
 async function syncKids(t) {
   const ch = subtree(t.id).filter(d => d.columnId !== t.columnId).map(d => applyColumnChange(d, t.columnId));
   if (!ch.length) return;
-  await dbPutTasks(ch);
-  ch.forEach(c => { const i = state.tasks.findIndex(x => x.id === c.id); if (i > -1) state.tasks[i] = c; });
+  await persistTaskChanges(ch);
 }
 
 function applyActiveBoard() {
@@ -535,6 +534,9 @@ function sanitizeTask(t) {
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
     reminder: typeof t.reminder === 'string' ? t.reminder : '',
     reminderRepeat: ['daily', 'weekly', 'monthly'].includes(t.reminderRepeat) ? t.reminderRepeat : 'none',
+    taskRepeat: ['daily', 'weekly', 'monthly'].includes(t.taskRepeat) ? t.taskRepeat : 'none',
+    repeatFrom: typeof t.repeatFrom === 'string' ? t.repeatFrom : '',
+    repeatAnchor: typeof t.repeatAnchor === 'string' && DATE_RE.test(t.repeatAnchor) ? t.repeatAnchor : '',
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
       ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))

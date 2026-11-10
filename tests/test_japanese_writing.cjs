@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync('app/src/main/assets/japanese.html', 'utf8');
-const ids = ['writingTrace','writingRecall','writingHira','writingKata','writingReveal','writingUndo','writingClear','writingPrev','writingNext','writeCanvas'];
+const ids = ['writingTrace','writingRecall','writingHira','writingKata','writingReveal','writingUndo','writingClear','writingGrade','writingRetry','writingGood','writingFeedback','writingPrev','writingNext','writeCanvas'];
 for (const id of ids) assert(html.includes('id="'+id+'"'), 'Missing writing control: '+id);
 const start = html.indexOf('function resetWriting(){');
 const end = html.indexOf('\nupdateProgress();renderGroup();', start);
@@ -16,6 +16,7 @@ elements.writingToggle={hidden:false,textContent:''};
 let renders=0, groupRenders=0;
 const context={
   writingMode:'trace',showGuide:true,writingRevealed:false,writingStrokes:[[1]],writeIndex:0,script:'hiragana',
+  reviews:{},reviewKey:'test-reviews',localStorage:{setItem(){}},Date,
   $:id=>elements[id],drawWriting:()=>renders++,renderGroup:()=>groupRenders++
 };
 vm.createContext(context);
@@ -32,6 +33,10 @@ assert.equal(elements.writingReveal.hidden,false);
 assert.equal(elements.writingToggle.hidden,true);
 elements.writingReveal.onclick();
 assert.equal(context.writingRevealed,true);
+assert.equal(elements.writingGrade.hidden,false);
+elements.writingRetry.onclick();
+assert.equal(context.reviews['あ'].interval,0);
+assert.equal(elements.writingGrade.hidden,true);
 elements.writingNext.onclick();
 assert.equal(context.writingRevealed,false,'Next character must hide the answer');
 assert.equal(context.writingStrokes.length,0,'Next character must clear the canvas');

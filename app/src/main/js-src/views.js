@@ -5,7 +5,8 @@ function searchAllBoards(query, limit = 100, filters = {}) {
   const words = String(query || '').normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const boardFilter = filters.boardId || '';
   const statusFilter = filters.status || '';
-  if (!words.length && !boardFilter && !statusFilter) return undefined;
+  const deadlineFilter = filters.deadline || '';
+  if (!words.length && !boardFilter && !statusFilter && !deadlineFilter) return undefined;
   const items = [];
   for (const board of state.boards) {
     if (boardFilter && board.id !== boardFilter) continue;
@@ -13,6 +14,17 @@ function searchAllBoards(query, limit = 100, filters = {}) {
     for (const task of state._tasksByBoard[board.id] || []) {
       if (statusFilter === 'done' && !doneColumns.has(task.columnId)) continue;
       if (statusFilter === 'active' && doneColumns.has(task.columnId)) continue;
+      if (deadlineFilter) {
+        if (deadlineFilter === 'none') { if (task.deadline) continue; }
+        else {
+          if (!task.deadline || doneColumns.has(task.columnId)) continue;
+          const days = dayDiff(task.deadline);
+          if (deadlineFilter === 'overdue' && days >= 0) continue;
+          if (deadlineFilter === 'attention' && days > 0) continue;
+          if (deadlineFilter === 'today' && days !== 0) continue;
+          if (deadlineFilter === 'week' && (days < 0 || days > 6)) continue;
+        }
+      }
       const title = String(task.title || '').normalize('NFKC').toLocaleLowerCase();
       const boardName = String(board.name || '').normalize('NFKC').toLocaleLowerCase();
       const description = String(task.desc || '').normalize('NFKC').toLocaleLowerCase();
@@ -57,7 +69,8 @@ function renderGlobalSearch() {
   const empty = $('#globalSearchEmpty');
   const match = searchAllBoards(input.value, 100, {
     boardId: $('#globalSearchBoardFilter').value,
-    status: $('#globalSearchStatusFilter').value
+    status: $('#globalSearchStatusFilter').value,
+    deadline: $('#globalSearchDeadlineFilter').value
   });
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;

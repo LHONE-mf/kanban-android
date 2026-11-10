@@ -10,7 +10,7 @@ const start=views.indexOf('// GLOBAL SEARCH');
 const end=views.indexOf('// ============================================================\n// RENDER dispatcher',start);
 assert(start>=0&&end>start,'Search functions must precede view rendering');
 assert(core.includes("'search'"),'Search must be included in saved view options');
-for(const id of ['globalSearch','globalSearchInput','globalSearchBoardFilter','globalSearchStatusFilter','globalSearchResults','globalSearchSummary','globalSearchEmpty'])
+for(const id of ['globalSearch','globalSearchInput','globalSearchBoardFilter','globalSearchStatusFilter','globalSearchDeadlineFilter','globalSearchResults','globalSearchSummary','globalSearchEmpty'])
   assert(html.includes('id="'+id+'"'),'Missing cross-board UI element: '+id);
 assert(html.includes('data-view="search"'),'Search tab must be accessible from mobile navigation');
 assert(html.includes('id="globalSearchTab"'),'Search tab must have stable navigation identity for Android UI tests');
@@ -18,12 +18,13 @@ assert(views.includes("$('#globalSearch').hidden = view !== 'search'"),'Search v
 assert(interactions.includes("$('#globalSearchInput').addEventListener('input'"),'Search input must be live');
 assert(interactions.includes("$('#globalSearchBoardFilter').addEventListener('change'"),'Board filter must refresh live');
 assert(interactions.includes("$('#globalSearchStatusFilter').addEventListener('change'"),'Status filter must refresh live');
+assert(interactions.includes("$('#globalSearchDeadlineFilter').addEventListener('change'"),'Deadline filter must refresh live');
 assert(!views.slice(start,end).includes('innerHTML = task.'),'Task data must not be inserted into HTML unsafely');
 
-const a={id:'a',boardId:'b1',parentId:'',columnId:'done',title:'Проверка ячейки',desc:'Quality control',tags:['LFP'],checklist:[],updatedAt:1,priority:'high'};
-const child={id:'nested',boardId:'b2',parentId:'root',title:'Find hidden thing',desc:'',tags:[],checklist:[{text:'Катод'}],updatedAt:3};
-const root={id:'root',boardId:'b2',parentId:'',title:'Parent',desc:'',tags:[],checklist:[],updatedAt:2};
-const b={id:'b',boardId:'b2',parentId:'',title:'Results',desc:'Testing electrode coating',tags:['Important'],checklist:[],updatedAt:4};
+const a={id:'a',boardId:'b1',parentId:'',columnId:'done',title:'Проверка ячейки',desc:'Quality control',tags:['LFP'],checklist:[],deadline:'2026-11-08',updatedAt:1,priority:'high'};
+const child={id:'nested',boardId:'b2',parentId:'root',title:'Find hidden thing',desc:'',tags:[],checklist:[{text:'Катод'}],deadline:'2026-11-10',updatedAt:3};
+const root={id:'root',boardId:'b2',parentId:'',title:'Parent',desc:'',tags:[],checklist:[],deadline:'2026-11-09',updatedAt:2};
+const b={id:'b',boardId:'b2',parentId:'',title:'Results',desc:'Testing electrode coating',tags:['Important'],checklist:[],deadline:'2026-11-14',updatedAt:4};
 const weird={id:'unsafe',boardId:'b2',parentId:'',title:'<script>alert(1)</script>',desc:'',tags:[],checklist:[],updatedAt:5};
 const state={boards:[
   {id:'b1',name:'Lab',columns:[{id:'todo',title:'To Do',isDone:false},{id:'done',title:'Done',isDone:true}]},
@@ -38,11 +39,12 @@ function fakeNode(name='div'){
   setAttribute(k,v){this[k]=v}};
  nodes.push(n);return n;
 }
-const els=Object.fromEntries(['#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
+const els=Object.fromEntries(['#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchDeadlineFilter','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
  .map(key=>[key,fakeNode(key)]));
 const nav=[],toasts=[];
 let failSwitch=false;
-const ctx={state,Date,console,document:{createElement:tag=>fakeNode(tag)},
+const testDayDiff={'2026-11-08':-2,'2026-11-09':-1,'2026-11-10':0,'2026-11-14':4};
+const ctx={state,Date,console,dayDiff:date=>testDayDiff[date],document:{createElement:tag=>fakeNode(tag)},
  $:sel=>els[sel],switchView:view=>nav.push(['view',view]),
  switchBoard:async id=>{if(failSwitch)throw Error('blocked');state.activeBoardId=id;state.tasks=state._tasksByBoard[id];nav.push(['board',id])},
  openTaskModal:id=>nav.push(['task',id]),showToast:s=>toasts.push(s)};
@@ -54,6 +56,14 @@ assert.equal(find(''),undefined,'Empty search should show guidance rather than a
 assert.equal(find('    '),undefined);
 assert.equal(find('',100,{status:'done'}).total,1,'Status-only filtering works');
 assert.equal(find('',100,{boardId:'b2'}).total,4,'Board-only filtering works');
+assert.equal(find('',100,{deadline:'overdue'}).total,1,'Overdue includes active overdue tasks, not completed ones');
+assert.equal(find('',100,{deadline:'attention'}).total,2,'My day includes active overdue and due-today tasks');
+assert.equal(find('',100,{deadline:'today'}).items[0].task.id,'nested','Due-today filter includes nested tasks');
+assert.equal(find('',100,{deadline:'week'}).total,2,'Next seven days includes today through day six');
+assert.equal(find('',100,{deadline:'none'}).items[0].task.id,'unsafe','No deadline filter excludes dated tasks');
+assert.equal(find('',100,{boardId:'b1',deadline:'overdue'}).total,0,'Completed task is not overdue');
+assert.equal(find('',100,{boardId:'b2',status:'active',deadline:'overdue'}).total,1,'Board, status, and deadline compose');
+assert.equal(find('electrode',100,{deadline:'overdue'}).total,0,'Text query still applies with deadline');
 assert.equal(find('LFP',100,{status:'done'}).total,1,'Done uses each board done column');
 assert.equal(find('LFP',100,{status:'active'}).total,0,'Done tasks are not active');
 assert.equal(find('hidden',100,{status:'active'}).total,1,'Nested active tasks remain searchable');
@@ -73,6 +83,7 @@ assert.equal(find('Производство',2).total,4);
 assert.equal(find('script').items[0].task.id,'unsafe');
 els['#globalSearchBoardFilter'].value='';
 els['#globalSearchStatusFilter'].value='';
+els['#globalSearchDeadlineFilter'].value='';
 els['#globalSearchInput'].value='script';
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchResults'].children.length,1);
@@ -87,6 +98,12 @@ assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач:
   'Filtered empty query updates the result count');
 assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'Проверка ячейки');
 assert.equal(els['#globalSearchBoardFilter'].value,'b1','Selected board survives rendering');
+els['#globalSearchDeadlineFilter'].value='today';
+els['#globalSearchBoardFilter'].value='b2';
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 1','Deadline-only search updates results');
+assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'Find hidden thing');
+els['#globalSearchDeadlineFilter'].value='';
 els['#globalSearchBoardFilter'].value='missing-board';
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchBoardFilter'].value,'','Removed boards reset to all boards');

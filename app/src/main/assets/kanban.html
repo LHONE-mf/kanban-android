@@ -122,6 +122,16 @@
         <option value="done">Завершены</option>
       </select>
     </label>
+    <label class="label">Срок
+      <select class="select" id="globalSearchDeadlineFilter" aria-label="Срок задач для поиска">
+        <option value="">Любой срок</option>
+        <option value="attention">🔥 Мой день</option>
+        <option value="overdue">Просроченные</option>
+        <option value="today">Сегодня</option>
+        <option value="week">Ближайшие 7 дней</option>
+        <option value="none">Без срока</option>
+      </select>
+    </label>
   </div>
   <p id="globalSearchSummary" class="global-search-summary" role="status" aria-live="polite"></p>
   <div id="globalSearchResults" class="global-search-results" aria-label="Результаты поиска"></div>

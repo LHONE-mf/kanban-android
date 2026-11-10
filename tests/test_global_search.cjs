@@ -195,9 +195,9 @@ assert.equal(els['#globalSearchStatusFilter'].value,'active','My Day excludes co
 assert.equal(els['#globalSearchDeadlineFilter'].value,'attention','My Day uses due and overdue tasks');
 assert.equal(els['#globalSearchPriorityFilter'].value,'','My Day clears stale priority filters');
 assert.equal(els['#globalSearchTagFilter'].value,'','My Day clears stale tag filters');
-assert.equal(els['#globalSearchClearBtn'].disabled,false,'My Day preset may be cleared');
 assert.deepEqual(nav.at(-1),['view','search'],'My Day navigates to search');
 ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchClearBtn'].disabled,false,'My Day preset may be cleared');
 assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 2','My Day finds work across boards');
 els['#globalSearchTagFilter'].value='lfp';
 state._tasksByBoard.b1[0].tags=[];

@@ -1923,22 +1923,38 @@ async function saveTaskFromModal() {
 }
 async function _saveTask() {
   const title = $('#taskTitle').value.trim(), deadline = $('#taskDeadline').value || '';
+  const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
   $('#taskTitleError').hidden = !!title;
-  if (!title) { $('#taskTitle').focus(); return; }
-  $('#taskDeadlineError').hidden = isValidISODate(deadline);
-  if (!isValidISODate(deadline)) return;
+  if (!title) {
+    $('#taskTitle').focus();
+    showToast('Введите название задачи перед сохранением');
+    return;
+  }
+  const deadlineValid = isValidISODate(deadline);
+  $('#taskDeadlineError').hidden = deadlineValid;
+  if (!deadlineValid) {
+    $('#taskDeadline').focus();
+    showToast('Проверьте дату завершения задачи');
+    return;
+  }
   const reminder = $('#taskReminder').value;
   const reminderAt = reminder ? new Date(reminder).getTime() : 0;
-  $('#taskReminderError').hidden = !reminder || (Number.isFinite(reminderAt) && reminderAt > Date.now());
-  if (!$('#taskReminderError').hidden) return;
+  // Opening an old task must not make unrelated edits impossible merely because
+  // its existing reminder has already passed. New/changed reminders must be future.
+  const reminderValid = !reminder || (Number.isFinite(reminderAt) &&
+    (reminderAt > Date.now() || (existing && reminder === existing.reminder)));
+  $('#taskReminderError').hidden = !!reminderValid;
+  if (!reminderValid) {
+    $('#taskReminder').focus();
+    showToast('Укажите дату и время напоминания в будущем');
+    return;
+  }
   const reminderRepeat = $('#taskReminderRepeat').value;
 
   const pv = $('#taskParent').value, parentId = pv.startsWith('task:') ? pv.slice(5) : '';
   const par = parentId ? state.tasks.find(t => t.id === parentId) : null;
   if (parentId && !par) { showToast('Родитель не найден'); return; }
   const columnId = par ? par.columnId : pv.slice(4);
-  const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
-
   if (rec.mr) await recStop();
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }

@@ -64,9 +64,10 @@ assert.equal(context.writeIndex,2,'Previous wraps at the beginning of the alphab
 elements.writingRandom.onclick();
 assert.equal(context.writeIndex,0,'Random challenge should select a different kana');
 assert.equal(context.writingStrokes.length,0,'Random challenge clears the drawing');
+context.reviews['あ']={interval:0,due:'invalid'};
 context.reviews['い']={interval:0,due:0};
 vm.runInContext('updateWritingDueCount()',context);
-assert.equal(elements.writingDue.textContent,'Повторить (1)');
+assert.equal(elements.writingDue.textContent,'Повторить (1)','Invalid dates must not count as due');
 elements.writingDue.onclick();
 assert.equal(context.writeIndex,1,'Due practice should select the due kana');
 assert.equal(elements.writingFeedback.textContent,'Повтори этот знак и оцени результат.');

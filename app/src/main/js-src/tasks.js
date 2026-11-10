@@ -5,6 +5,7 @@ function syncNativeReminder(task) {
   try {
     window.KanbanReminders.postMessage(JSON.stringify({
       id: task.id, title: task.title, at: Number.isFinite(at) ? at : 0,
+      boardId: task.boardId || '', boardName: getBoard(task.boardId)?.name || 'Моя доска',
       repeat: task.reminderRepeat || 'none'
     }));
   } catch (_) {}

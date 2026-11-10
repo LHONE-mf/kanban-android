@@ -98,6 +98,7 @@ assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач:
   'Filtered empty query updates the result count');
 assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'Проверка ячейки');
 assert.equal(els['#globalSearchBoardFilter'].value,'b1','Selected board survives rendering');
+els['#globalSearchStatusFilter'].value='';
 els['#globalSearchDeadlineFilter'].value='today';
 els['#globalSearchBoardFilter'].value='b2';
 ctx.renderGlobalSearch();

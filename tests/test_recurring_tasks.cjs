@@ -13,8 +13,10 @@ const html = fs.readFileSync('app/src/main/assets/kanban.html','utf8');
 const focusedFlow = fs.readFileSync('.maestro/recurring-search.yaml','utf8');
 // Maestro's id field is a regular expression, not a plain string. Parentheses
 // must be escaped or the copy exists but the UI test cannot locate it.
-const copySelectors = [...focusedFlow.matchAll(/id: '(\\^CI weekly recurring task [^']+)'/g)]
-  .map(match => match[1]);
+const copySelectors = focusedFlow.split('\n')
+  .map(line => line.trim())
+  .filter(line => line.startsWith("id: '^CI weekly recurring task "))
+  .map(line => line.slice(5,-1));
 assert.equal(copySelectors.length,4,'Check recurring copy both before and after app restart');
 for (const source of copySelectors) {
   const selector = new RegExp(source);

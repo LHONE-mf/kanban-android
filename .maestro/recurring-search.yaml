@@ -102,11 +102,19 @@ androidWebViewHierarchy: devtools
     id: "globalSearchStatusFilter"
 - tapOn: "Не завершены"
 - assertVisible: "Найдено задач: 1"
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска$'
+- assertNotVisible:
+    id: '^Открыть: CI weekly recurring task, доска Моя доска$'
 - takeScreenshot: ui-screenshots/search-active-filter
 - tapOn:
     id: "globalSearchStatusFilter"
 - tapOn: "Завершены"
 - assertVisible: "Найдено задач: 1"
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task, доска Моя доска$'
+- assertNotVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска$'
 - takeScreenshot: ui-screenshots/search-done-filter
 - tapOn:
     id: "globalSearchStatusFilter"
@@ -131,3 +139,43 @@ androidWebViewHierarchy: devtools
     id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска'
 - assertVisible: "Редактирование задачи"
 - takeScreenshot: ui-screenshots/recurring-global-search-navigation
+
+# After opening an exact result, create a second, empty board through the UI.
+# Selecting it must return 0 matches; switching back restores the original two.
+- pressKey: Back
+- assertNotVisible: "Редактирование задачи"
+- tapOn:
+    id: "addBoardBtn"
+- extendedWaitUntil:
+    visible:
+      id: "textPromptInput"
+    timeout: 30000
+- tapOn:
+    id: "textPromptInput"
+- inputText: "CI second board"
+- tapOn:
+    id: "textPromptSubmit"
+- extendedWaitUntil:
+    visible:
+      id: "quickAdd"
+    timeout: 30000
+- tapOn: "🔎 Поиск"
+- assertVisible: "Найдено задач: 2"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchBoardFilter"
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "CI second board"
+- assertVisible: "Найдено задач: 0"
+- assertNotVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска$'
+- takeScreenshot: ui-screenshots/search-other-board-empty
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "Моя доска"
+- assertVisible: "Найдено задач: 2"
+- takeScreenshot: ui-screenshots/search-original-board-restored

@@ -90,6 +90,38 @@ androidWebViewHierarchy: devtools
 - inputText: "weekly recurring"
 - hideKeyboard
 - assertVisible: "Найдено задач: 2"
+# Exercise real Android dropdowns and verify that completed/unfinished
+# occurrences remain distinguishable without altering the stored tasks.
+- scrollUntilVisible:
+    element:
+      id: "globalSearchStatusFilter"
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- tapOn:
+    id: "globalSearchStatusFilter"
+- tapOn: "Не завершены"
+- assertVisible: "Найдено задач: 1"
+- takeScreenshot: ui-screenshots/search-active-filter
+- tapOn:
+    id: "globalSearchStatusFilter"
+- tapOn: "Завершены"
+- assertVisible: "Найдено задач: 1"
+- takeScreenshot: ui-screenshots/search-done-filter
+- tapOn:
+    id: "globalSearchStatusFilter"
+- tapOn: "Все статусы"
+- assertVisible: "Найдено задач: 2"
+# The board filter must also work as an interactive control on Android.
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "Моя доска"
+- assertVisible: "Найдено задач: 2"
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "Все доски"
+- assertVisible: "Найдено задач: 2"
+- takeScreenshot: ui-screenshots/search-filter-reset
 - scrollUntilVisible:
     element:
       id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска'

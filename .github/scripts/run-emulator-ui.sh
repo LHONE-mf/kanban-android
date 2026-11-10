@@ -145,6 +145,8 @@ adb shell input keyevent KEYCODE_HOME
 adb shell am start -W -n com.kanban.offline/.MainActivity > ui-screenshots/attachment-return-to-kanban.txt
 adb shell dumpsys activity activities > ui-screenshots/attachment-return-activity.txt
 grep -q 'topResumedActivity=.*com.kanban.offline/.MainActivity' ui-screenshots/attachment-return-activity.txt
+stage="open saved photo, zoom and navigate task gallery"
+run_maestro .maestro/photo-zoom.yaml ui-screenshots/photo-zoom-debug
 
 # Now export a backup containing a real imported attachment, not just empty
 # media. All destructive reset steps below apply ONLY to the CI emulator.

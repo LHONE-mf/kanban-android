@@ -37,7 +37,7 @@ const state={boards:[
 ],activeBoardId:'b1',_tasksByBoard:{b1:[a],b2:[root,child,b,weird]},tasks:[a]};
 const entries=[],nodes=[];
 function fakeNode(name='div'){
- const n={name,children:[],dataset:{},className:'',textContent:'',hidden:false,style:{},
+ const n={name,value:'',children:[],dataset:{},className:'',textContent:'',hidden:false,style:{},
   appendChild(c){this.children.push(c);return c},
   addEventListener(type,fn){this['on'+type]=fn},
   replaceChildren(...items){this.children=[...items]},

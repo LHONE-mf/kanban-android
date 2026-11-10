@@ -1,0 +1,86 @@
+name: Focused Recurrence and Search UI
+
+# Focused M3/M4 regression; deliberately avoid the expensive full emulator suite.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ui-testing]
+    paths:
+      - '.maestro/recurring-search.yaml'
+      - '.github/workflows/recurrence-ui.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: focused-recurrence-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recurrence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Restore stable development signing key
+        run: |
+          base64 --decode .github/keys/kanban-debug.keystore.b64 > .github/keys/kanban-debug.keystore
+          chmod 600 .github/keys/kanban-debug.keystore
+      - name: Build Android APK
+        env:
+          KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
+        run: |
+          python3 tools/build_kanban_js.py --check
+          node tests/test_recurring_tasks.cjs
+          node tests/test_global_search.cjs
+          gradle :app:assembleDebug --no-daemon
+      - name: Install Maestro
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if curl --retry 3 --retry-all-errors --retry-delay 2 -fsSL https://get.maestro.mobile.dev -o /tmp/install-maestro.sh; then
+              bash /tmp/install-maestro.sh
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            sleep 4
+          done
+          test -x "$HOME/.maestro/bin/maestro"
+      - name: Enable KVM acceleration
+        run: |
+          if [[ -e /dev/kvm ]]; then sudo chmod a+rw /dev/kvm; fi
+      - name: Test recurring tasks and global search on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 600
+          script: |
+            set -euo pipefail
+            mkdir -p ui-screenshots
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            "$HOME/.maestro/bin/maestro" test .maestro/recurring-search.yaml --debug-output ui-screenshots/recurring-search-debug
+      - name: Capture emulator diagnostics on failure
+        if: failure()
+        run: |
+          echo "Focused Android UI test failed. See Maestro logs in the artifact."
+      - name: Upload focused UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: focused-recurrence-ui
+          path: ui-screenshots/
+          if-no-files-found: ignore
+          include-hidden-files: true
+      - name: Remove signing key
+        if: always()
+        run: rm -f .github/keys/kanban-debug.keystore

@@ -109,6 +109,20 @@
   </div>
   <label class="label" for="globalSearchInput">Найти задачу</label>
   <input type="search" class="input" id="globalSearchInput" placeholder="Введите название задачи, тег или слово..." autocomplete="off" aria-describedby="globalSearchSummary">
+  <div class="global-search-filters" role="group" aria-label="Фильтры поиска">
+    <label class="label">Доска
+      <select class="select" id="globalSearchBoardFilter" aria-label="Доска для поиска">
+        <option value="">Все доски</option>
+      </select>
+    </label>
+    <label class="label">Статус
+      <select class="select" id="globalSearchStatusFilter" aria-label="Статус задач для поиска">
+        <option value="">Все статусы</option>
+        <option value="active">Не завершены</option>
+        <option value="done">Завершены</option>
+      </select>
+    </label>
+  </div>
   <p id="globalSearchSummary" class="global-search-summary" role="status" aria-live="polite"></p>
   <div id="globalSearchResults" class="global-search-results" aria-label="Результаты поиска"></div>
   <p id="globalSearchEmpty" class="global-search-empty"></p>

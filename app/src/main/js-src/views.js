@@ -1,12 +1,18 @@
 // GLOBAL SEARCH
 // Search every persisted board, including nested tasks. Local board filters
 // remain independent, so finding a task cannot silently discard their state.
-function searchAllBoards(query, limit = 100) {
+function searchAllBoards(query, limit = 100, filters = {}) {
   const words = String(query || '').normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return undefined;
+  const boardFilter = filters.boardId || '';
+  const statusFilter = filters.status || '';
+  if (!words.length && !boardFilter && !statusFilter) return undefined;
   const items = [];
   for (const board of state.boards) {
+    if (boardFilter && board.id !== boardFilter) continue;
+    const doneColumns = new Set(board.columns.filter(c => c.isDone).map(c => c.id));
     for (const task of state._tasksByBoard[board.id] || []) {
+      if (statusFilter === 'done' && !doneColumns.has(task.columnId)) continue;
+      if (statusFilter === 'active' && doneColumns.has(task.columnId)) continue;
       const title = String(task.title || '').normalize('NFKC').toLocaleLowerCase();
       const boardName = String(board.name || '').normalize('NFKC').toLocaleLowerCase();
       const description = String(task.desc || '').normalize('NFKC').toLocaleLowerCase();
@@ -27,12 +33,32 @@ function searchAllBoards(query, limit = 100) {
   return { total: items.length, items: items.slice(0, Math.max(1, limit)) };
 }
 
+function updateGlobalSearchBoardFilter() {
+  const select = $('#globalSearchBoardFilter');
+  const selected = select.value;
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'Все доски';
+  select.replaceChildren(all);
+  for (const board of state.boards) {
+    const option = document.createElement('option');
+    option.value = board.id;
+    option.textContent = board.name;
+    select.appendChild(option);
+  }
+  select.value = state.boards.some(board => board.id === selected) ? selected : '';
+}
+
 function renderGlobalSearch() {
+  updateGlobalSearchBoardFilter();
   const input = $('#globalSearchInput');
   const results = $('#globalSearchResults');
   const summary = $('#globalSearchSummary');
   const empty = $('#globalSearchEmpty');
-  const match = searchAllBoards(input.value);
+  const match = searchAllBoards(input.value, 100, {
+    boardId: $('#globalSearchBoardFilter').value,
+    status: $('#globalSearchStatusFilter').value
+  });
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;
   if (!match) {

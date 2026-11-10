@@ -818,12 +818,18 @@ async function getThumb(mediaId) {
 // GLOBAL SEARCH
 // Search every persisted board, including nested tasks. Local board filters
 // remain independent, so finding a task cannot silently discard their state.
-function searchAllBoards(query, limit = 100) {
+function searchAllBoards(query, limit = 100, filters = {}) {
   const words = String(query || '').normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return undefined;
+  const boardFilter = filters.boardId || '';
+  const statusFilter = filters.status || '';
+  if (!words.length && !boardFilter && !statusFilter) return undefined;
   const items = [];
   for (const board of state.boards) {
+    if (boardFilter && board.id !== boardFilter) continue;
+    const doneColumns = new Set(board.columns.filter(c => c.isDone).map(c => c.id));
     for (const task of state._tasksByBoard[board.id] || []) {
+      if (statusFilter === 'done' && !doneColumns.has(task.columnId)) continue;
+      if (statusFilter === 'active' && doneColumns.has(task.columnId)) continue;
       const title = String(task.title || '').normalize('NFKC').toLocaleLowerCase();
       const boardName = String(board.name || '').normalize('NFKC').toLocaleLowerCase();
       const description = String(task.desc || '').normalize('NFKC').toLocaleLowerCase();
@@ -844,12 +850,32 @@ function searchAllBoards(query, limit = 100) {
   return { total: items.length, items: items.slice(0, Math.max(1, limit)) };
 }
 
+function updateGlobalSearchBoardFilter() {
+  const select = $('#globalSearchBoardFilter');
+  const selected = select.value;
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'Все доски';
+  select.replaceChildren(all);
+  for (const board of state.boards) {
+    const option = document.createElement('option');
+    option.value = board.id;
+    option.textContent = board.name;
+    select.appendChild(option);
+  }
+  select.value = state.boards.some(board => board.id === selected) ? selected : '';
+}
+
 function renderGlobalSearch() {
+  updateGlobalSearchBoardFilter();
   const input = $('#globalSearchInput');
   const results = $('#globalSearchResults');
   const summary = $('#globalSearchSummary');
   const empty = $('#globalSearchEmpty');
-  const match = searchAllBoards(input.value);
+  const match = searchAllBoards(input.value, 100, {
+    boardId: $('#globalSearchBoardFilter').value,
+    status: $('#globalSearchStatusFilter').value
+  });
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;
   if (!match) {
@@ -911,7 +937,7 @@ function renderBoard() {
   updateTagFilter();
   const board = $('#board');
   const scrolls = {};
-  $$('.task-list', board).forEach(el => { scrolls[el.dataset.columnId] = el.scrollTop; });
+  $('.task-list', board).forEach(el => { scrolls[el.dataset.columnId] = el.scrollTop; });
   const boardScroll = board.scrollLeft;
   board.innerHTML = '';
   const visible = getVisibleTasks();
@@ -1443,7 +1469,7 @@ function mmBind() {
   };
   svg.addEventListener('pointerup', end);
   svg.addEventListener('pointercancel', end);
-  $$('.mm-zoom [data-z]').forEach(b => b.onclick = () => {
+  $('.mm-zoom [data-z]').forEach(b => b.onclick = () => {
     const r = svg.getBoundingClientRect();
     if (b.dataset.z === 'fit') mmFit(); else mmZoom(+b.dataset.z, r.width / 2, r.height / 2);
   });
@@ -1616,7 +1642,7 @@ function renderHeatmap() {
 function switchView(view) {
   if (!VALID_VIEWS.includes(view)) view = 'kanban';
   currentView = view;
-  $$('.view-tab').forEach(tab => {
+  $('.view-tab').forEach(tab => {
     const active = tab.dataset.view === view;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
@@ -3231,7 +3257,7 @@ async function onPointerUp(e) {
     drag = null;
     if (list && list.classList.contains('task-list')) {
       const newColId = list.dataset.columnId;
-      const orderedIds = $$('.task-card', list).map(c => c.dataset.taskId);
+      const orderedIds = $('.task-card', list).map(c => c.dataset.taskId);
       const toUpdate = [];
       for (let i = 0; i < orderedIds.length; i++) {
         const t = state.tasks.find(x => x.id === orderedIds[i]);
@@ -3271,7 +3297,7 @@ function getAfterElement(container, y) {
 }
 function updateDropTarget(x, y) {
   if (!drag || !drag.active) return;
-  $$('.task-list.drag-over').forEach(el => el.classList.remove('drag-over'));
+  $('.task-list.drag-over').forEach(el => el.classList.remove('drag-over'));
   const el = document.elementFromPoint(x, y);
   if (!el) return;
   let list = el.closest('.task-list');
@@ -3354,9 +3380,11 @@ function bindEvents() {
     await deleteBoard(state.activeBoardId);
   };
 
-  $$('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
+  $('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
 
   $('#globalSearchInput').addEventListener('input', renderGlobalSearch);
+  $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);
+  $('#globalSearchStatusFilter').addEventListener('change', renderGlobalSearch);
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);
@@ -3379,7 +3407,7 @@ function bindEvents() {
     const button = event.target.closest('button[data-task-repeat]');
     if (button) setTaskRepeat(button.dataset.taskRepeat);
   });
-  $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
+  $('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;
   $('#saveTaskBtn').onclick = saveTaskFromModal;
 

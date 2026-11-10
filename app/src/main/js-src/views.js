@@ -50,7 +50,10 @@ function renderGlobalSearch() {
     const item = document.createElement('button');
     item.type = 'button';
     item.className = 'global-search-result';
-    item.setAttribute('aria-label', 'Открыть: ' + task.title + ', доска ' + board.name);
+    // Completed and fresh recurring occurrences have identical visible titles.
+    // Give the new occurrence a unique accessible label for navigation.
+    item.setAttribute('aria-label', 'Открыть: ' + task.title +
+      (task.repeatFrom ? ' (повтор)' : '') + ', доска ' + board.name);
     const title = document.createElement('span');
     title.className = 'global-search-result-title';
     title.textContent = task.title;

@@ -974,7 +974,9 @@ function createTaskCard(task, column) {
   card.dataset.taskId = task.id;
   card.tabIndex = 0;
   card.setAttribute('role', 'button');
-  card.setAttribute('aria-label', task.title);
+  // A recurring copy has the same visible title as its completed predecessor.
+  // Distinguish it for screen readers and Android UI regression assertions.
+  card.setAttribute('aria-label', task.title + (task.repeatFrom ? ' (повтор)' : ''));
   card.style.setProperty('--status-color', column.color);
 
   const descHtml = task.desc ? `<div class="task-description">${escapeHtml(truncate(task.desc, 120))}</div>` : '';
@@ -1016,7 +1018,7 @@ function createTaskCard(task, column) {
     </div>
     <div class="task-quick-actions">
       <button class="task-quick-btn" data-move-next="1" title="В следующую колонку" aria-label="В следующую колонку">→</button>
-      <button class="task-quick-btn" data-move-done="1" title="Отметить выполненной" aria-label="Отметить выполненной">✓</button>
+      <button class="task-quick-btn" data-move-done="1" title="Отметить выполненной" aria-label="Отметить выполненной: ${escapeHtml(task.title)}">✓</button>
       <button class="task-quick-btn danger" data-delete="1" title="Удалить" aria-label="Удалить задачу">×</button>
     </div>`;
 

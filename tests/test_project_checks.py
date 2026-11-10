@@ -240,7 +240,12 @@ class ReminderRegressionTests(unittest.TestCase):
     def test_completion_and_deletion_cancel_pending_reminders(self):
         self.assertIn("task.reminder && !task.completedAt", self.tasks)
         self.assertIn("gone.forEach(t => syncNativeReminder({ ...t, reminder: '' }))", self.tasks)
-        self.assertIn("syncNativeReminder(candidate)", self.views)
+        # Card completion now uses the atomic transaction shared with recurring tasks.
+        # It persists both the completed task and its replacement before sending
+        # native reminder reconciliation for all changed records.
+        self.assertIn("await persistTaskChanges([candidate])", self.views)
+        self.assertIn("syncNativeReminder(task)", self.tasks)
+        self.assertIn("await dbPutTasks(write)", self.tasks)
         self.assertIn("syncNativeReminder(m)", self.views)
         self.assertIn("tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' })", self.core)
         self.assertIn("alarm.cancel(intent(context, id))", self.native)

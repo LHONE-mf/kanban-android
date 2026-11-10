@@ -276,7 +276,18 @@ button { font-family: inherit; }
 }
 .task-quick-btn:hover { background: var(--surface-3); color: var(--text); }
 .task-quick-btn.danger:hover { background: var(--danger-bg); color: var(--danger); }
-@media (hover: none) { .task-quick-actions { opacity: 0.65; } }
+/* Touch screens have no reliable hover: keep task actions legible at rest. */
+@media (hover: none), (pointer: coarse) {
+  .task-quick-actions { opacity: 1; gap: 4px; }
+  .task-quick-btn {
+    width: 30px; height: 30px; font-size: 16px;
+    background: var(--surface-3); color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+  .task-title { padding-right: 105px; }
+  .task-quick-btn.danger { color: var(--danger); }
+}
+
 
 .dashboard {
   flex: 1; overflow-y: auto;

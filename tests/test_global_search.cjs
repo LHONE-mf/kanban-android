@@ -10,7 +10,7 @@ const start=views.indexOf('// GLOBAL SEARCH');
 const end=views.indexOf('// ============================================================\n// RENDER dispatcher',start);
 assert(start>=0&&end>start,'Search functions must precede view rendering');
 assert(core.includes("'search'"),'Search must be included in saved view options');
-for(const id of ['globalSearch','globalSearchInput','globalMyDayBtn','globalSearchClearBtn','globalSearchBoardFilter','globalSearchStatusFilter','globalSearchDeadlineFilter','globalSearchPriorityFilter','globalSearchTagFilter','globalSearchResults','globalSearchSummary','globalSearchEmpty'])
+for(const id of ['globalSearch','globalSearchInput','globalMyDayBtn','globalSearchClearBtn','globalSearchBoardFilter','globalSearchStatusFilter','globalSearchDeadlineFilter','globalSearchPriorityFilter','globalSearchTagFilter','globalSearchResults','globalSearchMoreBtn','globalSearchSummary','globalSearchEmpty'])
   assert(html.includes('id="'+id+'"'),'Missing cross-board UI element: '+id);
 assert(html.includes('data-view="search"'),'Search tab must be accessible from mobile navigation');
 assert(html.includes('id="globalSearchTab"'),'Search tab must have stable navigation identity for Android UI tests');
@@ -24,6 +24,9 @@ assert(interactions.includes("$('#globalSearchTagFilter').addEventListener('chan
 assert(interactions.includes("$('#globalMyDayBtn').addEventListener('click', showGlobalMyDay)"),'My Day shortcut must be wired');
 assert(interactions.includes("$('#globalSearchClearBtn').addEventListener('click', clearGlobalSearch)"),
   'Clear-search button must reset search filters');
+assert(interactions.includes("$('#globalSearchMoreBtn').addEventListener('click', loadMoreGlobalSearchResults)"),
+  'Load-more button must be wired to an actual search action');
+assert(html.includes('aria-controls="globalSearchResults"'),'Load-more button identifies its result list');
 assert(!views.slice(start,end).includes('innerHTML = task.'),'Task data must not be inserted into HTML unsafely');
 
 const a={id:'a',boardId:'b1',parentId:'',columnId:'done',title:'Проверка ячейки',desc:'Quality control',tags:['LFP'],checklist:[],deadline:'2026-11-08',updatedAt:1,priority:'high'};
@@ -44,7 +47,7 @@ function fakeNode(name='div'){
   setAttribute(k,v){this[k]=v}};
  nodes.push(n);return n;
 }
-const els=Object.fromEntries(['#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchDeadlineFilter','#globalSearchPriorityFilter','#globalSearchTagFilter','#globalSearchClearBtn','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
+const els=Object.fromEntries(['#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchDeadlineFilter','#globalSearchPriorityFilter','#globalSearchTagFilter','#globalSearchClearBtn','#globalSearchMoreBtn','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
  .map(key=>[key,fakeNode(key)]));
 const nav=[],toasts=[];
 let failSwitch=false;
@@ -58,6 +61,7 @@ vm.runInContext(views.slice(start,end),ctx);
 const find=(q,limit=100,filters={})=>ctx.searchAllBoards(q,limit,filters);
 
 ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchMoreBtn'].hidden,true,'No load-more button before a search');
 assert.equal(els['#globalSearchClearBtn'].disabled,true,'Clear search is disabled when there are no filters');
 assert.equal(els['#globalSearchSummary'].textContent,'Поиск по всем доскам, включая вложенные задачи',
   'Empty search shows guidance');
@@ -231,8 +235,51 @@ assert.equal(els['#globalSearchClearBtn'].disabled,true,'Clear button disables a
 assert.equal(els['#globalSearchSummary'].textContent,'Поиск по всем доскам, включая вложенные задачи',
   'Clearing search restores guidance instead of showing all tasks');
 assert.equal(els['#globalSearchResults'].children.length,0,'Clear removes outdated results');
+assert.equal(els['#globalSearchMoreBtn'].hidden,true,'Clear hides the load-more button');
 assert.equal(els['#globalSearchBoardFilter'].children,boardOptionsBeforeClear,'Clear preserves board selector DOM');
 assert.equal(els['#globalSearchTagFilter'].children,tagOptionsBeforeClear,'Clear preserves tag selector DOM');
+
+// Pagination: keep a bounded first page, then reveal further matches in order.
+const bulkTasks=Array.from({length:215},(_,i)=>({
+  id:'batch-'+i,boardId:'b2',columnId:'doing',parentId:'',
+  title:'Batch task '+String(i).padStart(3,'0'),desc:'',tags:[],checklist:[],
+  updatedAt:1000-i,priority:'none'
+}));
+state._tasksByBoard.b2.push(...bulkTasks);
+els['#globalSearchInput'].value='Batch task';
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchResults'].children.length,100,'First page limits DOM results to 100');
+assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 215 · показаны первые 100',
+  'Summary shows the true count and visible count');
+assert.equal(els['#globalSearchMoreBtn'].hidden,false,'More results are available');
+assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'Batch task 000',
+  'Pagination retains relevance ordering');
+ctx.loadMoreGlobalSearchResults();
+assert.equal(els['#globalSearchResults'].children.length,200,'Second page reveals 100 more results');
+assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 215 · показаны первые 200');
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchResults'].children.length,200,
+  'Re-render without changing query keeps the expanded result count');
+ctx.loadMoreGlobalSearchResults();
+assert.equal(els['#globalSearchResults'].children.length,215,'Final page reveals every remaining result');
+assert.equal(els['#globalSearchMoreBtn'].hidden,true,'Hide load-more after the final page');
+assert.equal(els['#globalSearchResults'].children[214].children[0].textContent,'Batch task 214',
+  'Pagination does not skip or duplicate results');
+els['#globalSearchStatusFilter'].value='active';
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchResults'].children.length,100,
+  'Changing any filter restarts at the first page');
+assert.equal(els['#globalSearchMoreBtn'].hidden,false,'More results remain after filter change');
+els['#globalSearchInput'].value='Batch task 00';
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchResults'].children.length,10,
+  'Changing search terms starts over and shows only new matches');
+assert.equal(els['#globalSearchMoreBtn'].hidden,true,'No more button for short search results');
+els['#globalSearchStatusFilter'].value='';
+els['#globalSearchInput'].value='';
+state._tasksByBoard.b2.splice(-bulkTasks.length);
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchMoreBtn'].hidden,true,'Reset hides pagination again');
 
 const recurringCopy={...a,id:'a-repeat',title:'Repeat audit',repeatFrom:'a',updatedAt:8};
 state._tasksByBoard.b1.push(recurringCopy);

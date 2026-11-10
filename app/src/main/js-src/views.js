@@ -1,4 +1,8 @@
 // GLOBAL SEARCH
+// Show at most one new page per tap; a new query/filter starts from page one.
+const GLOBAL_SEARCH_PAGE_SIZE = 100;
+let globalSearchVisibleLimit = GLOBAL_SEARCH_PAGE_SIZE;
+let globalSearchLastCriteria = '';
 // Match tags exactly across boards while tolerating case and Unicode width.
 function normalizeGlobalSearchTag(tag) {
   return String(tag || '').normalize('NFKC').trim().toLocaleLowerCase();
@@ -145,6 +149,11 @@ function showGlobalMyDay() {
   switchView('search');
 }
 
+function loadMoreGlobalSearchResults() {
+  globalSearchVisibleLimit += GLOBAL_SEARCH_PAGE_SIZE;
+  renderGlobalSearch();
+}
+
 function renderGlobalSearch() {
   updateGlobalSearchBoardFilter();
   updateGlobalSearchTagFilter();
@@ -152,16 +161,24 @@ function renderGlobalSearch() {
   const results = $('#globalSearchResults');
   const summary = $('#globalSearchSummary');
   const empty = $('#globalSearchEmpty');
+  const more = $('#globalSearchMoreBtn');
   $('#globalSearchClearBtn').disabled = !input.value.trim() &&
     !['globalSearchBoardFilter', 'globalSearchStatusFilter', 'globalSearchDeadlineFilter',
       'globalSearchPriorityFilter', 'globalSearchTagFilter'].some(id => $('#' + id).value);
-  const match = searchAllBoards(input.value, 100, {
+  const filters = {
     boardId: $('#globalSearchBoardFilter').value,
     status: $('#globalSearchStatusFilter').value,
     deadline: $('#globalSearchDeadlineFilter').value,
     priority: $('#globalSearchPriorityFilter').value,
     tag: $('#globalSearchTagFilter').value
-  });
+  };
+  const criteria = JSON.stringify([input.value, ...Object.values(filters)]);
+  if (criteria !== globalSearchLastCriteria) {
+    globalSearchLastCriteria = criteria;
+    globalSearchVisibleLimit = GLOBAL_SEARCH_PAGE_SIZE;
+  }
+  const match = searchAllBoards(input.value, globalSearchVisibleLimit, filters);
+  more.hidden = !match || match.total <= match.items.length;
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;
   if (!match) {

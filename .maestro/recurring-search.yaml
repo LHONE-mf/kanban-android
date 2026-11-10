@@ -58,22 +58,22 @@ androidWebViewHierarchy: devtools
     id: "Отметить выполненной: CI weekly recurring task"
 - scrollUntilVisible:
     element:
-      id: "CI weekly recurring task (повтор)"
+      id: '^CI weekly recurring task \(повтор\)$'
     direction: DOWN
     timeout: 30000
 - assertVisible:
-    id: "CI weekly recurring task (повтор)"
+    id: '^CI weekly recurring task \(повтор\)$'
 - takeScreenshot: ui-screenshots/recurring-next-occurrence
 - stopApp
 - launchApp:
     clearState: false
 - scrollUntilVisible:
     element:
-      id: "CI weekly recurring task (повтор)"
+      id: '^CI weekly recurring task \(повтор\)$'
     direction: DOWN
     timeout: 30000
 - assertVisible:
-    id: "CI weekly recurring task (повтор)"
+    id: '^CI weekly recurring task \(повтор\)$'
 # Search tab should find the new task after restart and open its editor.
 - tapOn: "🔎 Поиск"
 - extendedWaitUntil:

@@ -31,12 +31,11 @@ androidWebViewHierarchy: devtools
 - scroll
 - scrollUntilVisible:
     element:
-      id: "taskRepeat"
+      id: "taskRepeatWeeklyBtn"
     direction: DOWN
     timeout: 30000
 - tapOn:
-    id: "taskRepeat"
-- tapOn: "Каждую неделю"
+    id: "taskRepeatWeeklyBtn"
 - scrollUntilVisible:
     element:
       id: "saveTaskBtn"
@@ -45,6 +44,10 @@ androidWebViewHierarchy: devtools
 - tapOn:
     id: "saveTaskBtn"
 - assertNotVisible: "Редактирование задачи"
+# First prove that recurrence was actually saved; earlier native popup taps could
+# silently leave taskRepeat="none" while still returning a successful tap.
+- assertVisible: "🔁 Еженедельно"
+- takeScreenshot: ui-screenshots/recurring-setting-saved
 - scrollUntilVisible:
     element:
       id: "Отметить выполненной: CI weekly recurring task"

@@ -216,6 +216,10 @@ function bindEvents() {
     const button = event.target.closest('button[data-reminder-preset]');
     if (button) applyTaskReminderPreset(button.dataset.reminderPreset);
   });
+  $('#taskRepeatChoices').addEventListener('click', event => {
+    const button = event.target.closest('button[data-task-repeat]');
+    if (button) setTaskRepeat(button.dataset.taskRepeat);
+  });
   $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;
   $('#saveTaskBtn').onclick = saveTaskFromModal;

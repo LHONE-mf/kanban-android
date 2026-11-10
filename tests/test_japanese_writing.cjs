@@ -39,6 +39,9 @@ assert.equal(elements.writingGrade.hidden,false);
 assert.equal(elements.writingReference.hidden,false);
 assert.equal(elements.writingReferenceKana.textContent,'あ');
 assert.equal(elements.writingReferenceRoman.textContent,'a');
+elements.writingGood.onclick();
+assert.equal(context.reviews['あ'],undefined,'Empty handwriting cannot receive a successful grade');
+assert.match(elements.writingFeedback.textContent,/Сначала напиши знак/);
 // Failed local storage writes must not silently mark a character as reviewed.
 context.localStorage.setItem=()=>{throw new Error('Storage full')};
 elements.writingRetry.onclick();

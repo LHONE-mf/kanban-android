@@ -8,11 +8,15 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.text.SimpleDateFormat
 
 /** Pure recurrence calculation; calendar arithmetic respects local daylight-saving changes. */
 internal object ReminderSchedule {
@@ -40,10 +44,20 @@ internal object ReminderSchedule {
     }
 }
 
+/** Readable date and board details for an offline task notification. */
+internal object ReminderNotificationText {
+    fun formatDate(at: Long): String =
+        SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(at))
+    fun summary(boardName: String, at: Long): String =
+        "Доска: ${boardName.ifBlank { "Моя доска" }} · ${formatDate(at)}"
+}
+
 /** Local, offline task reminders. No server or background WebView required. */
 object KanbanReminders {
     private const val PREFS = "kanban_native_reminders"
     private const val CHANNEL = "kanban_task_reminders"
+    const val EXTRA_TASK_ID = "kanban_open_task_id"
+    const val EXTRA_BOARD_ID = "kanban_open_board_id"
     private fun requestCode(id: String) = id.hashCode()
 
     private fun intent(context: Context, id: String) =
@@ -79,6 +93,8 @@ object KanbanReminders {
         val title = json.optString("title").take(200).ifBlank { "Задача" }
         val record = JSONObject().put("id", id).put("title", title).put("at", at)
             .put("anchorAt", anchorAt).put("repeat", repeat)
+            .put("boardId", json.optString("boardId").take(200))
+            .put("boardName", json.optString("boardName", "Моя доска").take(120))
         prefs.edit().putString(id, record.toString()).apply()
         // setAndAllowWhileIdle is intentionally inexact; no special exact-alarm permission.
         alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent(context, id))
@@ -106,14 +122,26 @@ object KanbanReminders {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Напоминания о задачах", NotificationManager.IMPORTANCE_DEFAULT))
+        val boardName = json.optString("boardName", "Моя доска").ifBlank { "Моя доска" }
+        val title = json.optString("title", "Задача")
+        val date = ReminderNotificationText.formatDate(json.optLong("at"))
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            action = "com.kanban.offline.OPEN_TASK"
+            data = Uri.parse("kanban://reminder/task/${Uri.encode(id)}")
+            putExtra(EXTRA_TASK_ID, id)
+            putExtra(EXTRA_BOARD_ID, json.optString("boardId"))
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
         val open = PendingIntent.getActivity(
-            context, requestCode(id), Intent(context, MainActivity::class.java),
+            context, requestCode(id), openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = android.app.Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
-            .setContentTitle("Напоминание · Канбан")
-            .setContentText(json.optString("title"))
+            .setContentTitle(title)
+            .setContentText(ReminderNotificationText.summary(boardName, json.optLong("at")))
+            .setStyle(android.app.Notification.BigTextStyle()
+                .bigText("Задача: $title\nДоска: $boardName\nНапоминание: $date"))
             .setContentIntent(open).setAutoCancel(true).build()
         manager.notify(requestCode(id), notification)
     }

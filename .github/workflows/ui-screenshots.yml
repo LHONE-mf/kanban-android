@@ -1,10 +1,15 @@
 name: Android UI Smoke Tests and Screenshots
 
-# Full Maestro regression is intentionally manual: it boots an emulator,
-# builds two APKs, tests upgrade persistence, SAF backup/restore and attachments.
-# Fast APK/unit tests still run automatically on every push in android.yml.
+# Full Maestro regression boots an emulator, checks upgrade persistence,
+# SAF backup/restore and attachments. It can be started manually; an explicit
+# edit to this workflow on ui-testing triggers a one-off audit run.
+# Ordinary code pushes still use only the fast APK/unit tests.
 on:
   workflow_dispatch:
+  push:
+    branches: [ui-testing]
+    paths:
+      - '.github/workflows/ui-screenshots.yml'
 
 permissions:
   contents: read

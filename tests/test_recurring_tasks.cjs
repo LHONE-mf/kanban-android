@@ -40,6 +40,8 @@ const ctx={
   toISO:d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-'),
   parseISO:s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)},
   isValidISODate:s=>/^\d{4}-\d{2}-\d{2}$/.test(s),
+  formatTaskLocalDate:(d, withTime=false)=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')+
+    (withTime?'T'+[String(d.getHours()).padStart(2,'0'),String(d.getMinutes()).padStart(2,'0')].join(':'):''),
   dbPutTasks:async x=>{if(rejectWrites) throw Error('disk full');writes.push(x)},
   syncNativeReminder:t=>scheduled.push(t.id)
 };

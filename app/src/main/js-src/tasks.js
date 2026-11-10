@@ -54,6 +54,40 @@ function captureModalSnapshot() {
     parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
   });
 }
+// Quick scheduling keeps local calendar dates (not UTC), including across DST.
+function formatTaskLocalDate(date, withTime = false) {
+  const pad = n => String(n).padStart(2, '0');
+  const datePart = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return withTime ? `${datePart}T${pad(date.getHours())}:${pad(date.getMinutes())}` : datePart;
+}
+function applyTaskDeadlinePreset(preset, now = new Date()) {
+  if (!['today', 'tomorrow', 'week', 'clear'].includes(preset)) return false;
+  const date = new Date(now.getTime());
+  if (preset === 'tomorrow') date.setDate(date.getDate() + 1);
+  if (preset === 'week') date.setDate(date.getDate() + 7);
+  const input = $('#taskDeadline');
+  input.value = preset === 'clear' ? '' : formatTaskLocalDate(date);
+  $('#taskDeadlineError').hidden = true;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+}
+function applyTaskReminderPreset(preset, now = new Date()) {
+  if (!['hour', 'tomorrow9', 'week', 'clear'].includes(preset)) return false;
+  let date = new Date(now.getTime());
+  if (preset === 'hour') date = new Date(date.getTime() + 60 * 60 * 1000);
+  if (preset === 'tomorrow9') {
+    date.setDate(date.getDate() + 1);
+    date.setHours(9, 0, 0, 0);
+  }
+  if (preset === 'week') date.setDate(date.getDate() + 7);
+  const input = $('#taskReminder');
+  input.value = preset === 'clear' ? '' : formatTaskLocalDate(date, true);
+  if (preset === 'clear') $('#taskReminderRepeat').value = 'none';
+  $('#taskReminderError').hidden = true;
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  return true;
+}
+
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
   lastFocusBeforeModal = document.activeElement;
   editingTaskId = taskId;

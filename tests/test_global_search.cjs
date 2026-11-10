@@ -10,7 +10,7 @@ const start=views.indexOf('// GLOBAL SEARCH');
 const end=views.indexOf('// ============================================================\n// RENDER dispatcher',start);
 assert(start>=0&&end>start,'Search functions must precede view rendering');
 assert(core.includes("'search'"),'Search must be included in saved view options');
-for(const id of ['globalSearch','globalSearchInput','globalMyDayBtn','globalSearchBoardFilter','globalSearchStatusFilter','globalSearchDeadlineFilter','globalSearchPriorityFilter','globalSearchResults','globalSearchSummary','globalSearchEmpty'])
+for(const id of ['globalSearch','globalSearchInput','globalMyDayBtn','globalSearchBoardFilter','globalSearchStatusFilter','globalSearchDeadlineFilter','globalSearchPriorityFilter','globalSearchTagFilter','globalSearchResults','globalSearchSummary','globalSearchEmpty'])
   assert(html.includes('id="'+id+'"'),'Missing cross-board UI element: '+id);
 assert(html.includes('data-view="search"'),'Search tab must be accessible from mobile navigation');
 assert(html.includes('id="globalSearchTab"'),'Search tab must have stable navigation identity for Android UI tests');
@@ -20,11 +20,12 @@ assert(interactions.includes("$('#globalSearchBoardFilter').addEventListener('ch
 assert(interactions.includes("$('#globalSearchStatusFilter').addEventListener('change'"),'Status filter must refresh live');
 assert(interactions.includes("$('#globalSearchDeadlineFilter').addEventListener('change'"),'Deadline filter must refresh live');
 assert(interactions.includes("$('#globalSearchPriorityFilter').addEventListener('change'"),'Priority filter must refresh live');
+assert(interactions.includes("$('#globalSearchTagFilter').addEventListener('change'"),'Tag filter must refresh live');
 assert(interactions.includes("$('#globalMyDayBtn').addEventListener('click', showGlobalMyDay)"),'My Day shortcut must be wired');
 assert(!views.slice(start,end).includes('innerHTML = task.'),'Task data must not be inserted into HTML unsafely');
 
 const a={id:'a',boardId:'b1',parentId:'',columnId:'done',title:'Проверка ячейки',desc:'Quality control',tags:['LFP'],checklist:[],deadline:'2026-11-08',updatedAt:1,priority:'high'};
-const child={id:'nested',boardId:'b2',parentId:'root',title:'Find hidden thing',desc:'',tags:[],checklist:[{text:'Катод'}],deadline:'2026-11-10',updatedAt:3};
+const child={id:'nested',boardId:'b2',parentId:'root',title:'Find hidden thing',desc:'',tags:['lfp'],checklist:[{text:'Катод'}],deadline:'2026-11-10',updatedAt:3};
 const root={id:'root',boardId:'b2',parentId:'',title:'Parent',desc:'',tags:[],checklist:[],deadline:'2026-11-09',updatedAt:2,priority:'medium'};
 const b={id:'b',boardId:'b2',parentId:'',title:'Results',desc:'Testing electrode coating',tags:['Important'],checklist:[],deadline:'2026-11-14',updatedAt:4,priority:'high'};
 const weird={id:'unsafe',boardId:'b2',parentId:'',title:'<script>alert(1)</script>',desc:'',tags:[],checklist:[],updatedAt:5};
@@ -41,7 +42,7 @@ function fakeNode(name='div'){
   setAttribute(k,v){this[k]=v}};
  nodes.push(n);return n;
 }
-const els=Object.fromEntries(['#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchDeadlineFilter','#globalSearchPriorityFilter','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
+const els=Object.fromEntries(['#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchDeadlineFilter','#globalSearchPriorityFilter','#globalSearchTagFilter','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
  .map(key=>[key,fakeNode(key)]));
 const nav=[],toasts=[];
 let failSwitch=false;
@@ -58,6 +59,17 @@ assert.equal(find(''),undefined,'Empty search should show guidance rather than a
 assert.equal(find('    '),undefined);
 assert.equal(find('',100,{status:'done'}).total,1,'Status-only filtering works');
 assert.equal(find('',100,{boardId:'b2'}).total,4,'Board-only filtering works');
+assert.equal(find('',100,{tag:'LFP'}).total,2,'Tag-only search includes cross-board nested tasks');
+assert.equal(find('',100,{tag:'lfp'}).total,2,'Tag matching is case-insensitive');
+assert.equal(find('',100,{tag:'Important'}).items[0].task.id,'b','Exact tag match works');
+assert.equal(find('',100,{tag:'nonexistent'}).total,0,'Unknown tag matches nothing');
+assert.equal(find('',100,{tag:'lfp',status:'active'}).items[0].task.id,'nested',
+  'Tag and status filters combine across boards');
+assert.equal(find('',100,{tag:'lfp',priority:'high',status:'done'}).items[0].task.id,'a',
+  'Tag, priority and completion filters combine');
+assert.equal(find('',100,{tag:'LFP',boardId:'b2',deadline:'today'}).items[0].task.id,'nested',
+  'Tag, board and deadline filters combine');
+assert.equal(find('coating',100,{tag:'LFP'}).total,0,'Text and tag filter compose');
 assert.equal(find('',100,{priority:'high'}).total,2,'High priority finds tasks across boards');
 assert.equal(find('',100,{priority:'medium'}).items[0].task.id,'root','Medium priority filter works');
 assert.equal(find('',100,{priority:'low'}).total,0,'Low priority with no matches is empty');
@@ -103,12 +115,25 @@ els['#globalSearchBoardFilter'].value='';
 els['#globalSearchStatusFilter'].value='';
 els['#globalSearchDeadlineFilter'].value='';
 els['#globalSearchPriorityFilter'].value='';
+els['#globalSearchTagFilter'].value='';
 els['#globalSearchInput'].value='script';
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchResults'].children.length,1);
 assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'<script>alert(1)</script>',
   'User titles must render as text, not injected markup');
 assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 1');
+const tagOptions = els['#globalSearchTagFilter'].children;
+assert.equal(tagOptions.length,3,'Tags from all boards are listed without case-duplicate entries');
+assert(tagOptions.some(option=>option.textContent==='LFP'),'The tag filter displays a source tag');
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchTagFilter'].children,tagOptions,'Live search keeps the native tag selector');
+els['#globalSearchTagFilter'].value='lfp';
+els['#globalSearchInput'].value='';
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 2','Tag-only UI search spans all boards');
+assert(els['#globalSearchResults'].children[0].children[1].textContent.includes('🏷'),
+  'Search results display tags in metadata');
+els['#globalSearchTagFilter'].value='';
 els['#globalSearchPriorityFilter'].value='high';
 els['#globalSearchInput'].value='';
 ctx.renderGlobalSearch();
@@ -152,15 +177,28 @@ els['#globalSearchBoardFilter'].value='b1';
 els['#globalSearchStatusFilter'].value='done';
 els['#globalSearchDeadlineFilter'].value='none';
 els['#globalSearchPriorityFilter'].value='low';
+els['#globalSearchTagFilter'].value='important';
 ctx.showGlobalMyDay();
 assert.equal(els['#globalSearchInput'].value,'','My Day clears stale text');
 assert.equal(els['#globalSearchBoardFilter'].value,'','My Day searches all boards');
 assert.equal(els['#globalSearchStatusFilter'].value,'active','My Day excludes completed tasks');
 assert.equal(els['#globalSearchDeadlineFilter'].value,'attention','My Day uses due and overdue tasks');
 assert.equal(els['#globalSearchPriorityFilter'].value,'','My Day clears stale priority filters');
+assert.equal(els['#globalSearchTagFilter'].value,'','My Day clears stale tag filters');
 assert.deepEqual(nav.at(-1),['view','search'],'My Day navigates to search');
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 2','My Day finds work across boards');
+els['#globalSearchTagFilter'].value='lfp';
+state._tasksByBoard.b1[0].tags=[];
+state._tasksByBoard.b2[1].tags=[];
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchTagFilter'].value,'','Removed tags reset the search tag selector');
+assert.equal(els['#globalSearchTagFilter'].children.length,2,'Removed tags disappear from dropdown');
+state._tasksByBoard.b1[0].tags=['LFP'];
+state._tasksByBoard.b2[1].tags=['lfp'];
+ctx.renderGlobalSearch();
+els['#globalSearchTagFilter'].value='';
+
 els['#globalSearchStatusFilter'].value='';
 els['#globalSearchDeadlineFilter'].value='';
 const recurringCopy={...a,id:'a-repeat',title:'Repeat audit',repeatFrom:'a',updatedAt:8};

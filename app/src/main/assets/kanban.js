@@ -816,6 +816,11 @@ async function getThumb(mediaId) {
 }
 
 // GLOBAL SEARCH
+// Match tags exactly across boards while tolerating case and Unicode width.
+function normalizeGlobalSearchTag(tag) {
+  return String(tag || '').normalize('NFKC').trim().toLocaleLowerCase();
+}
+
 // Search every persisted board, including nested tasks. Local board filters
 // remain independent, so finding a task cannot silently discard their state.
 function searchAllBoards(query, limit = 100, filters = {}) {
@@ -824,12 +829,14 @@ function searchAllBoards(query, limit = 100, filters = {}) {
   const statusFilter = filters.status || '';
   const deadlineFilter = filters.deadline || '';
   const priorityFilter = filters.priority || '';
-  if (!words.length && !boardFilter && !statusFilter && !deadlineFilter && !priorityFilter) return undefined;
+  const tagFilter = normalizeGlobalSearchTag(filters.tag);
+  if (!words.length && !boardFilter && !statusFilter && !deadlineFilter && !priorityFilter && !tagFilter) return undefined;
   const items = [];
   for (const board of state.boards) {
     if (boardFilter && board.id !== boardFilter) continue;
     const doneColumns = new Set(board.columns.filter(c => c.isDone).map(c => c.id));
     for (const task of state._tasksByBoard[board.id] || []) {
+      if (tagFilter && !(task.tags || []).some(tag => normalizeGlobalSearchTag(tag) === tagFilter)) continue;
       if (priorityFilter &&
           (priorityFilter === 'none'
             ? !!task.priority && task.priority !== 'none'
@@ -899,17 +906,55 @@ function updateGlobalSearchBoardFilter() {
   select.value = state.boards.some(board => board.id === selected) ? selected : '';
 }
 
+function updateGlobalSearchTagFilter() {
+  const select = $('#globalSearchTagFilter');
+  const selected = select.value;
+  const labels = new Map();
+  for (const board of state.boards) {
+    for (const task of state._tasksByBoard[board.id] || []) {
+      for (const tag of task.tags || []) {
+        const label = String(tag).trim();
+        const value = normalizeGlobalSearchTag(label);
+        if (value && !labels.has(value)) labels.set(value, label);
+      }
+    }
+  }
+  const tags = [...labels].sort((a, b) => a[1].localeCompare(b[1]));
+  const options = select.children;
+  const unchanged = options.length === tags.length + 1 &&
+    options[0].value === '' && options[0].textContent === 'Все теги' &&
+    tags.every(([value, label], index) =>
+      options[index + 1].value === value && options[index + 1].textContent === label);
+  if (unchanged) {
+    if (selected && !labels.has(selected)) select.value = '';
+    return;
+  }
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'Все теги';
+  select.replaceChildren(all);
+  for (const [value, label] of tags) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
+  }
+  select.value = labels.has(selected) ? selected : '';
+}
+
 function showGlobalMyDay() {
   $('#globalSearchInput').value = '';
   $('#globalSearchBoardFilter').value = '';
   $('#globalSearchStatusFilter').value = 'active';
   $('#globalSearchDeadlineFilter').value = 'attention';
   $('#globalSearchPriorityFilter').value = '';
+  $('#globalSearchTagFilter').value = '';
   switchView('search');
 }
 
 function renderGlobalSearch() {
   updateGlobalSearchBoardFilter();
+  updateGlobalSearchTagFilter();
   const input = $('#globalSearchInput');
   const results = $('#globalSearchResults');
   const summary = $('#globalSearchSummary');
@@ -918,7 +963,8 @@ function renderGlobalSearch() {
     boardId: $('#globalSearchBoardFilter').value,
     status: $('#globalSearchStatusFilter').value,
     deadline: $('#globalSearchDeadlineFilter').value,
-    priority: $('#globalSearchPriorityFilter').value
+    priority: $('#globalSearchPriorityFilter').value,
+    tag: $('#globalSearchTagFilter').value
   });
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;
@@ -950,6 +996,7 @@ function renderGlobalSearch() {
     metadata.textContent = board.name + ' · ' + (column?.title || 'Задача') +
       (task.parentId ? ' · Вложенная' : '') +
       (task.priority && task.priority !== 'none' ? ' · ⚑ ' + PRIORITY_LABELS[task.priority] : '') +
+      (task.tags?.length ? ' · 🏷 ' + task.tags.join(', ') : '') +
       (task.deadline ? ' · 📅 ' + task.deadline : '');
     item.appendChild(title);
     item.appendChild(metadata);
@@ -3524,6 +3571,7 @@ function bindEvents() {
   $('#globalSearchStatusFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchDeadlineFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchPriorityFilter').addEventListener('change', renderGlobalSearch);
+  $('#globalSearchTagFilter').addEventListener('change', renderGlobalSearch);
   $('#globalMyDayBtn').addEventListener('click', showGlobalMyDay);
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {

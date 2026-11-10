@@ -64,6 +64,14 @@ function updateGlobalSearchBoardFilter() {
   select.value = state.boards.some(board => board.id === selected) ? selected : '';
 }
 
+function showGlobalMyDay() {
+  $('#globalSearchInput').value = '';
+  $('#globalSearchBoardFilter').value = '';
+  $('#globalSearchStatusFilter').value = 'active';
+  $('#globalSearchDeadlineFilter').value = 'attention';
+  switchView('search');
+}
+
 function renderGlobalSearch() {
   updateGlobalSearchBoardFilter();
   const input = $('#globalSearchInput');

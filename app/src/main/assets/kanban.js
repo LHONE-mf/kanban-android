@@ -881,6 +881,14 @@ function updateGlobalSearchBoardFilter() {
   select.value = state.boards.some(board => board.id === selected) ? selected : '';
 }
 
+function showGlobalMyDay() {
+  $('#globalSearchInput').value = '';
+  $('#globalSearchBoardFilter').value = '';
+  $('#globalSearchStatusFilter').value = 'active';
+  $('#globalSearchDeadlineFilter').value = 'attention';
+  switchView('search');
+}
+
 function renderGlobalSearch() {
   updateGlobalSearchBoardFilter();
   const input = $('#globalSearchInput');
@@ -3402,6 +3410,7 @@ function bindEvents() {
   $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchStatusFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchDeadlineFilter').addEventListener('change', renderGlobalSearch);
+  $('#globalMyDayBtn').addEventListener('click', showGlobalMyDay);
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);

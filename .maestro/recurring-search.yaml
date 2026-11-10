@@ -201,9 +201,10 @@ androidWebViewHierarchy: devtools
 - scrollUntilVisible:
     element:
       id: "moveTaskBoardBtn"
-    direction: DOWN
+    direction: UP
     centerElement: true
     timeout: 30000
+- takeScreenshot: ui-screenshots/task-move-button-in-view
 # Only one destination is available here: Новая доска. This deliberately
 # avoids an unrelated native-select interaction while exercising the move.
 - tapOn:

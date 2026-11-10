@@ -519,6 +519,7 @@ button { font-family: inherit; }
 .field textarea { resize: vertical; min-height: 68px; line-height: 1.5; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field-error { color: var(--danger); font-size: 12px; margin-top: 4px; }
+.field-hint { color: var(--text-muted); font-size: 12px; line-height: 1.45; margin-top: 6px; }
 
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .task-date-presets { margin-top: 8px; gap: 6px; }

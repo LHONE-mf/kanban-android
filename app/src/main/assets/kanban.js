@@ -868,6 +868,16 @@ function searchAllBoards(query, limit = 100, filters = {}) {
 function updateGlobalSearchBoardFilter() {
   const select = $('#globalSearchBoardFilter');
   const selected = select.value;
+  // Keep the native Android select intact while typing or changing other filters.
+  // Rebuild only if the board list (including names/order) actually changed.
+  const boards = state.boards;
+  const options = select.children;
+  const unchanged = options.length === boards.length + 1 &&
+    options[0].value === '' && options[0].textContent === 'Все доски' &&
+    boards.every((board, index) =>
+      options[index + 1].value === board.id &&
+      options[index + 1].textContent === board.name);
+  if (unchanged) return;
   const all = document.createElement('option');
   all.value = '';
   all.textContent = 'Все доски';

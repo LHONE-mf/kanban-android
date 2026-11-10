@@ -103,6 +103,18 @@ assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач:
   'Filtered empty query updates the result count');
 assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'Проверка ячейки');
 assert.equal(els['#globalSearchBoardFilter'].value,'b1','Selected board survives rendering');
+const optionsBefore = els['#globalSearchBoardFilter'].children;
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchBoardFilter'].children,optionsBefore,
+  'Search typing must not recreate the Android board dropdown');
+state.boards[0].name='Renamed board';
+ctx.renderGlobalSearch();
+assert.notEqual(els['#globalSearchBoardFilter'].children,optionsBefore,
+  'Board rename must refresh search dropdown');
+assert.equal(els['#globalSearchBoardFilter'].children[1].textContent,'Renamed board');
+assert.equal(els['#globalSearchBoardFilter'].value,'b1','Board selection survives rename');
+state.boards[0].name='First board';
+
 els['#globalSearchStatusFilter'].value='';
 els['#globalSearchDeadlineFilter'].value='today';
 els['#globalSearchBoardFilter'].value='b2';

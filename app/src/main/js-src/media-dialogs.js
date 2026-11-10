@@ -223,13 +223,20 @@ function addColumnConfig() {
   editingColumns.push({ id: 'col_' + generateId(), title: 'Новая колонка', color: '#a3a3a3', isDone: false, wipLimit: 0 });
   renderColumnsConfig();
 }
-async function dbSaveBoardAndTasks(boards, activeBoardId, changedTasks) {
+async function dbSaveBoardAndTasks(boards, activeBoardId, changedTasks, deletedTaskIds = []) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction([STORE_TASKS, STORE_SETTINGS], 'readwrite');
-    const ts = tx.objectStore(STORE_TASKS), ss = tx.objectStore(STORE_SETTINGS);
-    changedTasks.forEach(t => ts.put(t));
-    ss.put({ key: 'boards', value: boards });
-    ss.put({ key: 'activeBoardId', value: activeBoardId });
+    try {
+      const ts = tx.objectStore(STORE_TASKS), ss = tx.objectStore(STORE_SETTINGS);
+      changedTasks.forEach(t => ts.put(t));
+      deletedTaskIds.forEach(id => ts.delete(id));
+      ss.put({ key: 'boards', value: boards });
+      ss.put({ key: 'activeBoardId', value: activeBoardId });
+    } catch (e) {
+      try { tx.abort(); } catch (_) {}
+      reject(wrapTxError(e));
+      return;
+    }
     tx.oncomplete = resolve;
     tx.onerror = tx.onabort = () => reject(wrapTxError(tx.error));
   });

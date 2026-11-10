@@ -256,3 +256,47 @@ androidWebViewHierarchy: devtools
 - assertVisible:
     id: '^Открыть: CI weekly recurring task, доска Моя доска$'
 - takeScreenshot: ui-screenshots/move-persists-after-restart
+
+# Delete the destination board through the real confirmation UI. Its moved
+# recurring task must disappear, while the original board survives restart.
+- tapOn:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Новая доска$'
+- assertVisible: "Редактирование задачи"
+- hideKeyboard
+- pressKey: Back
+- assertNotVisible: "Редактирование задачи"
+- tapOn:
+    id: "mobileActionsToggle"
+- tapOn:
+    id: "settingsBtn"
+- assertVisible: "Настройки доски"
+- hideKeyboard
+- tapOn:
+    id: "deleteBoardBtn"
+- assertVisible: "Удалить доску"
+- tapOn:
+    id: "confirmOk"
+- assertNotVisible: "Настройки доски"
+- tapOn:
+    id: "globalSearchTab"
+- assertVisible: "Найдено задач: 1"
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task, доска Моя доска$'
+- assertNotVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Новая доска$'
+- takeScreenshot: ui-screenshots/board-deletion-search
+- stopApp
+- launchApp:
+    clearState: false
+- tapOn:
+    id: "globalSearchTab"
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "weekly recurring"
+- hideKeyboard
+- assertVisible: "Найдено задач: 1"
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task, доска Моя доска$'
+- assertNotVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Новая доска$'
+- takeScreenshot: ui-screenshots/board-deletion-persists-after-restart

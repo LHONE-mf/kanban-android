@@ -176,19 +176,21 @@ async function deleteBoard(id) {
   const ok = await confirmDialog('Удалить доску', msg);
   if (!ok) return;
 
+  const boards = state.boards.filter(b => b.id !== id);
+  const activeBoardId = state.activeBoardId === id ? boards[0].id : state.activeBoardId;
   try {
-    if (tasks.length) await dbDeleteTasks(tasks.map(t => t.id));
-    const wasActive = state.activeBoardId === id;
-    state.boards = state.boards.filter(b => b.id !== id);
-    delete state._tasksByBoard[id];
-    if (wasActive) state.activeBoardId = state.boards[0].id;
-    await persistBoards();
-    tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' }); t.files.forEach(f => scheduleMediaDelete(f.id, 0)); });
+    // Tasks and board settings must either disappear together or remain intact.
+    await dbSaveBoardAndTasks(boards, activeBoardId, [], tasks.map(t => t.id));
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message);
     return;
   }
 
+  state.boards = boards;
+  state.activeBoardId = activeBoardId;
+  delete state._tasksByBoard[id];
+  tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' }); t.files.forEach(f => scheduleMediaDelete(f.id, 0)); });
+  closeModal('settingsModal');
   applyActiveBoard();
   renderBoard();
   saveUIState();

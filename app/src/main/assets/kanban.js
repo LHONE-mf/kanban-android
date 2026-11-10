@@ -176,19 +176,21 @@ async function deleteBoard(id) {
   const ok = await confirmDialog('Удалить доску', msg);
   if (!ok) return;
 
+  const boards = state.boards.filter(b => b.id !== id);
+  const activeBoardId = state.activeBoardId === id ? boards[0].id : state.activeBoardId;
   try {
-    if (tasks.length) await dbDeleteTasks(tasks.map(t => t.id));
-    const wasActive = state.activeBoardId === id;
-    state.boards = state.boards.filter(b => b.id !== id);
-    delete state._tasksByBoard[id];
-    if (wasActive) state.activeBoardId = state.boards[0].id;
-    await persistBoards();
-    tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' }); t.files.forEach(f => scheduleMediaDelete(f.id, 0)); });
+    // Tasks and board settings must either disappear together or remain intact.
+    await dbSaveBoardAndTasks(boards, activeBoardId, [], tasks.map(t => t.id));
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message);
     return;
   }
 
+  state.boards = boards;
+  state.activeBoardId = activeBoardId;
+  delete state._tasksByBoard[id];
+  tasks.forEach(t => { syncNativeReminder({ ...t, reminder: '' }); t.files.forEach(f => scheduleMediaDelete(f.id, 0)); });
+  closeModal('settingsModal');
   applyActiveBoard();
   renderBoard();
   saveUIState();
@@ -2830,13 +2832,20 @@ function addColumnConfig() {
   editingColumns.push({ id: 'col_' + generateId(), title: 'Новая колонка', color: '#a3a3a3', isDone: false, wipLimit: 0 });
   renderColumnsConfig();
 }
-async function dbSaveBoardAndTasks(boards, activeBoardId, changedTasks) {
+async function dbSaveBoardAndTasks(boards, activeBoardId, changedTasks, deletedTaskIds = []) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction([STORE_TASKS, STORE_SETTINGS], 'readwrite');
-    const ts = tx.objectStore(STORE_TASKS), ss = tx.objectStore(STORE_SETTINGS);
-    changedTasks.forEach(t => ts.put(t));
-    ss.put({ key: 'boards', value: boards });
-    ss.put({ key: 'activeBoardId', value: activeBoardId });
+    try {
+      const ts = tx.objectStore(STORE_TASKS), ss = tx.objectStore(STORE_SETTINGS);
+      changedTasks.forEach(t => ts.put(t));
+      deletedTaskIds.forEach(id => ts.delete(id));
+      ss.put({ key: 'boards', value: boards });
+      ss.put({ key: 'activeBoardId', value: activeBoardId });
+    } catch (e) {
+      try { tx.abort(); } catch (_) {}
+      reject(wrapTxError(e));
+      return;
+    }
     tx.oncomplete = resolve;
     tx.onerror = tx.onabort = () => reject(wrapTxError(tx.error));
   });

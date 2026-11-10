@@ -2324,6 +2324,12 @@ async function saveSettingsFromModal() {
   state.boardName = board.name;
   state.columns = board.columns;
 
+  // Native Android reminders cache their board name. Refresh them only once
+  // the board transaction has committed, including tasks completed by a move.
+  if (prevName !== board.name || tasksToMove.length) {
+    state.tasks.filter(t => t.reminder).forEach(syncNativeReminder);
+  }
+
   closeModal('settingsModal');
   updateBoardSelect();
   notifyOtherTabs();

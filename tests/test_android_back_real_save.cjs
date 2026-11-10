@@ -36,7 +36,7 @@ const context={
   state,editingTaskId:'t1',newFiles:[],tempFiles:[],tempChecklist:[],editingPriority:'none',
   rec:{mr:null},isValidISODate:value=>!value||/^\d{4}-\d{2}-\d{2}$/.test(value),
   computeCompletedAt:()=>null,
-  dbPutTask:async task=>{if(rejectWrites)throw new Error('No storage space');saved.push(task)},
+  persistTaskChanges:async tasks=>{if(rejectWrites)throw new Error('No storage space');saved.push(...tasks);return {created:[]}},
   syncNativeReminder:()=>{},syncKids:async()=>{},notifyOtherTabs:()=>{},renderBoard:()=>{},
   closeModal:id=>{if(id==='taskModal')modal.open=false},
   closeLightbox:()=>{},showToast:message=>toasts.push(message),

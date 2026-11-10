@@ -225,8 +225,14 @@
         <select id="taskReminderRepeat"><option value="none">Не повторять</option><option value="daily">Каждый день</option><option value="weekly">Каждую неделю</option><option value="monthly">Каждый месяц</option></select>
       </div>
       <div class="field">
-        <label class="label" for="taskRepeat">🔁 Повторять задачу после выполнения</label>
-        <select id="taskRepeat" aria-label="Повторение задачи">
+        <span class="label" id="taskRepeatLabel">🔁 Повторять задачу после выполнения</span>
+        <div class="chips task-repeat-choices" id="taskRepeatChoices" role="group" aria-labelledby="taskRepeatLabel">
+          <button type="button" class="chip" id="taskRepeatNoneBtn" data-task-repeat="none" aria-pressed="true">Нет</button>
+          <button type="button" class="chip" id="taskRepeatDailyBtn" data-task-repeat="daily" aria-pressed="false">Каждый день</button>
+          <button type="button" class="chip" id="taskRepeatWeeklyBtn" data-task-repeat="weekly" aria-pressed="false">Каждую неделю</button>
+          <button type="button" class="chip" id="taskRepeatMonthlyBtn" data-task-repeat="monthly" aria-pressed="false">Каждый месяц</button>
+        </div>
+        <select id="taskRepeat" hidden tabindex="-1" aria-hidden="true">
           <option value="none">Не повторять</option>
           <option value="daily">Каждый день</option>
           <option value="weekly">Каждую неделю</option>

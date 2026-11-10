@@ -72,6 +72,11 @@ assert.equal(elements.writingDue.textContent,'Повторить (1)','Invalid d
 elements.writingDue.onclick();
 assert.equal(context.writeIndex,1,'Due practice should select the due kana');
 assert.equal(elements.writingFeedback.textContent,'Повтори этот знак и оцени результат.');
+context.reviews['う']={interval:0,due:0};
+elements.writingDue.onclick();
+assert.equal(context.writeIndex,2,'Focused review should advance to the next overdue kana');
+elements.writingDue.onclick();
+assert.equal(context.writeIndex,1,'Focused review should wrap to the first overdue kana');
 elements.writingKata.onclick();
 assert.equal(context.script,'katakana');
 assert.equal(context.writeIndex,0);

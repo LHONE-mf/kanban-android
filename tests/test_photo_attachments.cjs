@@ -9,7 +9,7 @@ const html = fs.readFileSync('app/src/main/assets/kanban.html', 'utf8');
 const interactionSource = fs.readFileSync('app/src/main/js-src/interactions.js', 'utf8');
 const androidSource = fs.readFileSync('app/src/main/java/com/kanban/offline/MainActivity.kt', 'utf8');
 
-for (const id of ['lightboxClose', 'lightboxPrev', 'lightboxNext', 'lightboxCounter']) {
+for (const id of ['lightboxClose', 'lightboxPrev', 'lightboxNext', 'lightboxCounter', 'lightboxZoomControls', 'lightboxZoomIn', 'lightboxZoomOut', 'lightboxZoomReset']) {
   assert(html.includes('id="' + id + '"'), 'Missing photo viewer control: ' + id);
 }
 assert(interactionSource.includes("window.kanbanHandleBack = () =>"), 'Android Back handler missing');
@@ -23,9 +23,10 @@ const section = (source, start, end) => {
   return source.slice(a, b);
 };
 const elements = Object.fromEntries(
-  ['lightbox','lightboxClose','lightboxPrev','lightboxNext','lightboxCounter','lightboxContent']
+  ['lightbox','lightboxClose','lightboxPrev','lightboxNext','lightboxCounter','lightboxContent','lightboxZoomControls','lightboxZoomIn','lightboxZoomOut','lightboxZoomReset']
     .map(id=>[id,{
-      hidden:false, dataset:{}, innerHTML:'', textContent:'', children:[],
+      hidden:false, disabled:false, dataset:{}, innerHTML:'', textContent:'', children:[], clientWidth:400, clientHeight:320,
+      querySelector(selector){return selector==='img' ? this.children.findLast(child=>child.tagName==='img') : null},
       classList:{
         classes:new Set(),
         add(name){this.classes.add(name)},
@@ -45,7 +46,7 @@ const context = {
   document: {
     activeElement:{isConnected:true,focus(){}},
     createElement(tag){
-      if(tag !== 'canvas') return {tagName:tag,src:'',alt:'',controls:false};
+      if(tag !== 'canvas') return {tagName:tag,src:'',alt:'',controls:false,style:{},clientWidth:400,clientHeight:240};
       return {
         width:0,height:0,
         getContext(){return {fillStyle:'',fillRect(){},drawImage(){}}},
@@ -97,14 +98,26 @@ vm.runInContext(
   await vm.runInContext('openLightbox',context)({title:'My task',files:photos},photos[1]);
   assert.equal(elements.lightboxCounter.textContent,'2 / 3');
   assert.equal(elements.lightboxContent.children.at(-1).src,'blob:viewer-1');
+  assert.equal(elements.lightboxZoomControls.hidden,false,'Photo viewer must offer zoom controls');
+  vm.runInContext('setLightboxZoom(2)',context);
+  assert.equal(vm.runInContext('lightboxZoom',context),2,'Photo can zoom to 200%');
+  assert.equal(elements.lightboxZoomReset.textContent,'200%');
+  vm.runInContext('panLightboxTo(999,999)',context);
+  assert.equal(vm.runInContext('lightboxPanX',context),200,'Pan must stay within image bounds');
+  assert.equal(vm.runInContext('lightboxPanY',context),80,'Vertical pan must stay within image bounds');
+  vm.runInContext('setLightboxZoom(1)',context);
+  assert.equal(vm.runInContext('lightboxPanX',context),0,'Returning to 100% resets pan');
   vm.runInContext('stepLightbox(1)',context);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(elements.lightboxCounter.textContent,'3 / 3');
+  assert.equal(vm.runInContext('lightboxZoom',context),1,'New photo must reset zoom');
   assert(revoked.includes('blob:viewer-1'),'Previous image URL should be released');
   vm.runInContext('stepLightbox(1)',context);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(elements.lightboxCounter.textContent,'1 / 3','Gallery should wrap around');
+  vm.runInContext('setLightboxZoom(3)',context);
   vm.runInContext('closeLightbox()',context);
+  assert.equal(vm.runInContext('lightboxZoom',context),1,'Closing viewer must reset zoom');
   assert.equal(elements.lightbox.classList.contains('open'),false);
   assert(revoked.includes('blob:viewer-3'),'Closing viewer should release displayed image URL');
 

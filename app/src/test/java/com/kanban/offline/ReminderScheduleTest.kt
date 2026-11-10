@@ -23,6 +23,18 @@ class ReminderScheduleTest {
             set(year, month - 1, day, hour, 0)
         }.timeInMillis
 
+    @Test fun notificationShowsTaskBoardAndLocalReminderDate() {
+        val reminderAt = at(2026, 11, 10, 9)
+        assertEquals("10.11.2026 09:00", ReminderNotificationText.formatDate(reminderAt))
+        assertEquals("Доска: Production · 10.11.2026 09:00",
+            ReminderNotificationText.summary("Production", reminderAt))
+    }
+
+    @Test fun notificationUsesFallbackNameForMissingBoard() {
+        assertEquals("Доска: Моя доска · 10.11.2026 09:00",
+            ReminderNotificationText.summary("", at(2026, 11, 10, 9)))
+    }
+
     @Test fun oneTimeDoesNotAdvance() {
         val due = at(2026, 11, 9)
         assertEquals(due, ReminderSchedule.nextTime(due, "none", due + 1000))

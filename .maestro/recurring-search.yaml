@@ -36,6 +36,7 @@ androidWebViewHierarchy: devtools
     timeout: 30000
 - tapOn:
     id: "taskRepeatWeeklyBtn"
+- takeScreenshot: ui-screenshots/recurring-weekly-button-selected
 - scrollUntilVisible:
     element:
       id: "saveTaskBtn"

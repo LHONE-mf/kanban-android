@@ -2,6 +2,7 @@ package com.kanban.offline
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -58,6 +59,9 @@ object KanbanReminders {
     private const val CHANNEL = "kanban_task_reminders"
     const val EXTRA_TASK_ID = "kanban_open_task_id"
     const val EXTRA_BOARD_ID = "kanban_open_board_id"
+    private const val ACTION_SNOOZE = "com.kanban.offline.SNOOZE_REMINDER"
+    private const val SNOOZE_PREFIX = "snooze:"
+    private const val TEN_MINUTES = 10L * 60_000
     private fun requestCode(id: String) = id.hashCode()
 
     private fun intent(context: Context, id: String) =
@@ -74,6 +78,29 @@ object KanbanReminders {
         if (id.isBlank()) return
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val alarm = context.getSystemService(AlarmManager::class.java)
+        // Snoozes use a separate one-time alarm, so they cannot replace a task's
+        // daily/weekly/monthly recurrence. Keep them on app reload if the original
+        // task reminder is unchanged; cancel them on edits, completion or deletion.
+        if (!id.startsWith(SNOOZE_PREFIX)) {
+            val snoozeId = SNOOZE_PREFIX + id
+            val previousSnooze = prefs.getString(snoozeId, null)
+            if (previousSnooze != null) {
+                val snoozed = JSONObject(previousSnooze)
+                val sourceAt = json.optLong("anchorAt").takeIf { it > 0L } ?: json.optLong("at")
+                if (sourceAt <= 0L || sourceAt != snoozed.optLong("sourceAt")) {
+                    alarm.cancel(intent(context, snoozeId))
+                    prefs.edit().remove(snoozeId).apply()
+                    context.getSystemService(NotificationManager::class.java)
+                        .cancel(requestCode(snoozeId))
+                } else {
+                    // Keep the pending snooze's name/board current after edits.
+                    for (key in listOf("title", "boardId", "boardName")) {
+                        if (json.has(key)) snoozed.put(key, json.optString(key))
+                    }
+                    prefs.edit().putString(snoozeId, snoozed.toString()).apply()
+                }
+            }
+        }
         alarm.cancel(intent(context, id))
         val repeat = json.optString("repeat", "none").takeIf {
             it in setOf("none", "daily", "weekly", "monthly")
@@ -95,6 +122,10 @@ object KanbanReminders {
             .put("anchorAt", anchorAt).put("repeat", repeat)
             .put("boardId", json.optString("boardId").take(200))
             .put("boardName", json.optString("boardName", "Моя доска").take(120))
+        if (id.startsWith(SNOOZE_PREFIX)) {
+            record.put("taskId", json.optString("taskId").take(200))
+            record.put("sourceAt", json.optLong("sourceAt"))
+        }
         prefs.edit().putString(id, record.toString()).apply()
         // setAndAllowWhileIdle is intentionally inexact; no special exact-alarm permission.
         alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent(context, id))
@@ -105,6 +136,25 @@ object KanbanReminders {
         prefs.all.values.filterIsInstance<String>().forEach { raw ->
             try { update(context, raw) } catch (_: Exception) { }
         }
+    }
+
+    fun snooze(context: Context, raw: String, notificationId: Int) {
+        val fired = JSONObject(raw)
+        val taskId = fired.optString("taskId").ifBlank { fired.optString("id") }.take(200)
+        if (taskId.isBlank() || taskId.startsWith(SNOOZE_PREFIX)) return
+        val sourceAt = fired.optLong("sourceAt").takeIf { it > 0L }
+            ?: fired.optLong("anchorAt").takeIf { it > 0L }
+            ?: return
+        val snoozeId = SNOOZE_PREFIX + taskId
+        val snoozed = JSONObject()
+            .put("id", snoozeId).put("taskId", taskId)
+            .put("title", fired.optString("title", "Задача"))
+            .put("boardId", fired.optString("boardId"))
+            .put("boardName", fired.optString("boardName", "Моя доска"))
+            .put("sourceAt", sourceAt).put("repeat", "none")
+            .put("at", System.currentTimeMillis() + TEN_MINUTES)
+        update(context, snoozed.toString())
+        context.getSystemService(NotificationManager::class.java).cancel(notificationId)
     }
 
     fun fire(context: Context, id: String) {
@@ -131,10 +181,11 @@ object KanbanReminders {
         val boardName = json.optString("boardName", "Моя доска").ifBlank { "Моя доска" }
         val title = json.optString("title", "Задача")
         val date = ReminderNotificationText.formatDate(firedAt)
+        val taskId = json.optString("taskId").ifBlank { id }
         val openIntent = Intent(context, MainActivity::class.java).apply {
             action = "com.kanban.offline.OPEN_TASK"
-            data = Uri.parse("kanban://reminder/task/${Uri.encode(id)}")
-            putExtra(EXTRA_TASK_ID, id)
+            data = Uri.parse("kanban://reminder/task/${Uri.encode(taskId)}")
+            putExtra(EXTRA_TASK_ID, taskId)
             putExtra(EXTRA_BOARD_ID, json.optString("boardId"))
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -142,20 +193,43 @@ object KanbanReminders {
             context, requestCode(id), openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notification = android.app.Notification.Builder(context, CHANNEL)
+        val snoozeIntent = Intent(context, KanbanReminderReceiver::class.java).apply {
+            action = ACTION_SNOOZE
+            data = Uri.parse("kanban://reminder/snooze/${Uri.encode(id)}")
+            putExtra("snoozeRecord", json.toString())
+            putExtra("notificationId", requestCode(id))
+        }
+        val snoozeAction = PendingIntent.getBroadcast(
+            context, requestCode("action:$id"), snoozeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
             .setContentText(ReminderNotificationText.summary(boardName, firedAt))
             .setStyle(android.app.Notification.BigTextStyle()
                 .bigText("Задача: $title\nДоска: $boardName\nНапоминание: $date"))
-            .setContentIntent(open).setAutoCancel(true).build()
+            .setContentIntent(open).setAutoCancel(true)
+            .addAction(Notification.Action.Builder(
+                android.R.drawable.ic_lock_idle_alarm, "Через 10 мин", snoozeAction
+            ).build())
+            .build()
         manager.notify(requestCode(id), notification)
     }
 }
 
 class KanbanReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        intent.getStringExtra("taskId")?.let { KanbanReminders.fire(context, it) }
+        if (intent.action == "com.kanban.offline.SNOOZE_REMINDER") {
+            val raw = intent.getStringExtra("snoozeRecord") ?: return
+            if (raw.length <= 2048) {
+                try {
+                    KanbanReminders.snooze(context, raw, intent.getIntExtra("notificationId", 0))
+                } catch (_: Exception) { }
+            }
+        } else {
+            intent.getStringExtra("taskId")?.let { KanbanReminders.fire(context, it) }
+        }
     }
 }
 

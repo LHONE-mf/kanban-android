@@ -25,7 +25,7 @@
 <div class="card"><h2>Первые слова</h2><p>Попробуй прочитать слово до открытия подсказки. Пока здесь только слова, которые можно написать базовой хираганой.</p><div id="wordList"></div></div>
 </section>
 <section id="sentences" class="page" hidden><div class="card"><h2>Первые предложения</h2><p>Слушай, читай и раскрывай перевод. Здесь встречаются новые знаки, включая озвончённые слоги и долгие гласные: их разберём постепенно.</p><div id="sentenceList"></div><p class="hint">Частица は в этих предложениях произносится как «wa», а です часто звучит с ослабленным «u».</p></div></section>
-<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p id="writingInstructions">Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.</p><div class="study-toggle"><button id="writingTrace" class="active">Обводить</button><button id="writingRecall">Написать по памяти</button></div><div class="study-toggle"><button id="writingHira">ひらがな · Хирагана</button><button id="writingKata">カタカナ · Катакана</button></div><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button><button id="writingReveal" hidden>Показать ответ</button></div></div></section>
+<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p id="writingInstructions">Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.</p><div class="study-toggle"><button id="writingTrace" class="active">Обводить</button><button id="writingRecall">Написать по памяти</button></div><div class="study-toggle"><button id="writingHira">ひらがな · Хирагана</button><button id="writingKata">カタカナ · Катакана</button></div><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingUndo" disabled>Отменить штрих</button><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button><button id="writingReveal" hidden>Показать ответ</button></div></div></section>
 <section id="review" class="page" hidden>
 <div class="card"><h2>Повторение с интервалами</h2><p>Сначала попробуй вспомнить чтение самостоятельно. Затем открой ответ и оцени, насколько легко вспомнил.</p><p id="dueCount"></p><div id="reviewBody"><div id="reviewKana" class="big"></div><div id="reviewAnswer" class="roman" hidden></div><p style="text-align:center"><button id="reveal">Показать ответ</button></p><div class="row" id="gradeButtons" hidden><button id="again">Не вспомнил</button><button id="good" class="primary">Вспомнил</button></div></div></div>
 </section>
@@ -157,6 +157,7 @@ $('sentenceList').replaceChildren(...sentences.map(item=>{
 }));
 const canvas=$('writeCanvas'),ctx=canvas.getContext('2d');let drawing=false;
 function drawWriting(){
+ $('writingUndo').disabled=writingStrokes.length===0;
  if(!ctx)return;
  const item=allKana().flatMap(g=>g.items)[writeIndex%46];
  $('writingLabel').textContent=writingMode==='recall'&&!writingRevealed?'Напиши: '+item.roman:item.kana+' · '+item.roman;
@@ -189,6 +190,7 @@ $('writingReveal').onclick=()=>{writingRevealed=!writingRevealed;$('writingRevea
 function selectWritingScript(value){script=value;writeIndex=0;resetWriting();$('writingHira').classList.toggle('active',script==='hiragana');$('writingKata').classList.toggle('active',script==='katakana');renderGroup()}
 $('writingHira').onclick=()=>selectWritingScript('hiragana');
 $('writingKata').onclick=()=>selectWritingScript('katakana');
+$('writingUndo').onclick=()=>{if(writingStrokes.length)writingStrokes.pop();drawWriting()};
 $('writingClear').onclick=()=>{writingStrokes=[];drawWriting()};
 $('writingToggle').onclick=()=>{showGuide=!showGuide;$('writingToggle').textContent=showGuide?'Скрыть подсказку':'Показать подсказку';drawWriting()};
 $('writingPrev').onclick=()=>{writeIndex=(writeIndex+45)%46;resetWriting()};

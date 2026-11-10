@@ -201,6 +201,7 @@ function bindEvents() {
   $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchStatusFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchDeadlineFilter').addEventListener('change', renderGlobalSearch);
+  $('#globalMyDayBtn').addEventListener('click', showGlobalMyDay);
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);

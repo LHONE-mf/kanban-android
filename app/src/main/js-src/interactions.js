@@ -247,18 +247,81 @@ function bindEvents() {
   $('#lightboxClose').onclick = closeLightbox;
   $('#lightboxPrev').onclick = () => stepLightbox(-1);
   $('#lightboxNext').onclick = () => stepLightbox(1);
-  let swipeStart = null;
+  $('#lightboxZoomIn').onclick = () => setLightboxZoom(lightboxZoom * 1.5);
+  $('#lightboxZoomOut').onclick = () => setLightboxZoom(lightboxZoom / 1.5);
+  $('#lightboxZoomReset').onclick = () => setLightboxZoom(1);
+
+  let photoGesture = null, lastPhotoTap = null, lastTouchZoomAt = 0;
+  const touchDistance = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const togglePhotoZoom = (x, y) => setLightboxZoom(lightboxZoom > 1 ? 1 : 2.5, x, y);
+
   $('#lightbox').addEventListener('touchstart', e => {
-    if (e.touches.length !== 1 || e.target.closest('video')) { swipeStart = null; return; }
-    swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  }, { passive: true });
+    if (!lightboxImage() || e.target.closest('button, video')) {
+      photoGesture = null; return;
+    }
+    if (e.touches.length === 2) {
+      photoGesture = { mode: 'pinch', distance: touchDistance(e.touches[0], e.touches[1]), zoom: lightboxZoom };
+      lastPhotoTap = null;
+      e.preventDefault();
+    } else if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      photoGesture = { mode: 'single', x: touch.clientX, y: touch.clientY,
+        panX: lightboxPanX, panY: lightboxPanY };
+    }
+  }, { passive: false });
+  $('#lightbox').addEventListener('touchmove', e => {
+    if (!photoGesture) return;
+    if (photoGesture.mode === 'pinch' && e.touches.length >= 2) {
+      const a = e.touches[0], b = e.touches[1];
+      const distance = touchDistance(a, b);
+      if (photoGesture.distance > 0) {
+        setLightboxZoom(photoGesture.zoom * distance / photoGesture.distance,
+          (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+      }
+      e.preventDefault();
+    } else if (photoGesture.mode === 'single' && e.touches.length === 1 && lightboxZoom > 1) {
+      const touch = e.touches[0];
+      panLightboxTo(photoGesture.panX + touch.clientX - photoGesture.x,
+        photoGesture.panY + touch.clientY - photoGesture.y);
+      e.preventDefault();
+    }
+  }, { passive: false });
   $('#lightbox').addEventListener('touchend', e => {
-    if (!swipeStart || !e.changedTouches.length) return;
-    const dx = e.changedTouches[0].clientX - swipeStart.x;
-    const dy = e.changedTouches[0].clientY - swipeStart.y;
-    swipeStart = null;
-    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.25) stepLightbox(dx < 0 ? 1 : -1);
+    if (!photoGesture || e.touches.length) return;
+    const gesture = photoGesture;
+    photoGesture = null;
+    if (gesture.mode !== 'single' || !e.changedTouches.length) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - gesture.x, dy = touch.clientY - gesture.y;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.25 && lightboxZoom === 1) {
+      lastPhotoTap = null;
+      stepLightbox(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (Math.hypot(dx, dy) > 20 || !e.target.closest('img')) {
+      lastPhotoTap = null; return;
+    }
+    const now = Date.now();
+    if (lastPhotoTap && now - lastPhotoTap.at <= 320 &&
+        Math.hypot(touch.clientX - lastPhotoTap.x, touch.clientY - lastPhotoTap.y) < 32) {
+      togglePhotoZoom(touch.clientX, touch.clientY);
+      lastTouchZoomAt = now;
+      lastPhotoTap = null;
+    } else {
+      lastPhotoTap = { x: touch.clientX, y: touch.clientY, at: now };
+    }
   }, { passive: true });
+  $('#lightbox').addEventListener('touchcancel', () => { photoGesture = null; lastPhotoTap = null; });
+  $('#lightboxContent').addEventListener('dblclick', e => {
+    if (e.target.tagName !== 'IMG' || Date.now() - lastTouchZoomAt < 500) return;
+    e.preventDefault();
+    togglePhotoZoom(e.clientX, e.clientY);
+  });
+  $('#lightboxContent').addEventListener('wheel', e => {
+    if (e.target.tagName !== 'IMG' || !e.ctrlKey) return;
+    e.preventDefault();
+    setLightboxZoom(lightboxZoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY);
+  }, { passive: false });
   // Android Back closes the topmost overlay. In the task editor it
   // performs the same validated, atomic save as the Save button.
   // The modal remains open if validation or storage fails.
@@ -305,6 +368,12 @@ function bindEvents() {
     if ($('#lightbox').classList.contains('open')) {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault(); stepLightbox(e.key === 'ArrowRight' ? 1 : -1);
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault(); setLightboxZoom(lightboxZoom * 1.5);
+      } else if (e.key === '-') {
+        e.preventDefault(); setLightboxZoom(lightboxZoom / 1.5);
+      } else if (e.key === '0') {
+        e.preventDefault(); setLightboxZoom(1);
       }
       return;
     }

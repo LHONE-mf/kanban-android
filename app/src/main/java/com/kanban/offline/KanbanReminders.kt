@@ -72,10 +72,30 @@ object KanbanReminders {
         )
 
 
+    /** Cancel both the ordinary recurrence and an outstanding one-time snooze. */
+    fun cancelTask(context: Context, taskId: String) {
+        if (taskId.isBlank() || taskId.length > 200) return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val alarm = context.getSystemService(AlarmManager::class.java)
+        val notifications = context.getSystemService(NotificationManager::class.java)
+        for (key in listOf(taskId, SNOOZE_PREFIX + taskId)) {
+            alarm.cancel(intent(context, key))
+            prefs.edit().remove(key).apply()
+            notifications.cancel(requestCode(key))
+        }
+    }
+
     fun update(context: Context, raw: String) {
         val json = JSONObject(raw)
         val id = json.optString("id").take(200)
         if (id.isBlank()) return
+        // A queued completion takes precedence over the stale WebView state.
+        // Otherwise app start/reconciliation could re-arm a dismissed reminder.
+        val taskId = id.removePrefix(SNOOZE_PREFIX)
+        if (KanbanTaskActions.isPending(context, taskId)) {
+            cancelTask(context, taskId)
+            return
+        }
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val alarm = context.getSystemService(AlarmManager::class.java)
         // Snoozes use a separate one-time alarm, so they cannot replace a task's
@@ -161,6 +181,11 @@ object KanbanReminders {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(id, null) ?: return
         val json = JSONObject(raw)
+        val taskId = json.optString("taskId").ifBlank { id }
+        if (KanbanTaskActions.isPending(context, taskId)) {
+            cancelTask(context, taskId)
+            return
+        }
         val firedAt = json.optLong("at")
         if (firedAt > System.currentTimeMillis() + 60_000) return
         prefs.edit().remove(id).apply()
@@ -203,6 +228,17 @@ object KanbanReminders {
             context, requestCode("action:$id"), snoozeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val completeIntent = Intent(context, KanbanReminderReceiver::class.java).apply {
+            action = "com.kanban.offline.MARK_DONE"
+            data = Uri.parse("kanban://reminder/done/${Uri.encode(id)}")
+            putExtra("taskId", taskId)
+            putExtra("boardId", json.optString("boardId"))
+            putExtra("notificationId", requestCode(id))
+        }
+        val completeAction = PendingIntent.getBroadcast(
+            context, requestCode("done:$id"), completeIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
@@ -213,6 +249,9 @@ object KanbanReminders {
             .addAction(Notification.Action.Builder(
                 android.R.drawable.ic_lock_idle_alarm, "Через 10 мин", snoozeAction
             ).build())
+            .addAction(Notification.Action.Builder(
+                android.R.drawable.checkbox_on_background, "Готово", completeAction
+            ).build())
             .build()
         manager.notify(requestCode(id), notification)
     }
@@ -220,7 +259,13 @@ object KanbanReminders {
 
 class KanbanReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == "com.kanban.offline.SNOOZE_REMINDER") {
+        if (intent.action == "com.kanban.offline.MARK_DONE") {
+            val taskId = intent.getStringExtra("taskId") ?: return
+            val boardId = intent.getStringExtra("boardId") ?: ""
+            KanbanTaskActions.queueDone(
+                context, taskId, boardId, intent.getIntExtra("notificationId", 0)
+            )
+        } else if (intent.action == "com.kanban.offline.SNOOZE_REMINDER") {
             val raw = intent.getStringExtra("snoozeRecord") ?: return
             if (raw.length <= 2048) {
                 try {

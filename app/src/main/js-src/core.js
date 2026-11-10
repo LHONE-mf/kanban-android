@@ -10,7 +10,7 @@ const DB_VERSION = 1;
 const STORE_TASKS = 'tasks';
 const STORE_SETTINGS = 'settings';
 const STORE_MEDIA = 'media';
-const VALID_VIEWS = ['kanban', 'dashboard', 'mindmap', 'calendar'];
+const VALID_VIEWS = ['kanban', 'dashboard', 'mindmap', 'calendar', 'search'];
 
 const DEFAULT_COLUMNS = () => ([
   { id: 'col_todo',     title: 'To Do',       color: '#a3a3a3', isDone: false, wipLimit: 0 },

@@ -125,13 +125,23 @@ function updateGlobalSearchTagFilter() {
   select.value = labels.has(selected) ? selected : '';
 }
 
+function resetGlobalSearchFilters() {
+  for (const id of ['globalSearchInput', 'globalSearchBoardFilter',
+    'globalSearchStatusFilter', 'globalSearchDeadlineFilter',
+    'globalSearchPriorityFilter', 'globalSearchTagFilter']) {
+    $('#' + id).value = '';
+  }
+}
+
+function clearGlobalSearch() {
+  resetGlobalSearchFilters();
+  renderGlobalSearch();
+}
+
 function showGlobalMyDay() {
-  $('#globalSearchInput').value = '';
-  $('#globalSearchBoardFilter').value = '';
+  resetGlobalSearchFilters();
   $('#globalSearchStatusFilter').value = 'active';
   $('#globalSearchDeadlineFilter').value = 'attention';
-  $('#globalSearchPriorityFilter').value = '';
-  $('#globalSearchTagFilter').value = '';
   switchView('search');
 }
 
@@ -142,6 +152,9 @@ function renderGlobalSearch() {
   const results = $('#globalSearchResults');
   const summary = $('#globalSearchSummary');
   const empty = $('#globalSearchEmpty');
+  $('#globalSearchClearBtn').disabled = !input.value.trim() &&
+    !['globalSearchBoardFilter', 'globalSearchStatusFilter', 'globalSearchDeadlineFilter',
+      'globalSearchPriorityFilter', 'globalSearchTagFilter'].some(id => $('#' + id).value);
   const match = searchAllBoards(input.value, 100, {
     boardId: $('#globalSearchBoardFilter').value,
     status: $('#globalSearchStatusFilter').value,

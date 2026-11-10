@@ -66,6 +66,20 @@ assert.equal(els['#globalSearchResults'].children.length,1);
 assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'<script>alert(1)</script>',
   'User titles must render as text, not injected markup');
 assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 1');
+const recurringCopy={...a,id:'a-repeat',title:'Repeat audit',repeatFrom:'a',updatedAt:8};
+state._tasksByBoard.b1.push(recurringCopy);
+els['#globalSearchInput'].value='Repeat audit';
+ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchResults'].children.length,1);
+assert.equal(els['#globalSearchResults'].children[0]['aria-label'],
+  'Открыть: Repeat audit (повтор), доска Lab',
+  'Search results should identify the next recurring occurrence distinctly for accessibility');
+state._tasksByBoard.b1.pop();
+
+const focusedFlow=fs.readFileSync('.maestro/recurring-search.yaml','utf8');
+assert(focusedFlow.includes("id: '^Открыть: CI weekly recurring task"),
+  'Focused Android test must tap the accessible search result, not invisible nested text');
+
 els['#globalSearchInput'].value='not-found';
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchEmpty'].hidden,false,'No-results guidance should display');

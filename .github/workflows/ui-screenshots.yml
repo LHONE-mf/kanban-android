@@ -4,6 +4,7 @@ name: Android UI Smoke Tests and Screenshots
 # SAF backup/restore and attachments. It can be started manually; an explicit
 # edit to this workflow on ui-testing triggers a one-off audit run.
 # Ordinary code pushes still use only the fast APK/unit tests.
+# This audit run also checks Android Back-to-save and saved-photo gallery controls.
 on:
   workflow_dispatch:
   push:

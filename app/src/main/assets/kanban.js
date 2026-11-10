@@ -2972,11 +2972,33 @@ function bindEvents() {
     swipeStart = null;
     if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.25) stepLightbox(dx < 0 ? 1 : -1);
   }, { passive: true });
-  // Native Android Back first asks the page to close the photo viewer.
+  // Android Back closes the topmost overlay. In the task editor it
+  // performs the same validated, atomic save as the Save button.
+  // The modal remains open if validation or storage fails.
   window.kanbanHandleBack = () => {
-    if (!$('#lightbox').classList.contains('open')) return false;
-    closeLightbox();
-    return true;
+    if ($('#lightbox').classList.contains('open')) {
+      closeLightbox();
+      return true;
+    }
+    if ($('#confirmModal').classList.contains('open')) {
+      $('#confirmCancel').click();
+      return true;
+    }
+    if ($('#taskModal').classList.contains('open')) {
+      void saveTaskFromModal().catch(e =>
+        showToast('Не удалось сохранить задачу: ' + (e.message || e))
+      );
+      return true;
+    }
+    if ($('#settingsModal').classList.contains('open')) {
+      closeModal('settingsModal');
+      return true;
+    }
+    if ($('#shortcutsModal').classList.contains('open')) {
+      closeModal('shortcutsModal');
+      return true;
+    }
+    return false;
   };
 
   document.addEventListener('keydown', async (e) => {

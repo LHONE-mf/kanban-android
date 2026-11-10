@@ -38,6 +38,13 @@ assert.equal(elements.writingGrade.hidden,false);
 assert.equal(elements.writingReference.hidden,false);
 assert.equal(elements.writingReferenceKana.textContent,'あ');
 assert.equal(elements.writingReferenceRoman.textContent,'a');
+// Failed local storage writes must not silently mark a character as reviewed.
+context.localStorage.setItem=()=>{throw new Error('Storage full')};
+elements.writingRetry.onclick();
+assert.equal(context.reviews['あ'],undefined,'Failed save must roll back review');
+assert.equal(elements.writingGrade.hidden,false,'Failed save should allow retry');
+assert.match(elements.writingFeedback.textContent,/Не удалось сохранить/);
+context.localStorage.setItem=()=>{};
 elements.writingRetry.onclick();
 assert.equal(context.reviews['あ'].interval,0);
 assert.equal(elements.writingGrade.hidden,true);

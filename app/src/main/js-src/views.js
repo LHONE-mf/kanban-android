@@ -1,3 +1,89 @@
+// GLOBAL SEARCH
+// Search every persisted board, including nested tasks. Local board filters
+// remain independent, so finding a task cannot silently discard their state.
+function searchAllBoards(query, limit = 100) {
+  const words = String(query || '').normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return undefined;
+  const items = [];
+  for (const board of state.boards) {
+    for (const task of state._tasksByBoard[board.id] || []) {
+      const title = String(task.title || '').normalize('NFKC').toLocaleLowerCase();
+      const boardName = String(board.name || '').normalize('NFKC').toLocaleLowerCase();
+      const description = String(task.desc || '').normalize('NFKC').toLocaleLowerCase();
+      const tags = (task.tags || []).join(' ').normalize('NFKC').toLocaleLowerCase();
+      const checklist = (task.checklist || []).map(item => item.text || '').join(' ')
+        .normalize('NFKC').toLocaleLowerCase();
+      const all = [title, boardName, description, tags, checklist].join(' ');
+      if (!words.every(word => all.includes(word))) continue;
+      // Prefer an exact task-title match, followed by title and description.
+      const score = words.reduce((sum, word) =>
+        sum + (title === word ? 12 : title.includes(word) ? 6 :
+          description.includes(word) ? 3 : tags.includes(word) ? 2 : 1), 0);
+      items.push({ board, task, score });
+    }
+  }
+  items.sort((a, b) => b.score - a.score ||
+    (b.task.updatedAt || 0) - (a.task.updatedAt || 0));
+  return { total: items.length, items: items.slice(0, Math.max(1, limit)) };
+}
+
+function renderGlobalSearch() {
+  const input = $('#globalSearchInput');
+  const results = $('#globalSearchResults');
+  const summary = $('#globalSearchSummary');
+  const empty = $('#globalSearchEmpty');
+  const match = searchAllBoards(input.value);
+  results.replaceChildren();
+  empty.hidden = !!match && match.total !== 0;
+  if (!match) {
+    summary.textContent = 'Поиск по всем доскам, включая вложенные задачи';
+    empty.textContent = 'Введите название, слово из описания, тег или пункт чек-листа';
+    return;
+  }
+  summary.textContent = 'Найдено задач: ' + match.total +
+    (match.total > match.items.length ? ' · показаны первые ' + match.items.length : '');
+  if (!match.total) {
+    empty.textContent = 'Ничего не найдено. Попробуйте другое слово.';
+    return;
+  }
+  for (const { board, task } of match.items) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'global-search-result';
+    item.setAttribute('aria-label', 'Открыть: ' + task.title + ', доска ' + board.name);
+    const title = document.createElement('span');
+    title.className = 'global-search-result-title';
+    title.textContent = task.title;
+    const metadata = document.createElement('span');
+    metadata.className = 'global-search-result-meta';
+    const column = board.columns.find(c => c.id === task.columnId);
+    metadata.textContent = board.name + ' · ' + (column?.title || 'Задача') +
+      (task.parentId ? ' · Вложенная' : '') +
+      (task.deadline ? ' · 📅 ' + task.deadline : '');
+    item.appendChild(title);
+    item.appendChild(metadata);
+    item.addEventListener('click', () => { void openGlobalSearchResult(board.id, task.id); });
+    results.appendChild(item);
+  }
+}
+
+async function openGlobalSearchResult(boardId, taskId) {
+  const board = state.boards.find(b => b.id === boardId);
+  if (!board || !(state._tasksByBoard[boardId] || []).some(t => t.id === taskId)) {
+    showToast('Задача не найдена');
+    renderGlobalSearch();
+    return;
+  }
+  try {
+    if (state.activeBoardId !== boardId) await switchBoard(boardId);
+    if (!state.tasks.some(t => t.id === taskId)) throw new Error('Задача не найдена');
+    switchView('kanban');
+    openTaskModal(taskId);
+  } catch (error) {
+    showToast('Не удалось открыть задачу: ' + (error.message || error));
+  }
+}
+
 // ============================================================
 // RENDER dispatcher
 // ============================================================
@@ -59,6 +145,7 @@ function renderBoard() {
   board.scrollLeft = boardScroll;
   updateStorageInfo();
 
+  if (currentView === 'search') renderGlobalSearch();
   if (currentView === 'dashboard') renderDashboard();
   else if (currentView === 'mindmap') renderMindmap();
   else if (currentView === 'calendar') renderCalendar();
@@ -717,9 +804,11 @@ function switchView(view) {
   $('#dashboard').hidden = view !== 'dashboard';
   $('#mindmap').hidden = view !== 'mindmap';
   $('#calendar').hidden = view !== 'calendar';
+  $('#globalSearch').hidden = view !== 'search';
   if (view === 'dashboard') renderDashboard();
   else if (view === 'mindmap') renderMindmap();
   else if (view === 'calendar') renderCalendar();
+  else if (view === 'search') renderGlobalSearch();
   saveUIState();
 }
 

@@ -192,6 +192,7 @@ $('writingRecall').onclick=()=>setWritingMode('recall');
 $('writingReveal').onclick=()=>{writingRevealed=!writingRevealed;const item=allKana().flatMap(g=>g.items)[writeIndex%allKana().flatMap(g=>g.items).length];$('writingReferenceKana').textContent=item.kana;$('writingReferenceRoman').textContent=item.roman;$('writingReference').hidden=!writingRevealed;$('writingReveal').textContent=writingRevealed?'Скрыть ответ':'Показать ответ';$('writingGrade').hidden=!writingRevealed;drawWriting()};
 function gradeWriting(remembered){
  if(writingMode!=='recall'||!writingRevealed)return;
+ if(remembered&&!writingStrokes.some(stroke=>stroke.length)){$('writingFeedback').textContent='Сначала напиши знак, затем оцени результат.';return}
  const item=allKana().flatMap(g=>g.items)[writeIndex%allKana().flatMap(g=>g.items).length];
  const previous=reviews[item.kana];
  const days=remembered?(previous?.interval>0?Math.min(60,Math.max(1,Math.round(previous.interval*2))):1):0;

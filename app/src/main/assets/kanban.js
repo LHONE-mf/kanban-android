@@ -2942,7 +2942,20 @@ function stopAutoScroll() { if (autoScrollInterval) { clearInterval(autoScrollIn
 // ============================================================
 // EVENT BINDINGS
 // ============================================================
+// On narrow screens the actions sit inside a collapsible overflow menu.
+// Close it when an action is selected, especially before Android's file picker.
+// Desktop keeps its always-visible toolbar.
+function bindMobileActionsMenu() {
+  const menu = document.querySelector('.mobile-actions');
+  if (!menu) return;
+  menu.addEventListener('click', e => {
+    if (window.matchMedia('(max-width: 600px)').matches && e.target.closest('button')) {
+      menu.open = false;
+    }
+  });
+}
 function bindEvents() {
+  bindMobileActionsMenu();
   $('#themeBtn').onclick = toggleTheme;
   $('#exportBtn').onclick = exportData;
   $('#exportCsvBtn').onclick = exportCsv;

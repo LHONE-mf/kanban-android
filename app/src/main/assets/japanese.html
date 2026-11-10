@@ -179,7 +179,7 @@ canvas.addEventListener('pointerup',stopDraw);canvas.addEventListener('pointerca
 function updateWritingDueCount(){const count=allKana().flatMap(g=>g.items).filter(item=>Number.isFinite(reviews[item.kana]?.due)&&reviews[item.kana].due<=Date.now()).length;$('writingDue').textContent='Повторить ('+count+')'}
 function resetWriting(){writingStrokes=[];writingRevealed=false;$('writingReference').hidden=true;$('writingTryAgainRow').hidden=true;$('writingGrade').hidden=true;$('writingFeedback').textContent='';$('writingReveal').textContent='Показать ответ';drawWriting()}
 function setWritingMode(mode){
- writingMode=mode;showGuide=mode==='trace';resetWriting();
+ writingMode=mode;showGuide=mode==='trace';resetWriting();$('writingToggle').textContent=showGuide?'Скрыть подсказку':'Показать подсказку';
  $('writingTrace').classList.toggle('active',mode==='trace');
  $('writingRecall').classList.toggle('active',mode==='recall');
  $('writingToggle').hidden=mode==='recall';$('writingReveal').hidden=mode!=='recall';

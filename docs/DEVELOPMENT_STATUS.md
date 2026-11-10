@@ -19,10 +19,14 @@ is historical context, not a current test report.
 - [ ] Physical-device upgrade and broader acceptance checklist in
   `TESTING_ANDROID.md`; no signing or storage migration is part of this change.
 - [x] Japanese learned-kana and Kanban tasks survive the signed v1→v2
-  emulator upgrade at `83d12c6`. The full run then failed at the Back-save
-  flow: Maestro selected the description label instead of the textarea.
-  The flow now targets the editable placeholder and verifies typing before Back;
-  a full successful run is still required.
+  emulator upgrade. Android Back saves an edited description through restart;
+  the flow targets the editable placeholder and verifies typing before Back.
+- [x] Real Android SAF export/cancel/retry, exported JSON byte verification,
+  restore/restart and native attachment opening pass at `68fbd57`.
+  [Runtime evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42893892362).
+  That run then stopped at photo navigation: four fixed swipes left its
+  controls offscreen. The photo flow now scrolls to the actual photo button;
+  its zoom/gallery assertions and media round-trip checks remain intact.
 - [x] Imported board/media IDs that match Object property names remain
   enumerable and keep stable references. Executable coverage uses the real
   import, rebucketing and export functions, including a complete round-trip

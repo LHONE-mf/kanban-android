@@ -19,22 +19,14 @@ androidWebViewHierarchy: devtools
     visible: "Редактирование задачи"
     timeout: 30000
 - hideKeyboard
-- swipe:
-    start: "50%, 62%"
-    end: "50%, 28%"
-    duration: 470
-- swipe:
-    start: "50%, 62%"
-    end: "50%, 28%"
-    duration: 470
-- swipe:
-    start: "50%, 62%"
-    end: "50%, 28%"
-    duration: 470
-- swipe:
-    start: "50%, 62%"
-    end: "50%, 28%"
-    duration: 470
+# Editor height varies with task descriptions and wrapping on narrow screens.
+# Stop only when the actual photo action is onscreen, not after a fixed swipe count.
+- scrollUntilVisible:
+    element: "Открыть файл kanban-zoom-a.png"
+    direction: DOWN
+    centerElement: true
+    visibilityPercentage: 80
+    timeout: 60000
 - assertVisible: "Открыть файл kanban-zoom-a.png"
 - tapOn: "Открыть файл kanban-zoom-a.png"
 - extendedWaitUntil:

@@ -24,7 +24,16 @@ let modalOpen=false, fail=false, updated=0;
 const ctx={state,window:{KanbanTaskActions:{postMessage:raw=>messageLog.push(JSON.parse(raw))}},
   Date,Math,console,
   $:()=>({classList:{contains:()=>modalOpen}}),
-  dbPutTasks:async tasks=>{if(fail)throw Error('disk full');persisted.push(tasks)},
+  persistTaskChanges:async (candidates,tasks)=>{
+    if(fail)throw Error('disk full');
+    persisted.push(candidates);
+    for(const candidate of candidates) {
+      const index=tasks.findIndex(t=>t.id===candidate.id);
+      if(index>=0)tasks[index]=candidate;else tasks.push(candidate);
+      syncs.push(candidate.id);
+    }
+    return {created:[]};
+  },
   syncNativeReminder:t=>syncs.push(t.id),
   renderBoard:()=>{updated++},notifyOtherTabs:()=>{},showToast:s=>toasts.push(s)};
 vm.createContext(ctx);

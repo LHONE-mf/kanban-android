@@ -74,7 +74,7 @@ assert.equal(ctx.applyTaskReminderPreset('invalid',beforeDst),false);
 const bindStart=events.indexOf("  $('#taskDeadlinePresets').addEventListener('click'");
 const bindEnd=events.indexOf("  $$('#priorityChips .chip')",bindStart);
 assert(bindStart>=0&&bindEnd>bindStart,'Preset click handlers must be registered before other task controls');
-assert(events.includes("  $('#priorityChips .chip').forEach"),
+assert(events.includes("  $$('#priorityChips .chip').forEach"),
   'Priority controls must still bind all chips, not just the first DOM element');
 vm.runInContext(events.slice(bindStart,bindEnd),ctx);
 function click(id,dataName,value) {

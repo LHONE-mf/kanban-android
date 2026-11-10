@@ -937,7 +937,7 @@ function renderBoard() {
   updateTagFilter();
   const board = $('#board');
   const scrolls = {};
-  $('.task-list', board).forEach(el => { scrolls[el.dataset.columnId] = el.scrollTop; });
+  $$('.task-list', board).forEach(el => { scrolls[el.dataset.columnId] = el.scrollTop; });
   const boardScroll = board.scrollLeft;
   board.innerHTML = '';
   const visible = getVisibleTasks();
@@ -1469,7 +1469,7 @@ function mmBind() {
   };
   svg.addEventListener('pointerup', end);
   svg.addEventListener('pointercancel', end);
-  $('.mm-zoom [data-z]').forEach(b => b.onclick = () => {
+  $$('.mm-zoom [data-z]').forEach(b => b.onclick = () => {
     const r = svg.getBoundingClientRect();
     if (b.dataset.z === 'fit') mmFit(); else mmZoom(+b.dataset.z, r.width / 2, r.height / 2);
   });
@@ -1642,7 +1642,7 @@ function renderHeatmap() {
 function switchView(view) {
   if (!VALID_VIEWS.includes(view)) view = 'kanban';
   currentView = view;
-  $('.view-tab').forEach(tab => {
+  $$('.view-tab').forEach(tab => {
     const active = tab.dataset.view === view;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
@@ -3257,7 +3257,7 @@ async function onPointerUp(e) {
     drag = null;
     if (list && list.classList.contains('task-list')) {
       const newColId = list.dataset.columnId;
-      const orderedIds = $('.task-card', list).map(c => c.dataset.taskId);
+      const orderedIds = $$('.task-card', list).map(c => c.dataset.taskId);
       const toUpdate = [];
       for (let i = 0; i < orderedIds.length; i++) {
         const t = state.tasks.find(x => x.id === orderedIds[i]);
@@ -3297,7 +3297,7 @@ function getAfterElement(container, y) {
 }
 function updateDropTarget(x, y) {
   if (!drag || !drag.active) return;
-  $('.task-list.drag-over').forEach(el => el.classList.remove('drag-over'));
+  $$('.task-list.drag-over').forEach(el => el.classList.remove('drag-over'));
   const el = document.elementFromPoint(x, y);
   if (!el) return;
   let list = el.closest('.task-list');
@@ -3380,7 +3380,7 @@ function bindEvents() {
     await deleteBoard(state.activeBoardId);
   };
 
-  $('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
+  $$('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
 
   $('#globalSearchInput').addEventListener('input', renderGlobalSearch);
   $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);
@@ -3407,7 +3407,7 @@ function bindEvents() {
     const button = event.target.closest('button[data-task-repeat]');
     if (button) setTaskRepeat(button.dataset.taskRepeat);
   });
-  $('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
+  $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;
   $('#saveTaskBtn').onclick = saveTaskFromModal;
 

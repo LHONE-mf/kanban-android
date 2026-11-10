@@ -25,7 +25,14 @@ class KanbanReminderInstrumentedTest {
         context.getSystemService(NotificationManager::class.java).cancel(id.hashCode())
     }
 
-    @After fun cleanupFixture() = resetFixture()
+    @After fun cleanupFixture() {
+        resetFixture()
+        val queued = context.getSharedPreferences("kanban_pending_task_actions", Context.MODE_PRIVATE)
+            .getString(id, null)
+        if (queued != null) {
+            KanbanTaskActions.acknowledge(context, id, JSONObject(queued).optString("token"))
+        }
+    }
 
     private fun schedule(repeat: String = "none", offset: Long = 120_000L): Long {
         val at = System.currentTimeMillis() + offset
@@ -68,6 +75,41 @@ class KanbanReminderInstrumentedTest {
         val notifications = context.getSystemService(NotificationManager::class.java).activeNotifications
         assertTrue("Expected task notification", notifications.any { it.id == id.hashCode() })
         assertNull("One-time reminder must be consumed", prefs.getString(id, null))
+    }
+
+    @Test fun markDoneActionQueuesDurablyAndCancelsRemindersUntilAck() {
+        schedule(offset = 1_000L)
+        Thread.sleep(1200)
+        KanbanReminders.fire(context, id)
+        val notification = context.getSystemService(NotificationManager::class.java)
+            .activeNotifications.first { it.id == id.hashCode() }.notification
+        val done = notification.actions?.firstOrNull { it.title.toString() == "Готово" }
+        assertNotNull("Task notification should offer Mark Done", done)
+        done!!.actionIntent.send()
+
+        var pending: String? = null
+        for (attempt in 0 until 30) {
+            pending = context.getSharedPreferences(
+                "kanban_pending_task_actions", Context.MODE_PRIVATE
+            ).getString(id, null)
+            if (pending != null) break
+            Thread.sleep(80)
+        }
+        assertNotNull("Action must be persisted for later IndexedDB reconciliation", pending)
+        val queued = JSONObject(pending!!)
+        assertEquals(id, queued.getString("taskId"))
+        assertEquals("ci-board", queued.getString("boardId"))
+        assertEquals("complete", queued.getString("action"))
+        assertTrue("Task completion is still waiting for WebView", KanbanTaskActions.isPending(context, id))
+
+        // WebView sync at app startup must not re-arm a completed notification.
+        KanbanReminders.update(context, JSONObject()
+            .put("id", id).put("at", System.currentTimeMillis() + 3_600_000L).toString())
+        assertNull("Pending Mark Done must suppress stale task alarms", prefs.getString(id, null))
+        assertFalse("Incorrect token cannot discard a completion",
+            KanbanTaskActions.acknowledge(context, id, "00000000-0000-0000-0000-000000000000"))
+        assertTrue(KanbanTaskActions.acknowledge(context, id, queued.getString("token")))
+        assertFalse(KanbanTaskActions.isPending(context, id))
     }
 
     @Test fun snoozeActionSchedulesOnlyTenMinutesAndSurvivesAppReconciliation() {

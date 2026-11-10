@@ -111,12 +111,18 @@ object KanbanReminders {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(id, null) ?: return
         val json = JSONObject(raw)
-        if (json.optLong("at") > System.currentTimeMillis() + 60_000) return
+        val firedAt = json.optLong("at")
+        if (firedAt > System.currentTimeMillis() + 60_000) return
         prefs.edit().remove(id).apply()
         if (json.optString("repeat", "none") != "none") {
-            val anchorAt = json.optLong("anchorAt").takeIf { it > 0L } ?: json.optLong("at")
+            val anchorAt = json.optLong("anchorAt").takeIf { it > 0L } ?: firedAt
             val next = ReminderSchedule.nextTime(anchorAt, json.optString("repeat"), System.currentTimeMillis())
-            if (next > System.currentTimeMillis()) update(context, json.put("at", next).toString())
+            // Do not mutate the firing record: this notification must display
+            // the occurrence that just fired, not its next scheduled repeat.
+            if (next > System.currentTimeMillis()) {
+                val nextRecord = JSONObject(json.toString()).put("at", next)
+                update(context, nextRecord.toString())
+            }
         }
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
@@ -124,7 +130,7 @@ object KanbanReminders {
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Напоминания о задачах", NotificationManager.IMPORTANCE_DEFAULT))
         val boardName = json.optString("boardName", "Моя доска").ifBlank { "Моя доска" }
         val title = json.optString("title", "Задача")
-        val date = ReminderNotificationText.formatDate(json.optLong("at"))
+        val date = ReminderNotificationText.formatDate(firedAt)
         val openIntent = Intent(context, MainActivity::class.java).apply {
             action = "com.kanban.offline.OPEN_TASK"
             data = Uri.parse("kanban://reminder/task/${Uri.encode(id)}")
@@ -139,7 +145,7 @@ object KanbanReminders {
         val notification = android.app.Notification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle(title)
-            .setContentText(ReminderNotificationText.summary(boardName, json.optLong("at")))
+            .setContentText(ReminderNotificationText.summary(boardName, firedAt))
             .setStyle(android.app.Notification.BigTextStyle()
                 .bigText("Задача: $title\nДоска: $boardName\nНапоминание: $date"))
             .setContentIntent(open).setAutoCancel(true).build()

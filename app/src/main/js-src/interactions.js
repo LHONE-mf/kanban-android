@@ -244,6 +244,27 @@ function bindEvents() {
     });
   });
   $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+  $('#lightboxClose').onclick = closeLightbox;
+  $('#lightboxPrev').onclick = () => stepLightbox(-1);
+  $('#lightboxNext').onclick = () => stepLightbox(1);
+  let swipeStart = null;
+  $('#lightbox').addEventListener('touchstart', e => {
+    if (e.touches.length !== 1 || e.target.closest('video')) { swipeStart = null; return; }
+    swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  $('#lightbox').addEventListener('touchend', e => {
+    if (!swipeStart || !e.changedTouches.length) return;
+    const dx = e.changedTouches[0].clientX - swipeStart.x;
+    const dy = e.changedTouches[0].clientY - swipeStart.y;
+    swipeStart = null;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.25) stepLightbox(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  // Native Android Back first asks the page to close the photo viewer.
+  window.kanbanHandleBack = () => {
+    if (!$('#lightbox').classList.contains('open')) return false;
+    closeLightbox();
+    return true;
+  };
 
   document.addEventListener('keydown', async (e) => {
     if (e.key === 'Escape') {
@@ -256,6 +277,12 @@ function bindEvents() {
         $('#searchInput').value = ''; searchQuery = '';
         document.activeElement.blur();
         renderBoard();
+      }
+      return;
+    }
+    if ($('#lightbox').classList.contains('open')) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault(); stepLightbox(e.key === 'ArrowRight' ? 1 : -1);
       }
       return;
     }

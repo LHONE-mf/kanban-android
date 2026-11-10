@@ -140,6 +140,9 @@ button { font-family: inherit; }
 .global-search-filters .label { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .global-search-filters .select { width: 100%; min-width: 0; min-height: 44px; }
 @media (max-width: 480px) { .global-search-filters { grid-template-columns: 1fr; gap: 8px; } }
+.task-move-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.task-move-controls .select { flex: 1 1 175px; min-height: 44px; min-width: 0; }
+.task-move-controls .btn { min-height: 44px; }
 .global-search-summary { margin: 12px 0; }
 .global-search-results { display: grid; gap: 8px; }
 .global-search-result {

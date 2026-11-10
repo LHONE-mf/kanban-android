@@ -201,7 +201,6 @@ function bindEvents() {
   $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchStatusFilter').addEventListener('change', renderGlobalSearch);
   $('#globalSearchDeadlineFilter').addEventListener('change', renderGlobalSearch);
-  $('#globalMyDayBtn').addEventListener('click', showGlobalMyDay);
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);
@@ -229,6 +228,14 @@ function bindEvents() {
   $('#saveTaskBtn').onclick = saveTaskFromModal;
 
   $('#dupTaskBtn').onclick = async () => { if (editingTaskId) await duplicateTask(editingTaskId); };
+  $('#moveTaskBoardBtn').onclick = async () => {
+    if (!editingTaskId) return;
+    if (isModalDirty()) {
+      showToast('Сохраните изменения задачи перед перемещением');
+      return;
+    }
+    await moveTaskToBoard(editingTaskId, $('#taskMoveBoard').value);
+  };
   $('#deleteTaskBtn').onclick = async () => {
     if (!editingTaskId) return;
     const id = editingTaskId;

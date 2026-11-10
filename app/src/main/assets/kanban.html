@@ -105,7 +105,6 @@
 <section class="global-search" id="globalSearch" hidden aria-label="Поиск по всем доскам">
   <div class="global-search-head">
     <h2>Поиск по всем доскам</h2>
-    <button type="button" class="btn btn-secondary btn-small" id="globalMyDayBtn" aria-label="Мой день по всем доскам">🔥 Мой день · все доски</button>
     <p>Поиск по названиям, описаниям, тегам и чек-листам, включая вложенные задачи.</p>
   </div>
   <label class="label" for="globalSearchInput">Найти задачу</label>
@@ -208,6 +207,14 @@
       <div class="field">
         <label class="label" for="taskParent">Родитель (колонка или узел)</label>
         <select id="taskParent" class="select"></select>
+      </div>
+      <div class="field" id="taskMoveField" hidden>
+        <label class="label" for="taskMoveBoard">Переместить на другую доску</label>
+        <div class="task-move-controls">
+          <select class="select" id="taskMoveBoard" aria-label="Целевая доска"></select>
+          <button type="button" class="btn btn-secondary" id="moveTaskBoardBtn">Переместить</button>
+        </div>
+        <div class="field-hint" id="taskMoveHint"></div>
       </div>
       <!-- NEW: список вложенных узлов -->
       <div class="field" id="nestedNodesField" hidden>

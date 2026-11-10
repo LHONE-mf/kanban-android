@@ -214,6 +214,97 @@ async function deleteTask(taskId) {
   }, 5000);
 }
 
+// CROSS-BOARD TASK MOVE
+// Keep the entire nested subtree together and persist it in one IndexedDB
+// transaction. Never change the in-memory boards if storage rejects the write.
+async function moveTaskToBoard(taskId, destinationBoardId) {
+  const sourceBoard = getBoard(state.activeBoardId);
+  const destination = getBoard(destinationBoardId);
+  const sourceTasks = state._tasksByBoard[state.activeBoardId];
+  const root = sourceTasks?.find(t => t.id === taskId);
+  if (!sourceBoard || !destination || !root || sourceBoard.id === destination.id) {
+    showToast('Доска или задача не найдена');
+    return false;
+  }
+
+  const sourceColumn = sourceBoard.columns.find(c => c.id === root.columnId);
+  if (!sourceColumn) {
+    showToast('Колонка исходной задачи не найдена');
+    return false;
+  }
+  const equivalentColumns = destination.columns.filter(c => !!c.isDone === !!sourceColumn.isDone);
+  const destinationColumn = equivalentColumns.find(c =>
+    c.title.trim().toLocaleLowerCase() === sourceColumn.title.trim().toLocaleLowerCase()
+  ) || equivalentColumns[0];
+  if (!destinationColumn) {
+    showToast('В целевой доске нет подходящей колонки для этого статуса');
+    return false;
+  }
+
+  const descendants = subtree(taskId);
+  const group = [root, ...descendants];
+  const ids = new Set(group.map(t => t.id));
+  if (group.some(t => activeTaskWrites.has(t.id))) {
+    showToast('Задача уже сохраняется');
+    return false;
+  }
+
+  const destinationTasks = state._tasksByBoard[destination.id] || [];
+  const orders = destinationTasks.filter(t =>
+    !t.parentId && t.columnId === destinationColumn.id).map(t => t.order ?? 0);
+  const firstOrder = orders.length ? Math.min(...orders) - 1 : 0;
+  const now = Date.now();
+  const relocated = group.map((task, index) => ({
+    ...task,
+    boardId: destination.id,
+    columnId: destinationColumn.id,
+    parentId: index === 0 ? '' : task.parentId,
+    order: index === 0 ? firstOrder : task.order,
+    updatedAt: now
+  }));
+
+  ids.forEach(id => activeTaskWrites.add(id));
+  try {
+    await dbPutTasks(relocated);
+    const remaining = sourceTasks.filter(t => !ids.has(t.id));
+    sourceTasks.splice(0, sourceTasks.length, ...remaining);
+    state._tasksByBoard[destination.id] = destinationTasks;
+    destinationTasks.push(...relocated);
+    relocated.forEach(syncNativeReminder);
+  } catch (error) {
+    showToast('Не удалось переместить: ' + (error.message || error));
+    return false;
+  } finally {
+    ids.forEach(id => activeTaskWrites.delete(id));
+  }
+
+  closeModal('taskModal');
+  notifyOtherTabs();
+  await switchBoard(destination.id);
+  switchView('kanban');
+  openTaskModal(taskId);
+  showToast('Перемещено в «' + destination.name + '»');
+  return true;
+}
+
+function updateTaskMoveControls(task) {
+  const field = $('#taskMoveField');
+  const select = $('#taskMoveBoard');
+  field.hidden = !task || state.boards.length < 2;
+  select.replaceChildren();
+  if (field.hidden) return;
+  for (const board of state.boards) {
+    if (board.id === state.activeBoardId) continue;
+    const option = document.createElement('option');
+    option.value = board.id;
+    option.textContent = board.name;
+    select.appendChild(option);
+  }
+  $('#taskMoveHint').textContent = task.parentId
+    ? 'Задача и вложенные узлы перейдут на другую доску. Эта задача станет самостоятельной.'
+    : 'Вложенные узлы, вложения и напоминания переместятся вместе с задачей.';
+}
+
 // ============================================================
 // TASK MODAL
 // ============================================================
@@ -316,6 +407,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     $('#dupTaskBtn').style.display = 'none';
   }
 
+  updateTaskMoveControls(taskId ? state.tasks.find(t => t.id === taskId) : null);
   renderFiles();
   modalInitialSnapshot = captureModalSnapshot();
   modal.classList.add('open');

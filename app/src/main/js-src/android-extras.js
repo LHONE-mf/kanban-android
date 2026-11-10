@@ -279,12 +279,7 @@ window.kanbanReceiveTaskActions = async (raw) => {
           const root = candidates.find(t => t.id === action.taskId);
           if (root) root.order = orders.length ? Math.min(...orders) - 1 : 0;
           try {
-            await dbPutTasks(candidates);
-            for (const candidate of candidates) {
-              const index = tasks.findIndex(t => t.id === candidate.id);
-              if (index >= 0) tasks[index] = candidate;
-              syncNativeReminder(candidate);
-            }
+            await persistTaskChanges(candidates, tasks, board);
             changed = true;
           } catch (error) {
             showToast('Не удалось завершить задачу: ' + (error.message || error));

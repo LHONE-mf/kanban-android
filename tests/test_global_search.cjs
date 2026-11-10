@@ -113,7 +113,7 @@ assert.notEqual(els['#globalSearchBoardFilter'].children,optionsBefore,
   'Board rename must refresh search dropdown');
 assert.equal(els['#globalSearchBoardFilter'].children[1].textContent,'Renamed board');
 assert.equal(els['#globalSearchBoardFilter'].value,'b1','Board selection survives rename');
-state.boards[0].name='First board';
+state.boards[0].name='Lab';
 
 els['#globalSearchStatusFilter'].value='';
 els['#globalSearchDeadlineFilter'].value='today';

@@ -569,6 +569,10 @@ button { font-family: inherit; }
 .task-date-presets .chip {
   min-height: 40px; padding: 7px 10px; touch-action: manipulation;
 }
+.task-repeat-choices { margin-top: 6px; }
+.task-repeat-choices .chip {
+  min-height: 44px; padding: 8px 12px; touch-action: manipulation;
+}
 .chip {
   appearance: none; padding: 5px 12px; border-radius: var(--radius);
   border: 1px solid var(--border); background: transparent;

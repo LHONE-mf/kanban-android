@@ -24,6 +24,12 @@ androidWebViewHierarchy: devtools
 - extendedWaitUntil:
     visible: "Редактирование задачи"
     timeout: 30000
+# The emulator keeps the text keyboard open after task creation. Its WebView
+# hierarchy may list offscreen controls as visible; dismiss it and scroll the
+# actual editor before tapping the native select.
+- hideKeyboard
+- scroll:
+    direction: DOWN
 - scrollUntilVisible:
     element:
       id: "taskRepeat"

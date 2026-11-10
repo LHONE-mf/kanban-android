@@ -176,13 +176,14 @@ canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCa
 canvas.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();writingStrokes[writingStrokes.length-1].push(point(e));drawWriting()});
 function stopDraw(){drawing=false}
 canvas.addEventListener('pointerup',stopDraw);canvas.addEventListener('pointercancel',stopDraw);
+function updateWritingDueCount(){const count=allKana().flatMap(g=>g.items).filter(item=>Number.isFinite(reviews[item.kana]?.due)&&reviews[item.kana].due<=Date.now()).length;$('writingDue').textContent='Повторить ('+count+')'}
 function resetWriting(){writingStrokes=[];writingRevealed=false;$('writingReference').hidden=true;$('writingTryAgainRow').hidden=true;$('writingGrade').hidden=true;$('writingFeedback').textContent='';$('writingReveal').textContent='Показать ответ';drawWriting()}
 function setWritingMode(mode){
  writingMode=mode;showGuide=mode==='trace';resetWriting();
  $('writingTrace').classList.toggle('active',mode==='trace');
  $('writingRecall').classList.toggle('active',mode==='recall');
  $('writingToggle').hidden=mode==='recall';$('writingReveal').hidden=mode!=='recall';
- $('writingGrade').hidden=true;$('writingReference').hidden=true;$('writingTryAgainRow').hidden=true;
+ $('writingGrade').hidden=true;$('writingReference').hidden=true;$('writingTryAgainRow').hidden=true;updateWritingDueCount();
  $('writingInstructions').textContent=mode==='trace'?'Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.':'Посмотри на чтение латиницей и напиши знак по памяти. Затем покажи ответ и сравни. Проверка пока самостоятельная.';
  drawWriting();
 }
@@ -197,13 +198,14 @@ function gradeWriting(remembered){
  reviews[item.kana]={interval:days,due:Date.now()+(remembered?days*86400000:60000)};
  try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}
  catch(e){if(previous===undefined)delete reviews[item.kana];else reviews[item.kana]=previous;$('writingFeedback').textContent='Не удалось сохранить оценку. Повтори попытку.';return}
+ updateWritingDueCount();
  $('writingFeedback').textContent=remembered?'Отлично! Знак добавлен в интервальное повторение.':'Знак добавлен в ближайшее повторение.';
  $('writingGrade').hidden=true;$('writingTryAgainRow').hidden=false;
 }
 $('writingTryAgain').onclick=()=>resetWriting();
 $('writingRetry').onclick=()=>gradeWriting(false);
 $('writingGood').onclick=()=>gradeWriting(true);
-function selectWritingScript(value){script=value;writeIndex=0;resetWriting();$('writingHira').classList.toggle('active',script==='hiragana');$('writingKata').classList.toggle('active',script==='katakana');renderGroup()}
+function selectWritingScript(value){script=value;writeIndex=0;resetWriting();updateWritingDueCount();$('writingHira').classList.toggle('active',script==='hiragana');$('writingKata').classList.toggle('active',script==='katakana');renderGroup()}
 $('writingHira').onclick=()=>selectWritingScript('hiragana');
 $('writingKata').onclick=()=>selectWritingScript('katakana');
 $('writingUndo').onclick=()=>{if(writingStrokes.length)writingStrokes.pop();drawWriting()};

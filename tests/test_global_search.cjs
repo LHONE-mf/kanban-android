@@ -13,6 +13,7 @@ assert(core.includes("'search'"),'Search must be included in saved view options'
 for(const id of ['globalSearch','globalSearchInput','globalSearchBoardFilter','globalSearchStatusFilter','globalSearchResults','globalSearchSummary','globalSearchEmpty'])
   assert(html.includes('id="'+id+'"'),'Missing cross-board UI element: '+id);
 assert(html.includes('data-view="search"'),'Search tab must be accessible from mobile navigation');
+assert(html.includes('id="globalSearchTab"'),'Search tab must have stable navigation identity for Android UI tests');
 assert(views.includes("$('#globalSearch').hidden = view !== 'search'"),'Search view must be correctly toggled');
 assert(interactions.includes("$('#globalSearchInput').addEventListener('input'"),'Search input must be live');
 assert(interactions.includes("$('#globalSearchBoardFilter').addEventListener('change'"),'Board filter must refresh live');

@@ -80,7 +80,8 @@ androidWebViewHierarchy: devtools
 - assertVisible:
     id: '^CI weekly recurring task \(повтор\)$'
 # Search tab finds both saved occurrences and opens the fresh occurrence via its distinct accessible button.
-- tapOn: "🔎 Поиск"
+- tapOn:
+    id: "globalSearchTab"
 - extendedWaitUntil:
     visible:
       id: "globalSearchInput"
@@ -160,7 +161,8 @@ androidWebViewHierarchy: devtools
     visible:
       id: "quickAdd"
     timeout: 30000
-- tapOn: "🔎 Поиск"
+- tapOn:
+    id: "globalSearchTab"
 - assertVisible: "Найдено задач: 2"
 - scrollUntilVisible:
     element:

@@ -99,7 +99,18 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val files = if (result.resultCode == RESULT_OK) {
-            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+            val selected = mutableListOf<Uri>()
+            result.data?.clipData?.let { clip ->
+                for (index in 0 until clip.itemCount) {
+                    clip.getItemAt(index).uri?.let(selected::add)
+                }
+            }
+            result.data?.data?.let(selected::add)
+            if (selected.isEmpty()) {
+                WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+                    ?.let { selected.addAll(it) }
+            }
+            selected.distinct().takeIf { it.isNotEmpty() }?.toTypedArray()
         } else null
         pendingFiles?.onReceiveValue(files)
         pendingFiles = null
@@ -151,7 +162,11 @@ class MainActivity : ComponentActivity() {
                     pendingFiles?.onReceiveValue(null)
                     pendingFiles = filePathCallback
                     return try {
-                        filePicker.launch(fileChooserParams.createIntent())
+                        filePicker.launch(fileChooserParams.createIntent().apply {
+                            if (fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                            }
+                        })
                         true
                     } catch (_: Exception) {
                         pendingFiles?.onReceiveValue(null)
@@ -403,21 +418,29 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastBackGestureAt <= 2000L) {
-                    finish()
+                if (webView.url?.startsWith("$appOrigin/assets/kanban.html") == true) {
+                    webView.evaluateJavascript("window.kanbanHandleBack && window.kanbanHandleBack()") { handled ->
+                        if (handled == "true") lastBackGestureAt = 0L else confirmAppExit()
+                    }
                 } else {
-                    lastBackGestureAt = now
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        "Проведите назад ещё раз, чтобы выйти",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+                    confirmAppExit()
                 }
             }
         })
     }
 
+
+    private fun confirmAppExit() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastBackGestureAt <= 2000L) {
+            finish()
+        } else {
+            lastBackGestureAt = now
+            android.widget.Toast.makeText(
+                this, "Проведите назад ещё раз, чтобы выйти", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 

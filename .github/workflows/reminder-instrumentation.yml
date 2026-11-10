@@ -1,6 +1,14 @@
 name: Reminder instrumentation
 on:
   workflow_dispatch:
+  # Real native notification delivery is important enough for a scoped emulator
+  # run whenever reminder logic or its instrumentation test changes.
+  push:
+    branches: [ui-testing]
+    paths:
+      - 'app/src/main/java/com/kanban/offline/KanbanReminders.kt'
+      - 'app/src/androidTest/java/com/kanban/offline/KanbanReminderInstrumentedTest.kt'
+      - '.github/workflows/reminder-instrumentation.yml'
 
 permissions:
   contents: read

@@ -7,6 +7,8 @@ androidWebViewHierarchy: devtools
 - stopApp
 - launchApp:
     clearState: false
+# Mobile import is behind the overflow; do not assume a hidden toolbar item is tappable.
+- tapOn: "⋮"
 - extendedWaitUntil:
     visible:
       id: "importBtn"

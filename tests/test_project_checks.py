@@ -148,7 +148,8 @@ class UiRegressionTests(unittest.TestCase):
         after = (ROOT / ".maestro/kanban-persistence.yaml").read_text(encoding="utf-8")
         self.assertIn('id="quickAddSubmit"', html)
         self.assertIn("quickAddButton.addEventListener('click', submitQuickAdd)", js)
-        self.assertIn("card.setAttribute('aria-label', task.title)", views)
+        self.assertIn("card.setAttribute('aria-label', task.title +", views)
+        self.assertIn("task.repeatFrom ? ' (повтор)' : ''", views)
         for flow in (before, after):
             self.assertIn('id: "quickAddSubmit"', flow)
             self.assertIn('id: "Beta upgrade persistence task"', flow)

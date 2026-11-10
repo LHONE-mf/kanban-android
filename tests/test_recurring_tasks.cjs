@@ -127,5 +127,44 @@ assert.equal(afterFeb[0].deadline,'2027-03-31');
   tasks.push(noDue);
   await ctx.persistTaskChanges([{...noDue,columnId:'done',completedAt:when}],tasks,board);
   assert.equal(tasks.at(-1).deadline,'2027-02-07','No due date means next week from completion date');
+  // A notification may mark both the parent and all its descendants Done in one
+  // transaction. If parent and child repeat, the child must not be duplicated.
+  // Reversed input order exercises native queues independent of task ordering.
+  const recurringParent={...root,id:'parentBoth',parentId:'',columnId:'doing',
+    taskRepeat:'monthly',repeatFrom:'',completedAt:null};
+  const repeatingChild={...child,id:'childBoth',parentId:'parentBoth',columnId:'doing',
+    taskRepeat:'weekly',repeatAnchor:'2027-01-31',deadline:'2027-01-31',
+    completedAt:null};
+  const both=[recurringParent,repeatingChild];
+  const completedBoth=[
+    {...repeatingChild,columnId:'done',completedAt:when},
+    {...recurringParent,columnId:'done',completedAt:when}
+  ];
+  const fromBoth=await ctx.persistTaskChanges(completedBoth,both,board);
+  assert.equal(fromBoth.created.length,2,
+    'Completing a repeating parent and repeating child together must only create one new tree');
+  assert.equal(both.length,4,'No extra standalone recurring child');
+  const newRoot=both.find(t=>t.repeatFrom==='parentBoth');
+  const newChild=both.find(t=>t.repeatFrom==='childBoth');
+  assert(newRoot&&newChild);
+  assert.equal(newChild.parentId,newRoot.id,
+    'The repeated child belongs to the new parent, not the finished occurrence');
+
+  // If the parent is not repeating but a child is, the new child becomes a root.
+  // It must not end up hidden under the newly completed parent.
+  const onceParent={...root,id:'parentOnce',taskRepeat:'none',columnId:'doing',
+    parentId:'',completedAt:null};
+  const weeklyChild={...repeatingChild,id:'childWeekly',parentId:'parentOnce',
+    columnId:'doing',completedAt:null};
+  const mixed=[onceParent,weeklyChild];
+  const newChildren=await ctx.persistTaskChanges([
+    {...onceParent,columnId:'done',completedAt:when},
+    {...weeklyChild,columnId:'done',completedAt:when}
+  ],mixed,board);
+  assert.equal(newChildren.created.length,1,'Child recurrence remains enabled');
+  assert.equal(newChildren.created[0].parentId,'',
+    'Repeated child cannot remain nested under a parent completed in the same batch');
+  assert.equal(mixed.length,3);
+
   console.log('Recurring tasks: DST/monthly anchors, nested copies, attachments, atomic saves, retries and reopens passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

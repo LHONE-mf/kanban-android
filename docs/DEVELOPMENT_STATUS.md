@@ -18,6 +18,11 @@ is historical context, not a current test report.
   Passed at `d9a740c`: [focused Android run](https://github.com/LHONE-mf/kanban-android/actions/runs/42889859826).
 - [ ] Physical-device upgrade and broader acceptance checklist in
   `TESTING_ANDROID.md`; no signing or storage migration is part of this change.
+- [x] Japanese learned-kana and Kanban tasks survive the signed v1→v2
+  emulator upgrade at `83d12c6`. The full run then failed at the Back-save
+  flow: Maestro selected the description label instead of the textarea.
+  The flow now targets the editable placeholder and verifies typing before Back;
+  a full successful run is still required.
 - [x] Imported board/media IDs that match Object property names remain
   enumerable and keep stable references. Executable coverage uses the real
   import, rebucketing and export functions, including a complete round-trip

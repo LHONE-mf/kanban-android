@@ -16,9 +16,18 @@ androidWebViewHierarchy: devtools
 - extendedWaitUntil:
     visible: "Редактирование задачи"
     timeout: 30000
-- tapOn:
-    id: "taskDesc"
+# DevTools can assign the textarea's ID to its associated label. Target the
+# editable placeholder and verify typing before testing Back-to-save.
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Детали, ссылки, заметки"
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- tapOn: "Детали, ссылки, заметки"
 - inputText: "Saved with Android Back"
+- assertVisible: "Saved with Android Back"
+- takeScreenshot: ui-screenshots/kanban-back-edit-before-save
 - hideKeyboard
 - back
 - assertNotVisible: "Редактирование задачи"

@@ -246,7 +246,10 @@ class MainActivity : ComponentActivity() {
                         japaneseButton.text = if (url.endsWith("/japanese.html")) "← Канбан" else "日本語 · Учить"
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
-                        if (url.startsWith("$appOrigin/assets/kanban.html")) deliverNotificationTask()
+                        if (url.startsWith("$appOrigin/assets/kanban.html")) {
+                            deliverNotificationTask()
+                            requestPendingTaskActions()
+                        }
                     }
                 }
             }
@@ -289,6 +292,36 @@ class MainActivity : ComponentActivity() {
                             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
                             org.json.JSONObject(raw).optLong("at") > System.currentTimeMillis()) {
                             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 9101)
+                        }
+                    } catch (_: Exception) { }
+                }
+            }
+        }
+
+        // Completion actions are stored by the notification receiver, then applied
+        // by our own WebView page. Only an authenticated main-frame Kanban page can
+        // read or acknowledge the queue; acknowledgements match a unique token.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanTaskActions", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length > 600) return@addWebMessageListener
+                runOnUiThread {
+                    try {
+                        val command = JSONObject(raw)
+                        when (command.optString("op")) {
+                            "list" -> {
+                                val pending = KanbanTaskActions.pendingJson(this)
+                                webView.evaluateJavascript(
+                                    "window.kanbanReceiveTaskActions && window.kanbanReceiveTaskActions(" +
+                                        JSONObject.quote(pending) + ")", null
+                                )
+                            }
+                            "ack" -> KanbanTaskActions.acknowledge(
+                                this, command.optString("taskId"), command.optString("token")
+                            )
                         }
                     } catch (_: Exception) { }
                 }
@@ -747,6 +780,20 @@ class MainActivity : ComponentActivity() {
         dailyBanner = panel
         renderMiniQuestion()
         return panel
+    }
+
+    private fun requestPendingTaskActions() {
+        if (::webView.isInitialized &&
+            webView.url?.startsWith("$appOrigin/assets/kanban.html") == true) {
+            webView.evaluateJavascript(
+                "window.kanbanRequestPendingActions && window.kanbanRequestPendingActions()", null
+            )
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        requestPendingTaskActions()
     }
 
     override fun onDestroy() {

@@ -46,7 +46,7 @@ vm.runInContext(
  ctx
 );
 (async()=>{
-  const keys=ctx.JAPANESE_BACKUP_KEYS;
+  const keys=vm.runInContext('JAPANESE_BACKUP_KEYS',ctx);
   assert.equal(keys.length,5);
   await ctx.exportData();
   const backup=JSON.parse(await download.text());

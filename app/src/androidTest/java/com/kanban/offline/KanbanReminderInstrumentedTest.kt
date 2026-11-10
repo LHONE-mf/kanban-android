@@ -2,6 +2,7 @@ package com.kanban.offline
 
 import android.Manifest
 import android.app.AlarmManager
+import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -30,6 +31,7 @@ class KanbanReminderInstrumentedTest {
         val at = System.currentTimeMillis() + offset
         KanbanReminders.update(context, JSONObject()
             .put("id", id).put("title", "CI reminder delivery")
+            .put("boardId", "ci-board").put("boardName", "CI Production")
             .put("at", at).put("repeat", repeat).toString())
         return at
     }
@@ -51,6 +53,8 @@ class KanbanReminderInstrumentedTest {
         assertEquals("daily", record.getString("repeat"))
         assertEquals(at, record.getLong("at"))
         assertEquals(at, record.getLong("anchorAt"))
+        assertEquals("ci-board", record.getString("boardId"))
+        assertEquals("CI Production", record.getString("boardName"))
     }
 
     @Test fun firingOneTimeReminderShowsNativeNotification() {
@@ -67,14 +71,21 @@ class KanbanReminderInstrumentedTest {
     }
 
     @Test fun firingRecurringReminderReschedulesAndShowsNotification() {
-        schedule("daily", 1_000L)
+        val firedAt = schedule("daily", 1_000L)
         Thread.sleep(1200)
         KanbanReminders.fire(context, id)
         val record = JSONObject(requireNotNull(prefs.getString(id, null)))
         assertEquals("daily", record.getString("repeat"))
         assertTrue(record.getLong("at") > System.currentTimeMillis())
         assertTrue("Original repeat anchor must survive firing", record.getLong("anchorAt") < record.getLong("at"))
-        assertTrue(context.getSystemService(NotificationManager::class.java)
-            .activeNotifications.any { it.id == id.hashCode() })
+        val shown = context.getSystemService(NotificationManager::class.java)
+            .activeNotifications.firstOrNull { it.id == id.hashCode() }?.notification
+        assertNotNull("Recurring notification must display", shown)
+        val details = shown!!.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
+        assertTrue("Notification must show the board name", details.contains("CI Production"))
+        assertTrue("Show the fired occurrence rather than tomorrow's new alarm",
+            details.contains(ReminderNotificationText.formatDate(firedAt)))
+        assertFalse("Do not show the next scheduled date in today's notification",
+            details.contains(ReminderNotificationText.formatDate(record.getLong("at"))))
     }
 }

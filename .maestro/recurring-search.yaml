@@ -90,6 +90,16 @@ androidWebViewHierarchy: devtools
 - inputText: "weekly recurring"
 - hideKeyboard
 - assertVisible: "Найдено задач: 2"
-- tapOn: "CI weekly recurring task"
+- scrollUntilVisible:
+    element:
+      id: '^Открыть: CI weekly recurring task \(повтор\), доска .+
+- takeScreenshot: ui-screenshots/recurring-global-search-navigation
+
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска .+
+- takeScreenshot: ui-screenshots/recurring-global-search-navigation
+
 - assertVisible: "Редактирование задачи"
 - takeScreenshot: ui-screenshots/recurring-global-search-navigation

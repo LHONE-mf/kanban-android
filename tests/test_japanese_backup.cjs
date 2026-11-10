@@ -32,7 +32,7 @@ const ctx={
  location:{origin:'https://appassets.androidplatform.net'},
  undoStack:[],pendingMediaDeletes:new Map(),thumbCache:new Map(),
  apStop:()=>{},rebucket:()=>{},applyActiveBoard:()=>{},renderBoard:()=>{},saveUIState:()=>{},
- confirmDialog:async()=>true,dbReplaceAll:async()=>{},alert:message=>notices.push(message),
+ confirmDialog:async()=>true,dbReplaceAll:async()=>{},syncNativeReminder:()=>{},alert:message=>notices.push(message),
  buildImportPlan:async(data)=>({
   boards:[{id:'b1'}],tasks:[],activeBoardId:'b1',media:{},
   japanese:ctx.selectJapaneseBackup(data.japanese), report:{warnings:[]}

@@ -34,6 +34,9 @@ assert.equal(saved,1,'Back in lightbox must not save the task underneath');
 visible.delete('taskModal');
 assert.equal(window.kanbanHandleBack(),false,'Back on board should be available for app exit logic');
 
+// Flex columns must scroll cards, not shrink and clip footers/media.
+assert(/\.task-card\s*\{[^}]*flex-shrink:\s*0\s*;/s.test(css),
+  'Cards in a scrolling column must not shrink and hide their footer icons');
 // Touch devices must not depend on hover for task action visibility.
 assert(/@media\s*\(hover:\s*none\),\s*\(pointer:\s*coarse\)/.test(css),
   'Explicit coarse-pointer styling missing');

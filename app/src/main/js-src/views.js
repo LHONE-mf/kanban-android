@@ -105,7 +105,9 @@ function createTaskCard(task, column) {
     <div class="task-title">${escapeHtml(task.title)}</div>
     ${descHtml}${mediaHtml}${task.files.some(isAudio) ? '<div class="task-audio"></div>' : ''}${tagsHtml}${checklistHtml}
     <div class="task-footer">
-      ${deadlineHtml}${priorityHtml}${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
+      ${deadlineHtml}${task.taskRepeat && task.taskRepeat !== 'none'
+        ? `<span class="task-footer-item" title="Повторяющаяся задача">🔁 ${escapeHtml({daily:'Ежедневно',weekly:'Еженедельно',monthly:'Ежемесячно'}[task.taskRepeat] || '')}</span>`
+        : ''}${priorityHtml}${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
       <span class="task-id">#${escapeHtml(task.id.slice(-4))}</span>
     </div>
     <div class="task-quick-actions">
@@ -167,11 +169,8 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   const targetCol = state.columns[newIdx];
   const candidate = applyColumnChange(task, targetCol.id);
   candidate.order = topOrder(targetCol.id);
-  try { await dbPutTask(candidate); }
+  try { await persistTaskChanges([candidate]); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  const stateIdx = state.tasks.findIndex(t => t.id === taskId);
-  if (stateIdx !== -1) state.tasks[stateIdx] = candidate;
-  syncNativeReminder(candidate);
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
@@ -183,10 +182,8 @@ async function markTaskDone(taskId) {
   if (idx === -1 || state.tasks[idx].columnId === doneCol.id) return;
   const candidate = applyColumnChange(state.tasks[idx], doneCol.id);
   candidate.order = topOrder(doneCol.id);
-  try { await dbPutTask(candidate); }
+  try { await persistTaskChanges([candidate]); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  state.tasks[idx] = candidate;
-  syncNativeReminder(candidate);
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();

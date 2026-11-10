@@ -221,7 +221,8 @@ $('writingDue').onclick=()=>{
    .sort((a,b)=>a.due-b.due);
  if(!due.length){$('writingFeedback').textContent='Пока нет знаков для повторения в этом алфавите.';return}
  const next=due.find(entry=>entry.index!==writeIndex)||due[0];
- writeIndex=next.index;resetWriting();
+ writeIndex=next.index;
+ if(writingMode!=='recall')setWritingMode('recall');else resetWriting();
  $('writingFeedback').textContent='Повтори этот знак и оцени результат.';
 };
 

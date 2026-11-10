@@ -10,6 +10,20 @@ const views = fs.readFileSync('app/src/main/js-src/views.js','utf8');
 const interactions = fs.readFileSync('app/src/main/js-src/interactions.js','utf8');
 const extras = fs.readFileSync('app/src/main/js-src/android-extras.js','utf8');
 const html = fs.readFileSync('app/src/main/assets/kanban.html','utf8');
+const focusedFlow = fs.readFileSync('.maestro/recurring-search.yaml','utf8');
+// Maestro's id field is a regular expression, not a plain string. Parentheses
+// must be escaped or the copy exists but the UI test cannot locate it.
+const copySelectors = [...focusedFlow.matchAll(/id: '(\\^CI weekly recurring task [^']+)'/g)]
+  .map(match => match[1]);
+assert.equal(copySelectors.length,4,'Check recurring copy both before and after app restart');
+for (const source of copySelectors) {
+  const selector = new RegExp(source);
+  assert(selector.test('CI weekly recurring task (повтор)'),
+    'Recurring-copy accessibility selector must match literal parentheses');
+  assert(!selector.test('CI weekly recurring task'),
+    'Recurring-copy selector must exclude the completed original');
+}
+
 
 const start = tasksSource.indexOf('// RECURRING TASKS');
 const end = tasksSource.indexOf('// ============================================================\n// TASK OPS',start);

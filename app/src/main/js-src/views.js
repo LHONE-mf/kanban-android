@@ -6,12 +6,17 @@ function searchAllBoards(query, limit = 100, filters = {}) {
   const boardFilter = filters.boardId || '';
   const statusFilter = filters.status || '';
   const deadlineFilter = filters.deadline || '';
-  if (!words.length && !boardFilter && !statusFilter && !deadlineFilter) return undefined;
+  const priorityFilter = filters.priority || '';
+  if (!words.length && !boardFilter && !statusFilter && !deadlineFilter && !priorityFilter) return undefined;
   const items = [];
   for (const board of state.boards) {
     if (boardFilter && board.id !== boardFilter) continue;
     const doneColumns = new Set(board.columns.filter(c => c.isDone).map(c => c.id));
     for (const task of state._tasksByBoard[board.id] || []) {
+      if (priorityFilter &&
+          (priorityFilter === 'none'
+            ? !!task.priority && task.priority !== 'none'
+            : task.priority !== priorityFilter)) continue;
       if (statusFilter === 'done' && !doneColumns.has(task.columnId)) continue;
       if (statusFilter === 'active' && doneColumns.has(task.columnId)) continue;
       if (deadlineFilter) {
@@ -82,6 +87,7 @@ function showGlobalMyDay() {
   $('#globalSearchBoardFilter').value = '';
   $('#globalSearchStatusFilter').value = 'active';
   $('#globalSearchDeadlineFilter').value = 'attention';
+  $('#globalSearchPriorityFilter').value = '';
   switchView('search');
 }
 
@@ -94,7 +100,8 @@ function renderGlobalSearch() {
   const match = searchAllBoards(input.value, 100, {
     boardId: $('#globalSearchBoardFilter').value,
     status: $('#globalSearchStatusFilter').value,
-    deadline: $('#globalSearchDeadlineFilter').value
+    deadline: $('#globalSearchDeadlineFilter').value,
+    priority: $('#globalSearchPriorityFilter').value
   });
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;
@@ -125,6 +132,7 @@ function renderGlobalSearch() {
     const column = board.columns.find(c => c.id === task.columnId);
     metadata.textContent = board.name + ' · ' + (column?.title || 'Задача') +
       (task.parentId ? ' · Вложенная' : '') +
+      (task.priority && task.priority !== 'none' ? ' · ⚑ ' + PRIORITY_LABELS[task.priority] : '') +
       (task.deadline ? ' · 📅 ' + task.deadline : '');
     item.appendChild(title);
     item.appendChild(metadata);

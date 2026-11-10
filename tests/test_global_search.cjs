@@ -95,12 +95,14 @@ assert.equal(find('',100,{boardId:'b1',deadline:'overdue'}).total,0,'Completed t
 assert.equal(find('',100,{boardId:'b2',status:'active',deadline:'overdue'}).total,1,'Board, status, and deadline compose');
 assert.equal(find('electrode',100,{deadline:'overdue'}).total,0,'Text query still applies with deadline');
 assert.equal(find('LFP',100,{status:'done'}).total,1,'Done uses each board done column');
-assert.equal(find('LFP',100,{status:'active'}).total,0,'Done tasks are not active');
+assert.equal(find('LFP',100,{status:'active'}).items[0].task.id,'nested',
+  'Active tag matches exclude completed tasks while retaining active nested tasks');
 assert.equal(find('hidden',100,{status:'active'}).total,1,'Nested active tasks remain searchable');
 assert.equal(find('hidden',100,{status:'done'}).total,0);
-assert.equal(find('LFP',100,{boardId:'b2'}).total,0,'Board filter excludes other boards');
+assert.equal(find('LFP',100,{boardId:'b2'}).items[0].task.id,'nested',
+  'Board filter restricts tag matches to the selected board');
 assert.equal(find('LFP',100,{boardId:'b1',status:'done'}).total,1,'Filters compose');
-assert.equal(find('LFP').total,1,'Tags must be searchable');
+assert.equal(find('LFP').total,2,'Text search finds the tag across boards');
 assert.equal(find('electrode coating').total,1,'Multi-word matching must search descriptions');
 assert.equal(find('катод').total,1,'Checklist inside nested task must be searchable');
 assert.equal(find('провЕРКА').total,1,'Cyrillic search is case insensitive');

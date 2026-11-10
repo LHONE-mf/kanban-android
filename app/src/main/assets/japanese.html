@@ -25,7 +25,7 @@
 <div class="card"><h2>Первые слова</h2><p>Попробуй прочитать слово до открытия подсказки. Пока здесь только слова, которые можно написать базовой хираганой.</p><div id="wordList"></div></div>
 </section>
 <section id="sentences" class="page" hidden><div class="card"><h2>Первые предложения</h2><p>Слушай, читай и раскрывай перевод. Здесь встречаются новые знаки, включая озвончённые слоги и долгие гласные: их разберём постепенно.</p><div id="sentenceList"></div><p class="hint">Частица は в этих предложениях произносится как «wa», а です часто звучит с ослабленным «u».</p></div></section>
-<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p>Обведи бледный символ пальцем или стилусом. Это упражнение для знакомства с формой; порядок черт пока не проверяется.</p><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button></div></div></section>
+<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p id="writingInstructions">Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.</p><div class="study-toggle"><button id="writingTrace" class="active">Обводить</button><button id="writingRecall">Написать по памяти</button></div><div class="study-toggle"><button id="writingHira">ひらがな · Хирагана</button><button id="writingKata">カタカナ · Катакана</button></div><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button><button id="writingReveal" hidden>Показать ответ</button></div></div></section>
 <section id="review" class="page" hidden>
 <div class="card"><h2>Повторение с интервалами</h2><p>Сначала попробуй вспомнить чтение самостоятельно. Затем открой ответ и оцени, насколько легко вспомнил.</p><p id="dueCount"></p><div id="reviewBody"><div id="reviewKana" class="big"></div><div id="reviewAnswer" class="roman" hidden></div><p style="text-align:center"><button id="reveal">Показать ответ</button></p><div class="row" id="gradeButtons" hidden><button id="again">Не вспомнил</button><button id="good" class="primary">Вспомнил</button></div></div></div>
 </section>
@@ -59,7 +59,7 @@ function saveQuizProgress(){try{localStorage.setItem(quizProgressKey,JSON.string
 window.addEventListener('pageshow',()=>{try{document.documentElement.dataset.theme=localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch(e){}});
 const hiraGroups=groups;const katakanaRows=['アイウエオ','カキクケコ','サシスセソ','タチツテト','ナニヌネノ','ハヒフヘホ','マミムメモ','ヤユヨ','ラリルレロ','ワヲン'];
 const kataGroups=hiraGroups.map((g,i)=>({name:g.name,items:[...katakanaRows[i]].map((kana,j)=>({kana,roman:g.items[j].roman}))}));
-let script=(()=>{try{return localStorage.getItem('kanban-japanese-script-v1')==='katakana'?'katakana':'hiragana'}catch(e){return 'hiragana'}})();let writeIndex=0,showGuide=true,writingStrokes=[];const allKana=()=>script==='hiragana'?hiraGroups:kataGroups;
+let script=(()=>{try{return localStorage.getItem('kanban-japanese-script-v1')==='katakana'?'katakana':'hiragana'}catch(e){return 'hiragana'}})();let writeIndex=0,showGuide=true,writingStrokes=[],writingMode="trace",writingRevealed=false;const allKana=()=>script==='hiragana'?hiraGroups:kataGroups;
 const reviewKey='kanban-japanese-review-v1';let reviews={};try{const parsed=JSON.parse(localStorage.getItem(reviewKey)||'{}');if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed)){for(const [kana,value] of Object.entries(parsed)){if(typeof kana==='string'&&value&&typeof value==='object'&&Number.isFinite(value.interval)&&value.interval>=0&&Number.isFinite(value.due)&&value.due>=0)reviews[kana]={interval:value.interval,due:value.due}}}}catch(e){reviews={}}
 const $=id=>document.getElementById(id);
 function persist(){try{localStorage.setItem(storageKey,JSON.stringify([...known]));updateProgress();return true}catch(e){console.error('Progress not saved',e);alert('Не удалось сохранить прогресс. Проверьте свободное место и повторите попытку.');return false}}
@@ -159,12 +159,12 @@ const canvas=$('writeCanvas'),ctx=canvas.getContext('2d');let drawing=false;
 function drawWriting(){
  if(!ctx)return;
  const item=allKana().flatMap(g=>g.items)[writeIndex%46];
- $('writingLabel').textContent=item.kana+' · '+item.roman;
+ $('writingLabel').textContent=writingMode==='recall'&&!writingRevealed?'Напиши: '+item.roman:item.kana+' · '+item.roman;
  ctx.clearRect(0,0,canvas.width,canvas.height);
  ctx.fillStyle='#fafafa';ctx.fillRect(0,0,canvas.width,canvas.height);
  ctx.strokeStyle='#e3e7eb';ctx.lineWidth=2;ctx.setLineDash([12,12]);
  ctx.beginPath();ctx.moveTo(300,0);ctx.lineTo(300,440);ctx.moveTo(0,220);ctx.lineTo(600,220);ctx.stroke();ctx.setLineDash([]);
- if(showGuide){ctx.fillStyle='#d0d6de';ctx.font='300px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(item.kana,300,215)}
+ if(showGuide && (writingMode==='trace'||writingRevealed)){ctx.fillStyle='#d0d6de';ctx.font='300px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(item.kana,300,215)}
  ctx.strokeStyle='#146c82';ctx.lineWidth=10;ctx.lineCap='round';ctx.lineJoin='round';
  for(const stroke of writingStrokes){if(!stroke.length)continue;ctx.beginPath();ctx.moveTo(stroke[0][0],stroke[0][1]);for(const p of stroke.slice(1))ctx.lineTo(p[0],p[1]);if(stroke.length===1)ctx.lineTo(stroke[0][0]+.1,stroke[0][1]+.1);ctx.stroke()}
 }
@@ -173,12 +173,28 @@ canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCa
 canvas.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();writingStrokes[writingStrokes.length-1].push(point(e));drawWriting()});
 function stopDraw(){drawing=false}
 canvas.addEventListener('pointerup',stopDraw);canvas.addEventListener('pointercancel',stopDraw);
+function resetWriting(){writingStrokes=[];writingRevealed=false;drawWriting()}
+function setWritingMode(mode){
+ writingMode=mode;showGuide=mode==='trace';writingRevealed=false;writingStrokes=[];
+ $('writingTrace').classList.toggle('active',mode==='trace');
+ $('writingRecall').classList.toggle('active',mode==='recall');
+ $('writingToggle').hidden=mode==='recall';$('writingReveal').hidden=mode!=='recall';
+ $('writingReveal').textContent='Показать ответ';
+ $('writingInstructions').textContent=mode==='trace'?'Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.':'Посмотри на чтение латиницей и напиши знак по памяти. Затем покажи ответ и сравни. Проверка пока самостоятельная.';
+ drawWriting();
+}
+$('writingTrace').onclick=()=>setWritingMode('trace');
+$('writingRecall').onclick=()=>setWritingMode('recall');
+$('writingReveal').onclick=()=>{writingRevealed=!writingRevealed;$('writingReveal').textContent=writingRevealed?'Скрыть ответ':'Показать ответ';drawWriting()};
+function selectWritingScript(value){script=value;writeIndex=0;resetWriting();$('writingHira').classList.toggle('active',script==='hiragana');$('writingKata').classList.toggle('active',script==='katakana');renderGroup()}
+$('writingHira').onclick=()=>selectWritingScript('hiragana');
+$('writingKata').onclick=()=>selectWritingScript('katakana');
 $('writingClear').onclick=()=>{writingStrokes=[];drawWriting()};
 $('writingToggle').onclick=()=>{showGuide=!showGuide;$('writingToggle').textContent=showGuide?'Скрыть подсказку':'Показать подсказку';drawWriting()};
-$('writingPrev').onclick=()=>{writeIndex=(writeIndex+45)%46;writingStrokes=[];drawWriting()};
-$('writingNext').onclick=()=>{writeIndex=(writeIndex+1)%46;writingStrokes=[];drawWriting()};
+$('writingPrev').onclick=()=>{writeIndex=(writeIndex+45)%46;resetWriting()};
+$('writingNext').onclick=()=>{writeIndex=(writeIndex+1)%46;resetWriting()};
 
-updateProgress();renderGroup();
+updateProgress();renderGroup();setWritingMode("trace");selectWritingScript(script);
  try{const savedTab=localStorage.getItem('kanban-japanese-active-tab-v1');if(savedTab&&document.getElementById(savedTab)?.classList.contains('page'))tab(savedTab)}catch(e){}
 })();
 </script></body></html>

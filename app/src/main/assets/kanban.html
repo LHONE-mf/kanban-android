@@ -212,6 +212,16 @@
         <select id="taskReminderRepeat"><option value="none">Не повторять</option><option value="daily">Каждый день</option><option value="weekly">Каждую неделю</option><option value="monthly">Каждый месяц</option></select>
       </div>
       <div class="field">
+        <label class="label" for="taskRepeat">🔁 Повторять задачу после выполнения</label>
+        <select id="taskRepeat" aria-label="Повторение задачи">
+          <option value="none">Не повторять</option>
+          <option value="daily">Каждый день</option>
+          <option value="weekly">Каждую неделю</option>
+          <option value="monthly">Каждый месяц</option>
+        </select>
+        <div class="field-hint">После выполнения появится новая задача с чистым чек-листом. Файлы останутся в завершённой задаче.</div>
+      </div>
+      <div class="field">
         <label class="label" for="taskTags">Теги</label>
         <input type="text" id="taskTags" maxlength="500" placeholder="через запятую: срочно, баг, идея">
       </div>

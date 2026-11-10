@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const html = fs.readFileSync('app/src/main/assets/japanese.html', 'utf8');
 const ids = ['writingTrace','writingRecall','writingHira','writingKata','writingReveal','writingUndo','writingClear','writingGrade','writingRetry','writingGood','writingFeedback','writingReference','writingReferenceKana','writingReferenceRoman','writingTryAgain','writingTryAgainRow','writingPrev','writingNext','writingRandom','writingDue','writingPosition','writeCanvas'];
 for (const id of ids) assert(html.includes('id="'+id+'"'), 'Missing writing control: '+id);
-const start = html.indexOf('function resetWriting(){');
+const start = html.indexOf('function updateWritingDueCount(){');
 const end = html.indexOf('\nupdateProgress();renderGroup();', start);
 assert(start >= 0 && end > start, 'Writing handlers not found');
 const elements = Object.fromEntries(ids.map(id=>[id,{

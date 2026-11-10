@@ -57,7 +57,7 @@ const context = {
       };
     }
   },
-  $:id=>elements[id],
+  $:selector=>elements[selector.replace(/^#/, '')],
   mediaGet:async id=>({full:new Blob([id],{type:'image/jpeg'}),type:'image/jpeg'}),
   mediaPut:async (...args)=>stored.push(args),
   generateThumb:async ()=>'data:thumb',

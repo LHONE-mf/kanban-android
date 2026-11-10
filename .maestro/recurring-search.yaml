@@ -79,7 +79,7 @@ androidWebViewHierarchy: devtools
     timeout: 30000
 - assertVisible:
     id: '^CI weekly recurring task \(повтор\)$'
-# Search tab should find the new task after restart and open its editor.
+# Search tab finds both saved occurrences and opens the fresh occurrence via its distinct accessible button.
 - tapOn: "🔎 Поиск"
 - extendedWaitUntil:
     visible:

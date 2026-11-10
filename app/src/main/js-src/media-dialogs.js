@@ -64,6 +64,51 @@ let lightboxIndex = 0;
 let lightboxTitle = '';
 let lastLightboxFocus = null;
 
+const LIGHTBOX_MAX_ZOOM = 5;
+let lightboxZoom = 1;
+let lightboxPanX = 0;
+let lightboxPanY = 0;
+
+function lightboxImage() { return $('#lightboxContent').querySelector('img'); }
+function panLightboxTo(x, y) {
+  const img = lightboxImage();
+  if (!img) return;
+  const viewport = $('#lightboxContent');
+  const limitX = Math.max(0, (img.clientWidth * lightboxZoom - viewport.clientWidth) / 2);
+  const limitY = Math.max(0, (img.clientHeight * lightboxZoom - viewport.clientHeight) / 2);
+  lightboxPanX = Math.max(-limitX, Math.min(limitX, x));
+  lightboxPanY = Math.max(-limitY, Math.min(limitY, y));
+  img.style.transform = `translate(${lightboxPanX}px, ${lightboxPanY}px) scale(${lightboxZoom})`;
+  img.style.cursor = lightboxZoom > 1 ? 'grab' : 'zoom-in';
+}
+function setLightboxZoom(scale, clientX, clientY) {
+  if (!lightboxImage()) return;
+  const next = Math.max(1, Math.min(LIGHTBOX_MAX_ZOOM, scale));
+  if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
+    const rect = $('#lightboxContent').getBoundingClientRect();
+    const x = clientX - rect.left - rect.width / 2;
+    const y = clientY - rect.top - rect.height / 2;
+    const ratio = next / lightboxZoom;
+    lightboxPanX = x - (x - lightboxPanX) * ratio;
+    lightboxPanY = y - (y - lightboxPanY) * ratio;
+  }
+  lightboxZoom = next;
+  if (next === 1) lightboxPanX = lightboxPanY = 0;
+  panLightboxTo(lightboxPanX, lightboxPanY);
+  $('#lightboxZoomReset').textContent = Math.round(next * 100) + '%';
+  $('#lightboxZoomOut').disabled = next <= 1;
+  $('#lightboxZoomIn').disabled = next >= LIGHTBOX_MAX_ZOOM;
+}
+function resetLightboxZoom() {
+  lightboxZoom = 1;
+  lightboxPanX = lightboxPanY = 0;
+  const img = lightboxImage();
+  if (img) { img.style.transform = ''; img.style.cursor = 'zoom-in'; }
+  $('#lightboxZoomReset').textContent = '100%';
+  $('#lightboxZoomOut').disabled = true;
+  $('#lightboxZoomIn').disabled = false;
+}
+
 async function openLightbox(task, file) {
   const items = (task.files || []).filter(f => /^(image|video)\//.test(f.type));
   if (!items.length) return;
@@ -80,6 +125,8 @@ async function openLightbox(task, file) {
 async function showLightboxItem() {
   const token = ++lightboxToken;
   const lightbox = $('#lightbox'), content = $('#lightboxContent');
+  resetLightboxZoom();
+  $('#lightboxZoomControls').hidden = true;
   if (lightbox.dataset.url) { revokeTrackedURL(lightbox.dataset.url); delete lightbox.dataset.url; }
   content.innerHTML = '<div style="color:#fff;font-size:13px">Загрузка…</div>';
   const multiple = lightboxGallery.length > 1;
@@ -98,6 +145,7 @@ async function showLightboxItem() {
       const img = document.createElement('img');
       img.src = url; img.alt = lightboxTitle;
       content.appendChild(img);
+      $('#lightboxZoomControls').hidden = false;
     } else if (media.type.startsWith('video/')) {
       const vid = document.createElement('video');
       vid.src = url; vid.controls = true;
@@ -115,6 +163,8 @@ function stepLightbox(delta) {
 }
 function closeLightbox() {
   lightboxToken++;
+  resetLightboxZoom();
+  $('#lightboxZoomControls').hidden = true;
   const lightbox = $('#lightbox');
   const url = lightbox.dataset.url;
   if (url) { revokeTrackedURL(url); delete lightbox.dataset.url; }

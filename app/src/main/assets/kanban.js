@@ -2116,6 +2116,51 @@ let lightboxIndex = 0;
 let lightboxTitle = '';
 let lastLightboxFocus = null;
 
+const LIGHTBOX_MAX_ZOOM = 5;
+let lightboxZoom = 1;
+let lightboxPanX = 0;
+let lightboxPanY = 0;
+
+function lightboxImage() { return $('#lightboxContent').querySelector('img'); }
+function panLightboxTo(x, y) {
+  const img = lightboxImage();
+  if (!img) return;
+  const viewport = $('#lightboxContent');
+  const limitX = Math.max(0, (img.clientWidth * lightboxZoom - viewport.clientWidth) / 2);
+  const limitY = Math.max(0, (img.clientHeight * lightboxZoom - viewport.clientHeight) / 2);
+  lightboxPanX = Math.max(-limitX, Math.min(limitX, x));
+  lightboxPanY = Math.max(-limitY, Math.min(limitY, y));
+  img.style.transform = `translate(${lightboxPanX}px, ${lightboxPanY}px) scale(${lightboxZoom})`;
+  img.style.cursor = lightboxZoom > 1 ? 'grab' : 'zoom-in';
+}
+function setLightboxZoom(scale, clientX, clientY) {
+  if (!lightboxImage()) return;
+  const next = Math.max(1, Math.min(LIGHTBOX_MAX_ZOOM, scale));
+  if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
+    const rect = $('#lightboxContent').getBoundingClientRect();
+    const x = clientX - rect.left - rect.width / 2;
+    const y = clientY - rect.top - rect.height / 2;
+    const ratio = next / lightboxZoom;
+    lightboxPanX = x - (x - lightboxPanX) * ratio;
+    lightboxPanY = y - (y - lightboxPanY) * ratio;
+  }
+  lightboxZoom = next;
+  if (next === 1) lightboxPanX = lightboxPanY = 0;
+  panLightboxTo(lightboxPanX, lightboxPanY);
+  $('#lightboxZoomReset').textContent = Math.round(next * 100) + '%';
+  $('#lightboxZoomOut').disabled = next <= 1;
+  $('#lightboxZoomIn').disabled = next >= LIGHTBOX_MAX_ZOOM;
+}
+function resetLightboxZoom() {
+  lightboxZoom = 1;
+  lightboxPanX = lightboxPanY = 0;
+  const img = lightboxImage();
+  if (img) { img.style.transform = ''; img.style.cursor = 'zoom-in'; }
+  $('#lightboxZoomReset').textContent = '100%';
+  $('#lightboxZoomOut').disabled = true;
+  $('#lightboxZoomIn').disabled = false;
+}
+
 async function openLightbox(task, file) {
   const items = (task.files || []).filter(f => /^(image|video)\//.test(f.type));
   if (!items.length) return;
@@ -2132,6 +2177,8 @@ async function openLightbox(task, file) {
 async function showLightboxItem() {
   const token = ++lightboxToken;
   const lightbox = $('#lightbox'), content = $('#lightboxContent');
+  resetLightboxZoom();
+  $('#lightboxZoomControls').hidden = true;
   if (lightbox.dataset.url) { revokeTrackedURL(lightbox.dataset.url); delete lightbox.dataset.url; }
   content.innerHTML = '<div style="color:#fff;font-size:13px">Загрузка…</div>';
   const multiple = lightboxGallery.length > 1;
@@ -2150,6 +2197,7 @@ async function showLightboxItem() {
       const img = document.createElement('img');
       img.src = url; img.alt = lightboxTitle;
       content.appendChild(img);
+      $('#lightboxZoomControls').hidden = false;
     } else if (media.type.startsWith('video/')) {
       const vid = document.createElement('video');
       vid.src = url; vid.controls = true;
@@ -2167,6 +2215,8 @@ function stepLightbox(delta) {
 }
 function closeLightbox() {
   lightboxToken++;
+  resetLightboxZoom();
+  $('#lightboxZoomControls').hidden = true;
   const lightbox = $('#lightbox');
   const url = lightbox.dataset.url;
   if (url) { revokeTrackedURL(url); delete lightbox.dataset.url; }
@@ -2976,18 +3026,81 @@ function bindEvents() {
   $('#lightboxClose').onclick = closeLightbox;
   $('#lightboxPrev').onclick = () => stepLightbox(-1);
   $('#lightboxNext').onclick = () => stepLightbox(1);
-  let swipeStart = null;
+  $('#lightboxZoomIn').onclick = () => setLightboxZoom(lightboxZoom * 1.5);
+  $('#lightboxZoomOut').onclick = () => setLightboxZoom(lightboxZoom / 1.5);
+  $('#lightboxZoomReset').onclick = () => setLightboxZoom(1);
+
+  let photoGesture = null, lastPhotoTap = null, lastTouchZoomAt = 0;
+  const touchDistance = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const togglePhotoZoom = (x, y) => setLightboxZoom(lightboxZoom > 1 ? 1 : 2.5, x, y);
+
   $('#lightbox').addEventListener('touchstart', e => {
-    if (e.touches.length !== 1 || e.target.closest('video')) { swipeStart = null; return; }
-    swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-  }, { passive: true });
+    if (!lightboxImage() || e.target.closest('button, video')) {
+      photoGesture = null; return;
+    }
+    if (e.touches.length === 2) {
+      photoGesture = { mode: 'pinch', distance: touchDistance(e.touches[0], e.touches[1]), zoom: lightboxZoom };
+      lastPhotoTap = null;
+      e.preventDefault();
+    } else if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      photoGesture = { mode: 'single', x: touch.clientX, y: touch.clientY,
+        panX: lightboxPanX, panY: lightboxPanY };
+    }
+  }, { passive: false });
+  $('#lightbox').addEventListener('touchmove', e => {
+    if (!photoGesture) return;
+    if (photoGesture.mode === 'pinch' && e.touches.length >= 2) {
+      const a = e.touches[0], b = e.touches[1];
+      const distance = touchDistance(a, b);
+      if (photoGesture.distance > 0) {
+        setLightboxZoom(photoGesture.zoom * distance / photoGesture.distance,
+          (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2);
+      }
+      e.preventDefault();
+    } else if (photoGesture.mode === 'single' && e.touches.length === 1 && lightboxZoom > 1) {
+      const touch = e.touches[0];
+      panLightboxTo(photoGesture.panX + touch.clientX - photoGesture.x,
+        photoGesture.panY + touch.clientY - photoGesture.y);
+      e.preventDefault();
+    }
+  }, { passive: false });
   $('#lightbox').addEventListener('touchend', e => {
-    if (!swipeStart || !e.changedTouches.length) return;
-    const dx = e.changedTouches[0].clientX - swipeStart.x;
-    const dy = e.changedTouches[0].clientY - swipeStart.y;
-    swipeStart = null;
-    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.25) stepLightbox(dx < 0 ? 1 : -1);
+    if (!photoGesture || e.touches.length) return;
+    const gesture = photoGesture;
+    photoGesture = null;
+    if (gesture.mode !== 'single' || !e.changedTouches.length) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - gesture.x, dy = touch.clientY - gesture.y;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.25 && lightboxZoom === 1) {
+      lastPhotoTap = null;
+      stepLightbox(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (Math.hypot(dx, dy) > 20 || !e.target.closest('img')) {
+      lastPhotoTap = null; return;
+    }
+    const now = Date.now();
+    if (lastPhotoTap && now - lastPhotoTap.at <= 320 &&
+        Math.hypot(touch.clientX - lastPhotoTap.x, touch.clientY - lastPhotoTap.y) < 32) {
+      togglePhotoZoom(touch.clientX, touch.clientY);
+      lastTouchZoomAt = now;
+      lastPhotoTap = null;
+    } else {
+      lastPhotoTap = { x: touch.clientX, y: touch.clientY, at: now };
+    }
   }, { passive: true });
+  $('#lightbox').addEventListener('touchcancel', () => { photoGesture = null; lastPhotoTap = null; });
+  $('#lightboxContent').addEventListener('dblclick', e => {
+    if (e.target.tagName !== 'IMG' || Date.now() - lastTouchZoomAt < 500) return;
+    e.preventDefault();
+    togglePhotoZoom(e.clientX, e.clientY);
+  });
+  $('#lightboxContent').addEventListener('wheel', e => {
+    if (e.target.tagName !== 'IMG' || !e.ctrlKey) return;
+    e.preventDefault();
+    setLightboxZoom(lightboxZoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2), e.clientX, e.clientY);
+  }, { passive: false });
   // Android Back closes the topmost overlay. In the task editor it
   // performs the same validated, atomic save as the Save button.
   // The modal remains open if validation or storage fails.
@@ -3034,6 +3147,12 @@ function bindEvents() {
     if ($('#lightbox').classList.contains('open')) {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault(); stepLightbox(e.key === 'ArrowRight' ? 1 : -1);
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault(); setLightboxZoom(lightboxZoom * 1.5);
+      } else if (e.key === '-') {
+        e.preventDefault(); setLightboxZoom(lightboxZoom / 1.5);
+      } else if (e.key === '0') {
+        e.preventDefault(); setLightboxZoom(1);
       }
       return;
     }

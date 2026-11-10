@@ -25,7 +25,7 @@
 <div class="card"><h2>Первые слова</h2><p>Попробуй прочитать слово до открытия подсказки. Пока здесь только слова, которые можно написать базовой хираганой.</p><div id="wordList"></div></div>
 </section>
 <section id="sentences" class="page" hidden><div class="card"><h2>Первые предложения</h2><p>Слушай, читай и раскрывай перевод. Здесь встречаются новые знаки, включая озвончённые слоги и долгие гласные: их разберём постепенно.</p><div id="sentenceList"></div><p class="hint">Частица は в этих предложениях произносится как «wa», а です часто звучит с ослабленным «u».</p></div></section>
-<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p id="writingInstructions">Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.</p><div class="study-toggle"><button id="writingTrace" class="active">Обводить</button><button id="writingRecall">Написать по памяти</button></div><div class="study-toggle"><button id="writingHira">ひらがな · Хирагана</button><button id="writingKata">カタカナ · Катакана</button></div><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingUndo" disabled>Отменить штрих</button><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button><button id="writingReveal" hidden>Показать ответ</button></div></div></section>
+<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p id="writingInstructions">Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.</p><div class="study-toggle"><button id="writingTrace" class="active">Обводить</button><button id="writingRecall">Написать по памяти</button></div><div class="study-toggle"><button id="writingHira">ひらがな · Хирагана</button><button id="writingKata">カタカナ · Катакана</button></div><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingUndo" disabled>Отменить штрих</button><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button><button id="writingReveal" hidden>Показать ответ</button></div><div class="row" id="writingGrade" hidden><button id="writingRetry">Нужно повторить</button><button id="writingGood" class="primary">Получилось</button></div><p id="writingFeedback" class="hint" aria-live="polite"></p></div></section>
 <section id="review" class="page" hidden>
 <div class="card"><h2>Повторение с интервалами</h2><p>Сначала попробуй вспомнить чтение самостоятельно. Затем открой ответ и оцени, насколько легко вспомнил.</p><p id="dueCount"></p><div id="reviewBody"><div id="reviewKana" class="big"></div><div id="reviewAnswer" class="roman" hidden></div><p style="text-align:center"><button id="reveal">Показать ответ</button></p><div class="row" id="gradeButtons" hidden><button id="again">Не вспомнил</button><button id="good" class="primary">Вспомнил</button></div></div></div>
 </section>
@@ -174,19 +174,32 @@ canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCa
 canvas.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();writingStrokes[writingStrokes.length-1].push(point(e));drawWriting()});
 function stopDraw(){drawing=false}
 canvas.addEventListener('pointerup',stopDraw);canvas.addEventListener('pointercancel',stopDraw);
-function resetWriting(){writingStrokes=[];writingRevealed=false;drawWriting()}
+function resetWriting(){writingStrokes=[];writingRevealed=false;$('writingGrade').hidden=true;$('writingFeedback').textContent='';$('writingReveal').textContent='Показать ответ';drawWriting()}
 function setWritingMode(mode){
- writingMode=mode;showGuide=mode==='trace';writingRevealed=false;writingStrokes=[];
+ writingMode=mode;showGuide=mode==='trace';resetWriting();
  $('writingTrace').classList.toggle('active',mode==='trace');
  $('writingRecall').classList.toggle('active',mode==='recall');
  $('writingToggle').hidden=mode==='recall';$('writingReveal').hidden=mode!=='recall';
- $('writingReveal').textContent='Показать ответ';
+ $('writingGrade').hidden=true;
  $('writingInstructions').textContent=mode==='trace'?'Обведи бледный символ пальцем или стилусом. Порядок черт пока не проверяется.':'Посмотри на чтение латиницей и напиши знак по памяти. Затем покажи ответ и сравни. Проверка пока самостоятельная.';
  drawWriting();
 }
 $('writingTrace').onclick=()=>setWritingMode('trace');
 $('writingRecall').onclick=()=>setWritingMode('recall');
-$('writingReveal').onclick=()=>{writingRevealed=!writingRevealed;$('writingReveal').textContent=writingRevealed?'Скрыть ответ':'Показать ответ';drawWriting()};
+$('writingReveal').onclick=()=>{writingRevealed=!writingRevealed;$('writingReveal').textContent=writingRevealed?'Скрыть ответ':'Показать ответ';$('writingGrade').hidden=!writingRevealed;drawWriting()};
+function gradeWriting(remembered){
+ if(writingMode!=='recall'||!writingRevealed)return;
+ const item=allKana().flatMap(g=>g.items)[writeIndex%46];
+ const previous=reviews[item.kana];
+ const days=remembered?(previous?.interval>0?Math.min(60,Math.max(1,Math.round(previous.interval*2))):1):0;
+ reviews[item.kana]={interval:days,due:Date.now()+(remembered?days*86400000:60000)};
+ try{localStorage.setItem(reviewKey,JSON.stringify(reviews))}
+ catch(e){if(previous===undefined)delete reviews[item.kana];else reviews[item.kana]=previous;$('writingFeedback').textContent='Не удалось сохранить оценку. Повтори попытку.';return}
+ $('writingFeedback').textContent=remembered?'Отлично! Знак добавлен в интервальное повторение.':'Знак добавлен в ближайшее повторение.';
+ $('writingGrade').hidden=true;
+}
+$('writingRetry').onclick=()=>gradeWriting(false);
+$('writingGood').onclick=()=>gradeWriting(true);
 function selectWritingScript(value){script=value;writeIndex=0;resetWriting();$('writingHira').classList.toggle('active',script==='hiragana');$('writingKata').classList.toggle('active',script==='katakana');renderGroup()}
 $('writingHira').onclick=()=>selectWritingScript('hiragana');
 $('writingKata').onclick=()=>selectWritingScript('katakana');

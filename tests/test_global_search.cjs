@@ -39,11 +39,13 @@ const state={boards:[
   {id:'b2',name:'Производство',columns:[{id:'doing',title:'В работе'}]}
 ],activeBoardId:'b1',_tasksByBoard:{b1:[a],b2:[root,child,b,weird]},tasks:[a]};
 const entries=[],nodes=[];
+let focusedNode=null;
 function fakeNode(name='div'){
  const n={name,value:'',children:[],dataset:{},className:'',textContent:'',hidden:false,style:{},
   appendChild(c){this.children.push(c);return c},
   addEventListener(type,fn){this['on'+type]=fn},
   replaceChildren(...items){this.children=[...items]},
+  focus(){focusedNode=this},
   setAttribute(k,v){this[k]=v}};
  nodes.push(n);return n;
 }
@@ -257,12 +259,16 @@ assert.equal(els['#globalSearchResults'].children[0].children[0].textContent,'Ba
 ctx.loadMoreGlobalSearchResults();
 assert.equal(els['#globalSearchResults'].children.length,200,'Second page reveals 100 more results');
 assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 215 · показаны первые 200');
+assert.equal(focusedNode,els['#globalSearchResults'].children[100],
+  'Load more puts keyboard focus on the first newly revealed task');
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchResults'].children.length,200,
   'Re-render without changing query keeps the expanded result count');
 ctx.loadMoreGlobalSearchResults();
 assert.equal(els['#globalSearchResults'].children.length,215,'Final page reveals every remaining result');
 assert.equal(els['#globalSearchMoreBtn'].hidden,true,'Hide load-more after the final page');
+assert.equal(focusedNode,els['#globalSearchResults'].children[200],
+  'Final page keeps focus on a visible task when the load-more button disappears');
 assert.equal(els['#globalSearchResults'].children[214].children[0].textContent,'Batch task 214',
   'Pagination does not skip or duplicate results');
 els['#globalSearchStatusFilter'].value='active';
@@ -275,6 +281,13 @@ ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchResults'].children.length,12,
   'Changing terms starts over; substring matching also includes tasks 100 and 200');
 assert.equal(els['#globalSearchMoreBtn'].hidden,true,'No more button for short search results');
+const focusBeforeExhaustedLoad=focusedNode;
+const resultsBeforeExhaustedLoad=els['#globalSearchResults'].children;
+ctx.loadMoreGlobalSearchResults();
+assert.equal(focusedNode,focusBeforeExhaustedLoad,
+  'A redundant load-more event with no new results must not move focus');
+assert.equal(els['#globalSearchResults'].children,resultsBeforeExhaustedLoad,
+  'An exhausted load-more event must keep existing focused result nodes connected');
 els['#globalSearchStatusFilter'].value='';
 els['#globalSearchInput'].value='';
 state._tasksByBoard.b2.splice(-bulkTasks.length);

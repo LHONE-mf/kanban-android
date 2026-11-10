@@ -23,8 +23,12 @@ is historical context, not a current test report.
 - [x] Existing executable regression covers cross-board/nested search, Unicode,
   combined filters, My Day, reset, pagination, renamed boards, removed tags,
   safe result text, and exact task navigation.
-- [ ] Audit real-browser pagination and navigation with large datasets,
-  including focus/scroll continuity after loading more results.
+- [x] Loading another search page focuses its first new task, including the
+  final page when the load-more button disappears. Runtime checks use 215
+  tasks across two boards at 320/768/1024/1440px in light and dark themes:
+  pagination, focus/scroll, combined filters, Cyrillic/Japanese queries,
+  reset, and exact nested-task navigation.
+- [ ] Android pagination acceptance with a large dataset and TalkBack enabled.
 
 The APK workflow runs on every push. Full Android UI coverage is manual or
 triggered by editing its workflow; the focused recurrence/search flow runs

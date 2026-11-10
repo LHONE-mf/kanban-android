@@ -969,8 +969,12 @@ function showGlobalMyDay() {
 }
 
 function loadMoreGlobalSearchResults() {
+  if ($('#globalSearchMoreBtn').hidden) return;
+  const previousCount = $('#globalSearchResults').children.length;
   globalSearchVisibleLimit += GLOBAL_SEARCH_PAGE_SIZE;
   renderGlobalSearch();
+  // Continue from the new page, even when the load-more button is now hidden.
+  $('#globalSearchResults').children[previousCount]?.focus();
 }
 
 function renderGlobalSearch() {

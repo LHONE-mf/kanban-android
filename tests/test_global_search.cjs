@@ -272,8 +272,8 @@ assert.equal(els['#globalSearchResults'].children.length,100,
 assert.equal(els['#globalSearchMoreBtn'].hidden,false,'More results remain after filter change');
 els['#globalSearchInput'].value='Batch task 00';
 ctx.renderGlobalSearch();
-assert.equal(els['#globalSearchResults'].children.length,10,
-  'Changing search terms starts over and shows only new matches');
+assert.equal(els['#globalSearchResults'].children.length,12,
+  'Changing terms starts over; substring matching also includes tasks 100 and 200');
 assert.equal(els['#globalSearchMoreBtn'].hidden,true,'No more button for short search results');
 els['#globalSearchStatusFilter'].value='';
 els['#globalSearchInput'].value='';

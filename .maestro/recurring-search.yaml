@@ -92,14 +92,10 @@ androidWebViewHierarchy: devtools
 - assertVisible: "Найдено задач: 2"
 - scrollUntilVisible:
     element:
-      id: '^Открыть: CI weekly recurring task \(повтор\), доска .+
-- takeScreenshot: ui-screenshots/recurring-global-search-navigation
-
+      id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска'
     direction: DOWN
     timeout: 30000
 - tapOn:
-    id: '^Открыть: CI weekly recurring task \(повтор\), доска .+
-- takeScreenshot: ui-screenshots/recurring-global-search-navigation
-
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска'
 - assertVisible: "Редактирование задачи"
 - takeScreenshot: ui-screenshots/recurring-global-search-navigation

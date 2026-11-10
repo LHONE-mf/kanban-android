@@ -33,9 +33,14 @@ androidWebViewHierarchy: devtools
     element:
       id: "taskRepeatWeeklyBtn"
     direction: DOWN
+    centerElement: true
+    visibilityPercentage: 80
     timeout: 30000
 - tapOn:
     id: "taskRepeatWeeklyBtn"
+# WebView can expose an off-screen button as visible. The tap must not hit
+# the backdrop and dismiss the editor instead.
+- assertVisible: "Редактирование задачи"
 - takeScreenshot: ui-screenshots/recurring-weekly-button-selected
 - scrollUntilVisible:
     element:

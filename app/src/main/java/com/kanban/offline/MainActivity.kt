@@ -95,6 +95,42 @@ class MainActivity : ComponentActivity() {
 
     private val appOrigin = "https://appassets.androidplatform.net"
 
+    // A notification can arrive before the WebView has loaded its IndexedDB tasks.
+    private var pendingNotificationTask: JSONObject? = null
+
+    private fun notificationTarget(intent: Intent?): JSONObject? {
+        val taskId = intent?.getStringExtra(KanbanReminders.EXTRA_TASK_ID)
+            ?.takeIf { it.isNotBlank() && it.length <= 200 } ?: return null
+        val boardId = intent.getStringExtra(KanbanReminders.EXTRA_BOARD_ID)
+            ?.takeIf { it.isNotBlank() && it.length <= 200 } ?: return null
+        return JSONObject().put("taskId", taskId).put("boardId", boardId)
+    }
+
+    private fun deliverNotificationTask() {
+        val target = pendingNotificationTask ?: return
+        if (!::webView.isInitialized || webView.url?.startsWith("$appOrigin/assets/kanban.html") != true) return
+        // The page retains the target until its IndexedDB initialization finishes.
+        webView.evaluateJavascript(
+            "window.__kanbanNotificationPending = " + target.toString() +
+                "; if (window.kanbanApplyPendingNotification) window.kanbanApplyPendingNotification();",
+            null
+        )
+        pendingNotificationTask = null
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingNotificationTask = notificationTarget(intent) ?: return
+        if (::webView.isInitialized) {
+            if (webView.url?.startsWith("$appOrigin/assets/kanban.html") == true) {
+                deliverNotificationTask()
+            } else {
+                webView.loadUrl("$appOrigin/assets/kanban.html")
+            }
+        }
+    }
+
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -139,6 +175,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingNotificationTask = notificationTarget(intent)
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
@@ -209,6 +246,7 @@ class MainActivity : ComponentActivity() {
                         japaneseButton.text = if (url.endsWith("/japanese.html")) "← Канбан" else "日本語 · Учить"
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
+                        if (url.startsWith("$appOrigin/assets/kanban.html")) deliverNotificationTask()
                     }
                 }
             }

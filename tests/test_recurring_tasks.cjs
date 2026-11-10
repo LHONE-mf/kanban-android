@@ -22,7 +22,7 @@ assert(/taskRepeat:\s*.*t\.taskRepeat/.test(core),'Sanitizer must preserve recur
 assert(core.includes('repeatFrom:'),'Sanitizer must preserve idempotency relation');
 assert(core.includes('repeatAnchor:'),'Sanitizer must preserve monthly calendar anchor');
 assert(tasksSource.includes("taskRepeat: $('#taskRepeat').value"),'Editor must persist recurrence');
-assert(tasksSource.includes("$('#taskRepeat').value = task.taskRepeat"),'Editor must restore recurrence');
+assert(tasksSource.includes("setTaskRepeat(task.taskRepeat || 'none')"),'Editor must restore recurrence through accessible controls');
 assert(tasksSource.includes("taskRepeat: $('#taskRepeat').value"),'Dirty modal snapshot must include recurrence');
 assert(views.includes('await persistTaskChanges('),'Card completion must use recurring transaction');
 assert(interactions.includes('await persistTaskChanges('),'Drag and drop must use recurring transaction');

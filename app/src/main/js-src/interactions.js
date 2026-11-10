@@ -219,7 +219,7 @@ function bindEvents() {
     const button = event.target.closest('button[data-reminder-preset]');
     if (button) applyTaskReminderPreset(button.dataset.reminderPreset);
   });
-  $('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
+  $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;
   $('#saveTaskBtn').onclick = saveTaskFromModal;
 

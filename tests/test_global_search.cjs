@@ -60,6 +60,10 @@ assert.equal(find('',100,{deadline:'overdue'}).total,1,'Overdue includes active 
 assert.equal(find('',100,{deadline:'attention'}).total,2,'My day includes active overdue and due-today tasks');
 assert.equal(find('',100,{deadline:'today'}).items[0].task.id,'nested','Due-today filter includes nested tasks');
 assert.equal(find('',100,{deadline:'week'}).total,2,'Next seven days includes today through day six');
+assert.equal(find('',100,{deadline:'attention'}).items.map(x=>x.task.id).join(','),'root,nested',
+  'My Day lists the most overdue work before due-today work');
+assert.equal(find('',100,{deadline:'week'}).items.map(x=>x.task.id).join(','),'nested,b',
+  'Upcoming tasks are ordered by deadline, not last edit time');
 assert.equal(find('',100,{deadline:'none'}).items[0].task.id,'unsafe','No deadline filter excludes dated tasks');
 assert.equal(find('',100,{boardId:'b1',deadline:'overdue'}).total,0,'Completed task is not overdue');
 assert.equal(find('',100,{boardId:'b2',status:'active',deadline:'overdue'}).total,1,'Board, status, and deadline compose');

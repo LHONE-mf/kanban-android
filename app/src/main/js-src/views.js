@@ -40,7 +40,10 @@ function searchAllBoards(query, limit = 100, filters = {}) {
       items.push({ board, task, score });
     }
   }
-  items.sort((a, b) => b.score - a.score ||
+  items.sort((a, b) =>
+    (deadlineFilter && deadlineFilter !== 'none'
+      ? a.task.deadline.localeCompare(b.task.deadline) : 0) ||
+    b.score - a.score ||
     (b.task.updatedAt || 0) - (a.task.updatedAt || 0));
   return { total: items.length, items: items.slice(0, Math.max(1, limit)) };
 }

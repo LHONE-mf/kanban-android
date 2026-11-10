@@ -53,7 +53,7 @@ jobs:
             adb shell pm grant com.kanban.offline android.permission.POST_NOTIFICATIONS
             adb logcat -c || true
             adb shell am instrument -w -e class com.kanban.offline.KanbanReminderInstrumentedTest com.kanban.offline.test/androidx.test.runner.AndroidJUnitRunner | tee reminder-instrumentation.log
-            if ! grep -q '^OK (6 tests)' reminder-instrumentation.log; then
+            if ! grep -q '^OK (7 tests)' reminder-instrumentation.log; then
               echo "::error::Native reminder instrumentation failed; capturing crash evidence."
               adb logcat -d -t 3500 > reminder-logcat.txt || true
               adb shell dumpsys activity activities > reminder-activities.txt || true

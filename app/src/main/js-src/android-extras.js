@@ -222,6 +222,91 @@ async function registerServiceWorker() {
   catch (e) { console.info('[kanban] sw.js не найден:', e.message); }
 }
 
+// Native Mark Done notifications are queued safely while Android WebView is closed.
+// Acknowledge them only AFTER an IndexedDB transaction has committed. The native
+// receiver cancels reminders immediately; the actual task is saved on next resume.
+let taskActionUiReady = false;
+let taskActionApplying = false;
+window.kanbanRequestPendingActions = () => {
+  if (!taskActionUiReady || !window.KanbanTaskActions) return;
+  try { window.KanbanTaskActions.postMessage(JSON.stringify({ op: 'list' })); }
+  catch (e) { console.warn('Pending notification actions unavailable:', e); }
+};
+window.kanbanReceiveTaskActions = async (raw) => {
+  if (!taskActionUiReady || taskActionApplying || !state.boards.length) return;
+  let actions;
+  try { actions = typeof raw === 'string' ? JSON.parse(raw) : raw; }
+  catch (_) { return; }
+  if (!Array.isArray(actions) || !actions.length) return;
+  // Editing a task takes priority; do not overwrite a draft with a queued action.
+  if ($('#taskModal').classList.contains('open')) return;
+  taskActionApplying = true;
+  let changed = false;
+  try {
+    for (const action of actions) {
+      if (!action || action.action !== 'complete' ||
+          typeof action.taskId !== 'string' || !action.taskId ||
+          typeof action.token !== 'string' || !action.token) continue;
+      if ($('#taskModal').classList.contains('open')) break;
+      const board = state.boards.find(b =>
+        (state._tasksByBoard[b.id] || []).some(t => t.id === action.taskId));
+      let applied = false;
+      if (!board) {
+        // Task was deleted or replaced by an imported backup.
+        applied = true;
+      } else {
+        const tasks = state._tasksByBoard[board.id];
+        const doneColumn = board.columns.find(c => c.isDone);
+        if (!doneColumn) {
+          showToast('Нет колонки «Готово» на доске «' + board.name + '»');
+          continue; // Keep action queued for when a Done column becomes available.
+        }
+        const affected = new Set([action.taskId]);
+        let size;
+        do {
+          size = affected.size;
+          for (const task of tasks) if (affected.has(task.parentId)) affected.add(task.id);
+        } while (affected.size !== size);
+        const now = Date.now();
+        const candidates = tasks.filter(t => affected.has(t.id) &&
+          (t.columnId !== doneColumn.id || !t.completedAt)).map(t => ({
+            ...t, columnId: doneColumn.id, completedAt: t.completedAt || now,
+            updatedAt: now
+          }));
+        if (candidates.length) {
+          const orders = tasks.filter(t => t.columnId === doneColumn.id)
+            .map(t => t.order ?? 0);
+          const root = candidates.find(t => t.id === action.taskId);
+          if (root) root.order = orders.length ? Math.min(...orders) - 1 : 0;
+          try {
+            await dbPutTasks(candidates);
+            for (const candidate of candidates) {
+              const index = tasks.findIndex(t => t.id === candidate.id);
+              if (index >= 0) tasks[index] = candidate;
+              syncNativeReminder(candidate);
+            }
+            changed = true;
+          } catch (error) {
+            showToast('Не удалось завершить задачу: ' + (error.message || error));
+            continue; // Never acknowledge a failed IndexedDB write.
+          }
+        }
+        applied = true;
+      }
+      if (applied && window.KanbanTaskActions) {
+        try {
+          window.KanbanTaskActions.postMessage(JSON.stringify({
+            op: 'ack', taskId: action.taskId, token: action.token
+          }));
+        } catch (error) { console.warn('Mark Done acknowledgement failed:', error); }
+      }
+    }
+  } finally {
+    taskActionApplying = false;
+    if (changed) { notifyOtherTabs(); renderBoard(); }
+  }
+};
+
 // Notification taps may arrive before IndexedDB has finished loading.
 let notificationUiReady = false;
 let notificationOpening = false;
@@ -314,6 +399,11 @@ async function init() {
   quickAddButton.disabled = false;
   notificationUiReady = true;
   void window.kanbanApplyPendingNotification();
+  taskActionUiReady = true;
+  window.kanbanRequestPendingActions();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) window.kanbanRequestPendingActions();
+  });
   registerServiceWorker();
 }
 

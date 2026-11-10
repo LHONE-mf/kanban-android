@@ -72,7 +72,7 @@ function shiftTaskRepeatDate(value, fromDate, toDate, withTime, completedAt) {
   if (withTime && old.getTime() <= completedAt) return '';
   return withTime ? formatTaskLocalDate(old, true) : toISO(old);
 }
-function makeRecurringTaskCopies(source, boardTasks, board, completedAt) {
+function makeRecurringTaskCopies(source, boardTasks, board, completedAt, completingIds = new Set()) {
   if (!TASK_REPEAT_VALUES.includes(source.taskRepeat)) return [];
   const reference = /^\d{4}-\d{2}-\d{2}$/.test(source.deadline || '') ? source.deadline
     : (source.reminder ? source.reminder.slice(0, 10) : toISO(new Date(completedAt)));
@@ -99,7 +99,8 @@ function makeRecurringTaskCopies(source, boardTasks, board, completedAt) {
   return originals.map((original, index) => {
     const isRoot = index === 0;
     const parent = boardTasks.find(t => t.id === source.parentId);
-    const parentStillOpen = parent && board.columns.some(c => c.id === parent.columnId && !c.isDone);
+    const parentStillOpen = parent && !completingIds.has(parent.id) &&
+      board.columns.some(c => c.id === parent.columnId && !c.isDone);
     return {
       ...original,
       id: freshIds.get(original.id),
@@ -135,15 +136,36 @@ async function persistTaskChanges(updates, boardTasks = state.tasks,
   ids.forEach(id => activeTaskWrites.add(id));
   try {
     const created = [];
+    const originalById = new Map(boardTasks.map(t => [t.id, t]));
+    // Mark Done may complete a whole subtree in one IndexedDB transaction.
+    // Its repeating parent creates the child once; a repeating child must not
+    // also create an independent, duplicate occurrence.
+    const newlyCompleted = updates.filter(t =>
+      t.completedAt && originalById.has(t.id) && !originalById.get(t.id).completedAt);
+    const completingIds = new Set(newlyCompleted.map(t => t.id));
+    const repeatingCompletingIds = new Set(newlyCompleted
+      .filter(t => TASK_REPEAT_VALUES.includes(t.taskRepeat)).map(t => t.id));
     for (const candidate of updates) {
-      const original = boardTasks.find(t => t.id === candidate.id);
+      const original = originalById.get(candidate.id);
       if (!original || original.completedAt || !candidate.completedAt ||
           !TASK_REPEAT_VALUES.includes(candidate.taskRepeat)) continue;
       if (boardTasks.some(t => t.repeatFrom === candidate.id) ||
           created.some(t => t.repeatFrom === candidate.id)) continue;
+      let ancestorId = original.parentId;
+      const visited = new Set();
+      let repeatsWithAncestor = false;
+      while (ancestorId && !visited.has(ancestorId)) {
+        if (repeatingCompletingIds.has(ancestorId)) {
+          repeatsWithAncestor = true;
+          break;
+        }
+        visited.add(ancestorId);
+        ancestorId = originalById.get(ancestorId)?.parentId || '';
+      }
+      if (repeatsWithAncestor) continue;
       created.push(...makeRecurringTaskCopies({
         ...candidate, columnId: original.columnId
-      }, boardTasks, board, candidate.completedAt));
+      }, boardTasks, board, candidate.completedAt, completingIds));
     }
     const write = [...updates, ...created];
     await dbPutTasks(write);

@@ -182,3 +182,75 @@ androidWebViewHierarchy: devtools
 - tapOn: "Моя доска"
 - assertVisible: "Найдено задач: 2"
 - takeScreenshot: ui-screenshots/search-original-board-restored
+
+
+# High-risk data operation: move an actual persisted recurring task to the
+# second board. Verify the source and destination, then restart the WebView
+# to prove this was an IndexedDB move rather than a transient UI change.
+- scrollUntilVisible:
+    element:
+      id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска$'
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска$'
+- extendedWaitUntil:
+    visible: "Редактирование задачи"
+    timeout: 30000
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "moveTaskBoardBtn"
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+# Only one destination is available here: Новая доска. This deliberately
+# avoids an unrelated native-select interaction while exercising the move.
+- tapOn:
+    id: "moveTaskBoardBtn"
+- assertVisible: "Редактирование задачи"
+- takeScreenshot: ui-screenshots/moved-task-editor
+- hideKeyboard
+- pressKey: Back
+- assertNotVisible: "Редактирование задачи"
+- tapOn:
+    id: "globalSearchTab"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchBoardFilter"
+    direction: DOWN
+    centerElement: true
+    timeout: 30000
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "Новая доска"
+- assertVisible: "Найдено задач: 1"
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Новая доска$'
+- assertNotVisible:
+    id: '^Открыть: CI weekly recurring task, доска Моя доска$'
+- takeScreenshot: ui-screenshots/move-destination-search
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "Моя доска"
+- assertVisible: "Найдено задач: 1"
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task, доска Моя доска$'
+- assertNotVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска$'
+- takeScreenshot: ui-screenshots/move-source-search
+- stopApp
+- launchApp:
+    clearState: false
+- tapOn:
+    id: "globalSearchTab"
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "weekly recurring"
+- hideKeyboard
+- assertVisible: "Найдено задач: 2"
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task \(повтор\), доска Новая доска$'
+- assertVisible:
+    id: '^Открыть: CI weekly recurring task, доска Моя доска$'
+- takeScreenshot: ui-screenshots/move-persists-after-restart

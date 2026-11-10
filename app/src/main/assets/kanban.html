@@ -180,6 +180,12 @@
         <div class="field">
           <label class="label" for="taskDeadline">Срок</label>
           <input type="date" id="taskDeadline" aria-describedby="taskDeadlineError">
+          <div class="chips task-date-presets" id="taskDeadlinePresets" role="group" aria-label="Быстро установить срок">
+            <button type="button" class="chip" data-deadline-preset="today">Сегодня</button>
+            <button type="button" class="chip" data-deadline-preset="tomorrow">Завтра</button>
+            <button type="button" class="chip" data-deadline-preset="week">+7 дней</button>
+            <button type="button" class="chip" data-deadline-preset="clear">Сброс</button>
+          </div>
           <div class="field-error" id="taskDeadlineError" hidden>Некорректная дата</div>
         </div>
         <div class="field">
@@ -195,6 +201,12 @@
       <div class="field">
         <label class="label" for="taskReminder">🔔 Напомнить (локальное уведомление)</label>
         <input type="datetime-local" id="taskReminder" aria-label="Дата и время напоминания">
+        <div class="chips task-date-presets" id="taskReminderPresets" role="group" aria-label="Быстро установить время напоминания">
+          <button type="button" class="chip" data-reminder-preset="hour">Через час</button>
+          <button type="button" class="chip" data-reminder-preset="tomorrow9">Завтра 09:00</button>
+          <button type="button" class="chip" data-reminder-preset="week">+7 дней</button>
+          <button type="button" class="chip" data-reminder-preset="clear">Сброс</button>
+        </div>
         <div class="field-error" id="taskReminderError" hidden>Выберите время в будущем</div>
         <label class="label" for="taskReminderRepeat">Повторять</label>
         <select id="taskReminderRepeat"><option value="none">Не повторять</option><option value="daily">Каждый день</option><option value="weekly">Каждую неделю</option><option value="monthly">Каждый месяц</option></select>

@@ -63,6 +63,7 @@
   <button class="view-tab" data-view="dashboard" role="tab" aria-selected="false">Обзор</button>
   <button class="view-tab" data-view="mindmap" role="tab" aria-selected="false">🗺 Карта</button>
   <button class="view-tab" data-view="calendar" role="tab" aria-selected="false">📅 Календарь</button>
+  <button class="view-tab" data-view="search" role="tab" aria-selected="false">🔎 Поиск</button>
 </nav>
 
 <div class="toolbar" id="kanbanToolbar">
@@ -100,6 +101,18 @@
 </div>
 
 <div class="board" id="board"></div>
+
+<section class="global-search" id="globalSearch" hidden aria-label="Поиск по всем доскам">
+  <div class="global-search-head">
+    <h2>Поиск по всем доскам</h2>
+    <p>Поиск по названиям, описаниям, тегам и чек-листам, включая вложенные задачи.</p>
+  </div>
+  <label class="label" for="globalSearchInput">Найти задачу</label>
+  <input type="search" class="input" id="globalSearchInput" placeholder="Введите название задачи, тег или слово..." autocomplete="off" aria-describedby="globalSearchSummary">
+  <p id="globalSearchSummary" class="global-search-summary" role="status" aria-live="polite"></p>
+  <div id="globalSearchResults" class="global-search-results" aria-label="Результаты поиска"></div>
+  <p id="globalSearchEmpty" class="global-search-empty"></p>
+</section>
 
 <div class="mindmap-wrap" id="mindmap" hidden><svg class="mindmap-svg" id="mindmapSvg"></svg>
   <div class="mm-zoom"><button class="btn btn-secondary btn-icon" data-z="1.25" aria-label="Приблизить">＋</button><button class="btn btn-secondary btn-icon" data-z="0.8" aria-label="Отдалить">−</button><button class="btn btn-secondary btn-icon" data-z="fit" aria-label="Показать всё">⌂</button></div>

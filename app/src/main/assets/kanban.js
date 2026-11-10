@@ -2410,6 +2410,48 @@ function initTheme() {
   else applyTheme('light');
 }
 
+// Japanese lessons use localStorage; include their progress in full backups.
+const JAPANESE_BACKUP_KEYS = [
+  'kanban-japanese-hiragana-v1',
+  'kanban-japanese-quiz-progress-v1',
+  'kanban-japanese-script-v1',
+  'kanban-japanese-review-v1',
+  'kanban-japanese-active-tab-v1'
+];
+function readJapaneseBackup() {
+  const values = {};
+  for (const key of JAPANESE_BACKUP_KEYS) {
+    const value = localStorage.getItem(key);
+    if (value !== null) values[key] = value;
+  }
+  return values;
+}
+function selectJapaneseBackup(data) {
+  const values = {};
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return values;
+  for (const key of JAPANESE_BACKUP_KEYS) {
+    if (typeof data[key] === 'string' && data[key].length <= 100000) values[key] = data[key];
+  }
+  return values;
+}
+function restoreJapaneseBackup(values) {
+  const entries = Object.entries(selectJapaneseBackup(values));
+  const previous = entries.map(([key]) => [key, localStorage.getItem(key)]);
+  try {
+    for (const [key, value] of entries) localStorage.setItem(key, value);
+  } catch (error) {
+    // Do not leave partially restored progress if storage is full.
+    for (const [key, value] of previous) {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch (_) {}
+    }
+    throw error;
+  }
+  return entries.length;
+}
+
 // Android saves through SAF, not WebView blob downloads. Transfer at most 32 KiB
 // per message, waiting for native acknowledgment so media-heavy backups can be saved.
 let activeAndroidBackup = null;
@@ -2509,7 +2551,7 @@ async function exportData() {
       parts.push((n++ ? ',' : '') + JSON.stringify(f.id) + ':{"type":' + JSON.stringify(m.type || f.type)
         + ',"thumb":' + JSON.stringify(m.thumb || null) + ',"data":"' + await blobToBase64(m.full) + '"}');
     }
-    parts.push('}}');
+    parts.push('},"japanese":' + JSON.stringify(readJapaneseBackup()) + '}');
     const backup = new Blob(parts, { type: 'application/json' });
     const filename = `kanban-backup-${todayISO()}.json`;
     if (window.KanbanBackup?.postMessage) {
@@ -2722,7 +2764,9 @@ async function buildImportPlan(data) {
     }
   }
   boards.forEach(b => normalizeTree(tasks.filter(t => t.boardId === b.id)));
-  return { boards, activeBoardId, tasks, media, report: { skippedTasks, brokenMedia, warnings } };
+  return { boards, activeBoardId, tasks, media,
+    japanese: selectJapaneseBackup(data?.japanese),
+    report: { skippedTasks, brokenMedia, warnings } };
 }
 
 async function handleImport(file) {
@@ -2736,7 +2780,9 @@ async function handleImport(file) {
   catch (e) { alert('Ошибка импорта: ' + e.message); return; }
 
   const totalWarn = plan.report.warnings.length;
+  const hasJapanese = Object.keys(plan.japanese).length > 0;
   const message = `Текущие ${state.boards.length} досок и ${Object.values(state._tasksByBoard).reduce((s,a)=>s+a.length,0)} задач будут заменены на ${plan.boards.length} досок и ${plan.tasks.length} задач из файла.`
+    + (hasJapanese ? '\n\nПрогресс японского из бэкапа заменит соответствующий текущий прогресс.' : '')
     + (totalWarn ? `\n\nПредупреждений: ${totalWarn}. См. консоль.` : '');
   if (totalWarn) console.warn('[import] warnings:', plan.report.warnings);
 
@@ -2752,6 +2798,12 @@ async function handleImport(file) {
   thumbCache.clear();
   renderBoard();
   saveUIState();
+  if (hasJapanese) {
+    try { restoreJapaneseBackup(plan.japanese); }
+    catch (e) {
+      alert('Доски и задачи восстановлены, но прогресс японского не удалось записать. Сохраните резервный файл и проверьте свободное место.\n' + (e.message || e));
+    }
+  }
 
   const suffix = totalWarn ? ` (${totalWarn} предупр.)` : '';
   showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`, null, null, 4000);

@@ -1,0 +1,40 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# On a disposable emulator, Android Back must save task edits, dismiss the editor,
+# and persist the result across a restart (not exit the entire app).
+- stopApp
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      id: "Beta persistence smoke task"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "Beta persistence smoke task"
+- extendedWaitUntil:
+    visible: "Редактирование задачи"
+    timeout: 30000
+- tapOn:
+    id: "taskDesc"
+- inputText: "Saved with Android Back"
+- hideKeyboard
+- back
+- assertNotVisible: "Редактирование задачи"
+- scrollUntilVisible:
+    element:
+      text: "Saved with Android Back"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Saved with Android Back"
+- stopApp
+- launchApp:
+    clearState: false
+- scrollUntilVisible:
+    element:
+      text: "Saved with Android Back"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Saved with Android Back"
+- takeScreenshot: ui-screenshots/kanban-back-saved-task

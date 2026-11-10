@@ -877,7 +877,10 @@ function updateGlobalSearchBoardFilter() {
     boards.every((board, index) =>
       options[index + 1].value === board.id &&
       options[index + 1].textContent === board.name);
-  if (unchanged) return;
+  if (unchanged) {
+    if (selected && !boards.some(board => board.id === selected)) select.value = '';
+    return;
+  }
   const all = document.createElement('option');
   all.value = '';
   all.textContent = 'Все доски';

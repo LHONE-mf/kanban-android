@@ -75,6 +75,8 @@ stage="Japanese progress after upgrade"
 run_maestro .maestro/japanese-upgrade.yaml ui-screenshots/japanese-upgrade-debug
 stage="Kanban persistence after upgrade"
 run_maestro .maestro/kanban-persistence.yaml ui-screenshots/kanban-persistence-debug
+stage="Android Back saves task edits and survives restart"
+run_maestro .maestro/task-back-save.yaml ui-screenshots/task-back-save-debug
 adb exec-out screencap -p > ui-screenshots/kanban-after-removal.png
 test -s ui-screenshots/kanban-after-removal.png
 stage="Android Save As cancellation and retry"

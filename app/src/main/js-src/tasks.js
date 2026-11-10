@@ -263,7 +263,7 @@ function applyTaskReminderPreset(preset, now = new Date()) {
 function setTaskRepeat(value) {
   if (!['none', 'daily', 'weekly', 'monthly'].includes(value)) return false;
   $('#taskRepeat').value = value;
-  $('#taskRepeatChoices [data-task-repeat]').forEach(button => {
+  $$('#taskRepeatChoices [data-task-repeat]').forEach(button => {
     const active = button.dataset.taskRepeat === value;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));

@@ -460,6 +460,9 @@ function closeModal(id) {
     recAbort(); apStop('modal');
     $('#mediaPreview').querySelectorAll('[data-preview-url]').forEach(el => revokeTrackedURL(el.dataset.previewUrl));
     modalInitialSnapshot = null;
+    // A notification may have queued Mark Done while this editor was open.
+    // It is safe to apply pending changes only after the draft is closed.
+    window.kanbanRequestPendingActions?.();
   }
 }
 async function duplicateTask(taskId) {

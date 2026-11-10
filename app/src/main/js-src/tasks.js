@@ -197,7 +197,7 @@ function renderFiles() {
     const op = row.querySelector('[data-open]');
     if (op) {
       op.setAttribute('aria-label', 'Открыть файл ' + it.f.name);
-      op.onclick = () => openFile(it.f, $('#taskTitle').value);
+      op.onclick = () => openFile(it.f, $('#taskTitle').value, tempFiles);
     }
     const edit = row.querySelector('[data-edit]');
     if (edit) edit.onclick = () => editAttachmentExternally(it.f);
@@ -206,15 +206,21 @@ function renderFiles() {
   renderAudioList();
 }
 async function storeFile(file) {
-  let blob = file, thumb = null, type = file.type || 'application/octet-stream';
-  if (/^image\/(jpeg|png|webp|heic|heif)$/.test(type)) {
-    try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) { blob = file; }
+  let blob = file, thumb = null, name = file._name || file.name || 'Файл';
+  const ext = name.split('.').pop().toLowerCase();
+  const imageTypes = {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',heic:'image/heic',heif:'image/heif'};
+  let type = file.type || imageTypes[ext] || 'application/octet-stream';
+  if (/^image\/(jpeg|png|webp|heic|heif)$/.test(type) && file.size > 2 * 1024 * 1024) {
+    // A failed conversion must not silently store the original 10-15 MB photo.
+    blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY);
+    type = blob.type;
+    name = name.replace(/\.[^.]+$/, '') + '.jpg';
   }
   if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   const id = 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
-  return { id, name: file._name || file.name || 'Файл', type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
+  return { id, name, type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
   if (!window.KanbanFileEdit?.postMessage) {
@@ -325,8 +331,8 @@ window.kanbanFileOpenNativeResult = (raw) => {
   }
 };
 
-async function openFile(f, title) {
-  if (/^(image|video)\//.test(f.type)) return openLightbox({ title, files: [f] }, f);
+async function openFile(f, title, files = [f]) {
+  if (/^(image|video)\//.test(f.type)) return openLightbox({ title, files }, f);
   const m = await mediaGet(f.id).catch(() => null);
   if (!m?.full) { showToast('Файл не найден'); return; }
 

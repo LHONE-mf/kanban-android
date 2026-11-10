@@ -47,7 +47,7 @@ const ctx={state,Date,console,document:{createElement:tag=>fakeNode(tag)},
  openTaskModal:id=>nav.push(['task',id]),showToast:s=>toasts.push(s)};
 vm.createContext(ctx);
 vm.runInContext(views.slice(start,end),ctx);
-const find=(q,limit=100)=>ctx.searchAllBoards(q,limit);
+const find=(q,limit=100,filters={})=>ctx.searchAllBoards(q,limit,filters);
 
 assert.equal(find(''),undefined,'Empty search should show guidance rather than all tasks');
 assert.equal(find('    '),undefined);

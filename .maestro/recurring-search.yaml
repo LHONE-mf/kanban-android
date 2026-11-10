@@ -198,17 +198,18 @@ androidWebViewHierarchy: devtools
     visible: "Редактирование задачи"
     timeout: 30000
 - hideKeyboard
+# Android WebView's visible hierarchy sometimes omits the resource-id of
+# this nested button, but keeps its exact accessible text. Target what the
+# person sees rather than an off-screen/stale id from the devtools tree.
 - scrollUntilVisible:
-    element:
-      id: "moveTaskBoardBtn"
+    element: "Переместить"
     direction: UP
     centerElement: true
     timeout: 30000
 - takeScreenshot: ui-screenshots/task-move-button-in-view
 # Only one destination is available here: Новая доска. This deliberately
 # avoids an unrelated native-select interaction while exercising the move.
-- tapOn:
-    id: "moveTaskBoardBtn"
+- tapOn: "Переместить"
 - assertVisible: "Редактирование задачи"
 - takeScreenshot: ui-screenshots/moved-task-editor
 - hideKeyboard

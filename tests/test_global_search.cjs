@@ -54,6 +54,8 @@ assert(html.includes('aria-controls="globalSearchResults"'),'Load-more button id
 assert(!views.slice(start,end).includes('innerHTML = task.'),'Task data must not be inserted into HTML unsafely');
 
 // Verify keyboard tab navigation against the actual view-switching functions.
+assert(views.includes('const tabs = ' + String.fromCharCode(36, 36) + "('.view-tab')"),
+  'Arrow navigation must query all tabs, not just one');
 assert(interactions.includes('tab.onkeydown = event => handleViewTabKeydown(event, tab)'),
   'Navigation tabs must handle arrow keys');
 const testViews = ['kanban', 'search', 'dashboard', 'mindmap', 'calendar'];

@@ -958,7 +958,7 @@ function renderHeatmap() {
 // A tablist has one Tab stop; arrow keys, Home and End move between panels.
 function handleViewTabKeydown(event, tab) {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
-  const tabs = $('.view-tab');
+  const tabs = $$('.view-tab');
   const index = tabs.indexOf(tab);
   if (index < 0) return;
   let next = index;

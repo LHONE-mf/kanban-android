@@ -58,12 +58,12 @@
   </div></details>
 </header>
 
-<nav class="view-tabs" role="tablist" aria-label="Разделы приложения">
-  <button class="view-tab active" id="kanbanTab" data-view="kanban" role="tab" aria-controls="board" aria-selected="true" tabindex="0">Канбан</button>
-  <button class="view-tab" id="globalSearchTab" data-view="search" role="tab" aria-controls="globalSearch" aria-selected="false" tabindex="-1">🔎 Поиск</button>
-  <button class="view-tab" id="dashboardTab" data-view="dashboard" role="tab" aria-controls="dashboard" aria-selected="false" tabindex="-1">Обзор</button>
-  <button class="view-tab" id="mindmapTab" data-view="mindmap" role="tab" aria-controls="mindmap" aria-selected="false" tabindex="-1">🗺 Карта</button>
-  <button class="view-tab" id="calendarTab" data-view="calendar" role="tab" aria-controls="calendar" aria-selected="false" tabindex="-1">📅 Календарь</button>
+<nav class="view-tabs" role="tablist">
+  <button class="view-tab active" data-view="kanban" role="tab" aria-selected="true">Канбан</button>
+  <button class="view-tab" id="globalSearchTab" data-view="search" role="tab" aria-selected="false">🔎 Поиск</button>
+  <button class="view-tab" data-view="dashboard" role="tab" aria-selected="false">Обзор</button>
+  <button class="view-tab" data-view="mindmap" role="tab" aria-selected="false">🗺 Карта</button>
+  <button class="view-tab" data-view="calendar" role="tab" aria-selected="false">📅 Календарь</button>
 </nav>
 
 <div class="toolbar" id="kanbanToolbar">
@@ -100,9 +100,9 @@
   </div></details>
 </div>
 
-<div class="board" id="board" role="tabpanel" aria-labelledby="kanbanTab" tabindex="0"></div>
+<div class="board" id="board"></div>
 
-<section class="global-search" id="globalSearch" role="tabpanel" aria-labelledby="globalSearchTab" hidden>
+<section class="global-search" id="globalSearch" hidden aria-label="Поиск по всем доскам">
   <div class="global-search-head">
     <h2>Поиск по всем доскам</h2>
     <div class="global-search-actions">
@@ -158,13 +158,13 @@
   <p id="globalSearchEmpty" class="global-search-empty"></p>
 </section>
 
-<div class="mindmap-wrap" id="mindmap" role="tabpanel" aria-labelledby="mindmapTab" hidden><svg class="mindmap-svg" id="mindmapSvg"></svg>
+<div class="mindmap-wrap" id="mindmap" hidden><svg class="mindmap-svg" id="mindmapSvg"></svg>
   <div class="mm-zoom"><button class="btn btn-secondary btn-icon" data-z="1.25" aria-label="Приблизить">＋</button><button class="btn btn-secondary btn-icon" data-z="0.8" aria-label="Отдалить">−</button><button class="btn btn-secondary btn-icon" data-z="fit" aria-label="Показать всё">⌂</button></div>
   <div class="mm-bar" id="mmBar" hidden><button class="btn btn-secondary btn-small" data-a="add">＋ Узел</button><button class="btn btn-secondary btn-small" data-a="file">📎 Файл</button><button class="btn btn-secondary btn-small" data-a="edit">✎</button><button class="btn btn-danger btn-small" data-a="del">🗑</button></div>
   <input type="file" id="mmFile" multiple hidden>
 </div>
 
-<div class="calendar-wrap" id="calendar" role="tabpanel" aria-labelledby="calendarTab" hidden>
+<div class="calendar-wrap" id="calendar" hidden>
   <div class="calendar-header">
     <button class="btn btn-secondary btn-icon" id="calPrev" aria-label="Предыдущий месяц">‹</button>
     <div class="calendar-title" id="calTitle">—</div>
@@ -174,7 +174,7 @@
   <div class="calendar-grid" id="calGrid"></div>
 </div>
 
-<div class="dashboard" id="dashboard" role="tabpanel" aria-labelledby="dashboardTab" hidden>
+<div class="dashboard" id="dashboard" hidden>
   <div class="kpi-grid" id="kpiGrid"></div>
   <section class="dashboard-section">
     <h3>Общий прогресс</h3>

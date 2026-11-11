@@ -195,10 +195,7 @@ function bindEvents() {
     await deleteBoard(state.activeBoardId);
   };
 
-  $('.view-tab').forEach(tab => {
-    tab.onclick = () => switchView(tab.dataset.view);
-    tab.onkeydown = event => handleViewTabKeydown(event, tab);
-  });
+  $$('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
 
   $('#globalSearchInput').addEventListener('input', renderGlobalSearch);
   $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);

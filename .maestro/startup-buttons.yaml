@@ -27,6 +27,46 @@ androidWebViewHierarchy: devtools
 - assertNotVisible:
     id: "textPromptInput"
 
+# The mobile overflow menu must reach real settings controls. Cancelling an
+# edited name must not rename the board (the exact result label below checks it).
+- hideKeyboard
+- tapOn:
+    id: "mobileActionsToggle"
+- tapOn:
+    id: "settingsBtn"
+- extendedWaitUntil:
+    visible:
+      id: "boardNameInput"
+    timeout: 15000
+- tapOn:
+    id: "boardNameInput"
+- eraseText
+- inputText: "CI unsaved board name"
+- hideKeyboard
+- tapOn: "Отмена"
+- assertNotVisible:
+    id: "boardNameInput"
+- assertVisible:
+    id: "quickAdd"
+
+# Reopening settings and Android Back must close the dialog and keep the app
+# usable. Hide the keyboard first so Back reaches the app's overlay handler.
+- tapOn:
+    id: "mobileActionsToggle"
+- tapOn:
+    id: "settingsBtn"
+- extendedWaitUntil:
+    visible:
+      id: "boardNameInput"
+    timeout: 15000
+- hideKeyboard
+- pressKey: Back
+- assertNotVisible:
+    id: "boardNameInput"
+- assertVisible:
+    id: "quickAdd"
+- takeScreenshot: ui-screenshots/startup-settings-roundtrip
+
 # All navigation tabs must execute their real view switches. A dead startup
 # handler can leave tabs visible while their content never becomes active.
 - tapOn:

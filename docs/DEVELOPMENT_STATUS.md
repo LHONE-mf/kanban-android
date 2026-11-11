@@ -44,6 +44,8 @@ is historical context, not a current test report.
   pagination, focus/scroll, combined filters, Cyrillic/Japanese queries,
   reset, and exact nested-task navigation.
 - [x] Android 215-task pagination, combined board/priority filters, reset, exact nested-task opening and restart passed at `683b958`: [emulator evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42956499586).
+- [x] Full focused Android recurrence/search run at `30e6eaa` also passed: recurring occurrence creation, cross-board search filters, opening the correct task, moving it to another board, verifying source/destination and IndexedDB persistence across restart, deleting the destination board, and the separate 215-task pagination flow. [Android test evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42963689379). [APK build](https://github.com/LHONE-mf/kanban-android/actions/runs/42963689469).
+- [x] Tabs now expose their related panels through `aria-controls` and `aria-labelledby` for screen reader navigation; automated markup regression protects these relationships. TalkBack behavior still requires device acceptance.
 - [ ] TalkBack and physical-device acceptance.
 
 The APK workflow runs on every push. Full Android UI coverage is manual or
@@ -64,8 +66,8 @@ the execution handoff; a passing build does not establish device acceptance.
 
 - Synthetic 215-task/two-board import fixture and focused Maestro flow cover
   three pages, exact nested-task opening, board/priority filters, reset and restart.
-  The focused recurrence/search workflow executes both flows; native evidence
-  is required before marking the Android pagination acceptance complete.
+  The focused recurrence/search workflow executes both flows. Android pagination
+  passed in runs `42956499586` and `42963689379`; real-device acceptance is pending.
 
 ## Long-list navigation
 

@@ -18,6 +18,26 @@ const navigation = html.slice(html.indexOf('<nav class="view-tabs"'), html.index
 assert(navigation.indexOf('data-view="search"') > navigation.indexOf('data-view="kanban"') &&
   navigation.indexOf('data-view="search"') < navigation.indexOf('data-view="dashboard"'),
   'Place cross-board search beside Kanban so it is reachable without horizontal scrolling on phones');
+
+// Each tab identifies its visible panel so Android screen readers can navigate
+// the tab interface without losing which board/search screen is selected.
+const tabPanels = [
+  ['kanbanTab', 'board'],
+  ['globalSearchTab', 'globalSearch'],
+  ['dashboardTab', 'dashboard'],
+  ['mindmapTab', 'mindmap'],
+  ['calendarTab', 'calendar']
+];
+for (const [tabId, panelId] of tabPanels) {
+  const tab = navigation.match(new RegExp('<button[^>]*\\bid="' + tabId + '"[^>]*>'))?.[0];
+  const panel = html.match(new RegExp('<(?:div|section)[^>]*\\bid="' + panelId + '"[^>]*>'))?.[0];
+  assert(tab && tab.includes('role="tab"') && tab.includes('aria-controls="' + panelId + '"'),
+    'Navigation tab must control its panel: ' + tabId);
+  assert(panel && panel.includes('role="tabpanel"') && panel.includes('aria-labelledby="' + tabId + '"'),
+    'Panel must expose its navigation tab to TalkBack: ' + panelId);
+}
+assert(navigation.includes('aria-label="Разделы приложения"'), 'Navigation tabs must have a group label');
+
 assert(views.includes("$('#globalSearch').hidden = view !== 'search'"),'Search view must be correctly toggled');
 assert(interactions.includes("$('#globalSearchInput').addEventListener('input'"),'Search input must be live');
 assert(interactions.includes("$('#globalSearchBoardFilter').addEventListener('change'"),'Board filter must refresh live');

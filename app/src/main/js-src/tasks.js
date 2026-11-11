@@ -185,23 +185,29 @@ async function persistTaskChanges(updates, boardTasks = state.tasks,
 // TASK OPS
 // ============================================================
 async function deleteTask(taskId) {
-  const root = state.tasks.find(t => t.id === taskId);
+  const sourceTasks = state.tasks;
+  const root = sourceTasks.find(t => t.id === taskId);
   if (!root) return;
+  const sourceBoardId = root.boardId || state.activeBoardId;
   const gone = [root, ...subtree(taskId)], ids = new Set(gone.map(t => t.id));
   try { await dbDeleteTasks([...ids]); }
   catch (e) { showToast('Не удалось удалить: ' + e.message); return; }
-  const kept = state.tasks.filter(t => !ids.has(t.id));
-  state.tasks.length = 0; state.tasks.push(...kept);
+  const kept = sourceTasks.filter(t => !ids.has(t.id));
+  sourceTasks.length = 0; sourceTasks.push(...kept);
   gone.forEach(t => syncNativeReminder({ ...t, reminder: '' }));
   const files = gone.flatMap(t => t.files);
   const undoId = pushUndo({
     onExpire: () => files.forEach(f => scheduleMediaDelete(f.id, 0)),
     restore: async () => {
-      if (root.boardId && root.boardId !== state.activeBoardId) await switchBoard(root.boardId);
+      if (!getBoard(sourceBoardId)) {
+        showToast('Исходная доска удалена. Не удалось восстановить задачу.');
+        return false;
+      }
+      if (sourceBoardId !== state.activeBoardId) await switchBoard(sourceBoardId);
       files.forEach(f => cancelMediaDelete(f.id));
       try { await dbPutTasks(gone); }
       catch (e) { showToast('Не удалось восстановить: ' + e.message); return false; }
-      (state._tasksByBoard[root.boardId] || state.tasks).push(...gone);
+      (state._tasksByBoard[sourceBoardId] || state.tasks).push(...gone);
       gone.forEach(syncNativeReminder);
       notifyOtherTabs(); renderBoard();
       return true;
@@ -777,7 +783,8 @@ function closeModal(id) {
   }
 }
 async function duplicateTask(taskId) {
-  const src = state.tasks.find(t => t.id === taskId);
+  const sourceTasks = state.tasks;
+  const src = sourceTasks.find(t => t.id === taskId);
   if (!src) return;
   const sameCol = state.tasks.filter(t => t.columnId === src.columnId);
   const maxOrder = sameCol.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
@@ -793,7 +800,7 @@ async function duplicateTask(taskId) {
   };
   try { await dbPutTask(copy); }
   catch (e) { showToast('Не удалось дублировать: ' + e.message); return; }
-  state.tasks.push(copy);
+  sourceTasks.push(copy);
   syncNativeReminder(copy);
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
   showToast('Задача продублирована');

@@ -23,7 +23,16 @@ is historical context, not a current test report.
   It fails before the fix. All 27 Python tests and 31 Node suites pass locally;
   APK build passed at `aa0597f`:
   [build evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42991664282).
-  Android startup smoke is pending completion.
+  Android startup smoke also passed:
+  [Android evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42991664545).
+- [x] Deletion and duplication also retain their source-board task list while
+  storage is pending. Switching boards no longer leaves deleted subtrees in
+  search or puts duplicates on another board. Regression reproduces both bugs
+  before the fix and verifies subtree undo, reminders, navigation and unchanged
+  boards on failed writes. Undo refuses a board that was subsequently deleted,
+  preserving the surviving board and avoiding orphaned task/reminder writes.
+  All 27 Python tests and 33 Node suites pass locally;
+  native build/startup results for this change are pending CI.
 - [x] Board deletion commits task removal and board settings in one IndexedDB
   transaction. Failed writes leave visible tasks, reminders and media intact.
   Successful deletion closes the old board settings.
@@ -125,4 +134,6 @@ the execution handoff; a passing build does not establish device acceptance.
   3,750-character descriptions. Text-query medians were 83.77 / 86.28 ms.
   These measure the search function on the development host, not Android UI
   response time. All 27 Python tests and 32 Node suites pass; generated bundle
-  and JavaScript syntax checks pass. Native CI for this change is pending.
+  and JavaScript syntax checks pass. APK build passed at `6a0d6fb`:
+  [build evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42992530728).
+  Android startup smoke is pending completion.

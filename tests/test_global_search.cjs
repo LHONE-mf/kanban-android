@@ -62,6 +62,17 @@ vm.createContext(ctx);
 vm.runInContext(views.slice(start,end),ctx);
 const find=(q,limit=100,filters={})=>ctx.searchAllBoards(q,limit,filters);
 
+const exactPhrase={...b,id:'exact-phrase',title:'Exact title phrase',updatedAt:1};
+const longerPhrase={...b,id:'longer-phrase',title:'Exact title phrase extra',deadline:'2026-11-10',updatedAt:999999};
+state._tasksByBoard.b2.push(exactPhrase,longerPhrase);
+assert.equal(find('exact title phrase').items[0].task.id,'exact-phrase',
+  'An exact multi-word task title must rank above a newer expanded title');
+assert.equal(find('Ｅｘａｃｔ title phrase').items[0].task.id,'exact-phrase',
+  'Exact phrase ranking must retain Unicode width normalization');
+assert.equal(find(' exact  title phrase ').items[0].task.id,'exact-phrase','Extra query whitespace retains phrase ranking');
+assert.equal(find('exact title phrase',100,{deadline:'week'}).items[0].task.id,'longer-phrase','Deadline filtering keeps earliest dates first');
+state._tasksByBoard.b2.splice(-2);
+
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchReturnBtn'].hidden,true,'No return control without results');
 assert.equal(els['#globalSearchMoreBtn'].hidden,true,'No load-more button before a search');

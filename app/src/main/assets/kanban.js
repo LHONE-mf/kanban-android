@@ -831,6 +831,7 @@ function normalizeGlobalSearchTag(tag) {
 // remain independent, so finding a task cannot silently discard their state.
 function searchAllBoards(query, limit = 100, filters = {}) {
   const words = String(query || '').normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const phrase = words.join(' ');
   const boardFilter = filters.boardId || '';
   const statusFilter = filters.status || '';
   const deadlineFilter = filters.deadline || '';
@@ -869,7 +870,7 @@ function searchAllBoards(query, limit = 100, filters = {}) {
       const all = [title, boardName, description, tags, checklist].join(' ');
       if (!words.every(word => all.includes(word))) continue;
       // Prefer an exact task-title match, followed by title and description.
-      const score = words.reduce((sum, word) =>
+      const score = (phrase && title.trim().replace(/\s+/g, ' ') === phrase ? 12 : 0) + words.reduce((sum, word) =>
         sum + (title === word ? 12 : title.includes(word) ? 6 :
           description.includes(word) ? 3 : tags.includes(word) ? 2 : 1), 0);
       items.push({ board, task, score });

@@ -73,3 +73,10 @@ the execution handoff; a passing build does not establish device acceptance.
   clearing the query, changing filters, or discarding loaded pages. Browser
   checks cover 215 tasks in both themes at 320/768/1024/1440px; the Android
   pagination flow also exercises return from page three and narrowing the query.
+
+## Search relevance
+
+- Exact multi-word titles rank ahead of newer expanded titles. Unicode width,
+  case and whitespace normalization remain supported; deadline ordering stays
+  primary when a deadline filter is active. Failing-before-fix regression
+  covers the previous recency tie and full-width query text.

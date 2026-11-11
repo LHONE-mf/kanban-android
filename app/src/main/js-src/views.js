@@ -955,6 +955,23 @@ function renderHeatmap() {
 // ============================================================
 // VIEW SWITCH
 // ============================================================
+// A tablist has one Tab stop; arrow keys, Home and End move between panels.
+function handleViewTabKeydown(event, tab) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return;
+  const tabs = $('.view-tab');
+  const index = tabs.indexOf(tab);
+  if (index < 0) return;
+  let next = index;
+  if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabs.length - 1;
+  else return;
+  event.preventDefault();
+  switchView(tabs[next].dataset.view);
+  tabs[next].focus();
+}
+
 function switchView(view) {
   if (!VALID_VIEWS.includes(view)) view = 'kanban';
   currentView = view;
@@ -962,6 +979,7 @@ function switchView(view) {
     const active = tab.dataset.view === view;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
   });
   $('#kanbanToolbar').style.display = view === 'kanban' ? '' : 'none';
   $('#board').hidden = view !== 'kanban';

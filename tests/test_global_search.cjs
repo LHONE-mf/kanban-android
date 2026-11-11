@@ -53,6 +53,52 @@ assert(interactions.includes("$('#globalSearchMoreBtn').addEventListener('click'
 assert(html.includes('aria-controls="globalSearchResults"'),'Load-more button identifies its result list');
 assert(!views.slice(start,end).includes('innerHTML = task.'),'Task data must not be inserted into HTML unsafely');
 
+// Verify keyboard tab navigation against the actual view-switching functions.
+assert(interactions.includes('tab.onkeydown = event => handleViewTabKeydown(event, tab)'),
+  'Navigation tabs must handle arrow keys');
+const testViews = ['kanban', 'search', 'dashboard', 'mindmap', 'calendar'];
+let keyboardFocus = '';
+const keyboardTabs = testViews.map(view => ({
+  dataset: { view }, tabIndex: -1, classList: { toggle() {} },
+  setAttribute(name, value) { this[name] = value; },
+  focus() { keyboardFocus = view; }
+}));
+const keyboardPanels = Object.fromEntries(
+  ['#kanbanToolbar', '#board', '#dashboard', '#mindmap', '#calendar', '#globalSearch']
+    .map(id => [id, { hidden: false, style: {} }])
+);
+const keyboardCtx = {
+  VALID_VIEWS: testViews, currentView: 'kanban',
+  $: () => keyboardTabs, $: selector => keyboardPanels[selector],
+  renderDashboard() {}, renderMindmap() {}, renderCalendar() {}, renderGlobalSearch() {}, saveUIState() {}
+};
+vm.createContext(keyboardCtx);
+vm.runInContext(views.slice(views.indexOf('// VIEW SWITCH')), keyboardCtx);
+keyboardCtx.switchView('kanban');
+assert.deepEqual(keyboardTabs.map(tab => tab.tabIndex), [0, -1, -1, -1, -1]);
+function pressTabKey(key, index, modifiers = {}) {
+  let prevented = false;
+  keyboardCtx.handleViewTabKeydown({key, ...modifiers, preventDefault() { prevented = true; }}, keyboardTabs[index]);
+  return prevented;
+}
+assert(pressTabKey('ArrowRight', 0), 'Right arrow should be handled');
+assert.equal(keyboardFocus, 'search', 'Right arrow from Kanban activates Search');
+assert.equal(keyboardPanels['#globalSearch'].hidden, false, 'Search panel must become visible');
+assert.deepEqual(keyboardTabs.map(tab => tab.tabIndex), [-1, 0, -1, -1, -1],
+  'Only Search is in the Tab order after arrow navigation');
+assert(pressTabKey('End', 1), 'End key should be handled');
+assert.equal(keyboardFocus, 'calendar', 'End activates last tab');
+assert(pressTabKey('ArrowRight', 4), 'Right arrow wraps');
+assert.equal(keyboardFocus, 'kanban', 'Right arrow from last tab wraps to first');
+assert(pressTabKey('ArrowLeft', 0), 'Left arrow wraps');
+assert.equal(keyboardFocus, 'calendar', 'Left arrow from first tab wraps to last');
+assert(pressTabKey('Home', 4), 'Home key should be handled');
+assert.equal(keyboardFocus, 'kanban', 'Home activates first tab');
+assert(!pressTabKey('ArrowRight', 0, { altKey: true }),
+  'OS-modified shortcuts must not be intercepted');
+assert(!pressTabKey('Enter', 0), 'Enter remains a native button action');
+
+
 const a={id:'a',boardId:'b1',parentId:'',columnId:'done',title:'Проверка ячейки',desc:'Quality control',tags:['LFP'],checklist:[],deadline:'2026-11-08',updatedAt:1,priority:'high'};
 const child={id:'nested',boardId:'b2',parentId:'root',title:'Find hidden thing',desc:'',tags:['lfp'],checklist:[{text:'Катод'}],deadline:'2026-11-10',updatedAt:3};
 const root={id:'root',boardId:'b2',parentId:'',title:'Parent',desc:'',tags:[],checklist:[],deadline:'2026-11-09',updatedAt:2,priority:'medium'};

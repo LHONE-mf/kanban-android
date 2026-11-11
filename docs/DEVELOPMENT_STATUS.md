@@ -58,3 +58,10 @@ the execution handoff; a passing build does not establish device acceptance.
   quiz fields and legacy numeric-string counters remain supported.
 - Verified by failing-before-fix regression, real import-planning tests, all
   fast suites, and real browser file import in both themes.
+
+## Android pagination regression
+
+- Synthetic 215-task/two-board import fixture and focused Maestro flow cover
+  three pages, exact nested-task opening, board/priority filters, reset and restart.
+  The focused recurrence/search workflow executes both flows; native evidence
+  is required before marking the Android pagination acceptance complete.

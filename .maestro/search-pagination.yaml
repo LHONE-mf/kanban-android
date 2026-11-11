@@ -1,0 +1,111 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Synthetic fixture; clearState applies only to the disposable CI emulator.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "quickAdd"
+    timeout: 30000
+- tapOn:
+    id: "mobileActionsToggle"
+- tapOn:
+    id: "importBtn"
+- extendedWaitUntil:
+    visible: "Show roots"
+    timeout: 30000
+- tapOn: "Show roots"
+- tapOn: "(?i)^Downloads$"
+- tapOn: "kanban-pagination-ci.json"
+- extendedWaitUntil:
+    visible:
+      id: "confirmOk"
+    timeout: 30000
+- tapOn:
+    id: "confirmOk"
+- tapOn:
+    id: "globalSearchTab"
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "CI pagination"
+- hideKeyboard
+- assertVisible: "Найдено задач: 215 · показаны первые 100"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchMoreBtn"
+    direction: DOWN
+    centerElement: true
+    timeout: 90000
+- tapOn:
+    id: "globalSearchMoreBtn"
+- assertVisible:
+    id: '^Открыть: CI pagination 100, доска CI Search B$'
+- takeScreenshot: ui-screenshots/pagination-page-2
+- scrollUntilVisible:
+    element:
+      id: "globalSearchMoreBtn"
+    direction: DOWN
+    centerElement: true
+    timeout: 90000
+- tapOn:
+    id: "globalSearchMoreBtn"
+- assertVisible:
+    id: '^Открыть: CI pagination 200, доска CI Search B$'
+- takeScreenshot: ui-screenshots/pagination-page-3
+- scrollUntilVisible:
+    element:
+      id: '^Открыть: CI pagination 214, доска CI Search B$'
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: '^Открыть: CI pagination 214, доска CI Search B$'
+- assertVisible: "Редактирование задачи"
+- assertVisible: "CI pagination 214"
+- hideKeyboard
+- assertVisible: ".*CI pagination 100.*"
+- pressKey: Back
+- assertNotVisible: "Редактирование задачи"
+- tapOn:
+    id: "globalSearchTab"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchBoardFilter"
+    direction: UP
+    centerElement: true
+    timeout: 90000
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "CI Search B"
+- tapOn:
+    id: "globalSearchPriorityFilter"
+- tapOn: "Высокий"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchSummary"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Найдено задач: 58"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchClearBtn"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "globalSearchClearBtn"
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "CI pagination"
+- hideKeyboard
+- assertVisible: "Найдено задач: 215 · показаны первые 100"
+- stopApp
+- launchApp:
+    clearState: false
+- tapOn:
+    id: "globalSearchTab"
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "CI pagination"
+- hideKeyboard
+- assertVisible: "Найдено задач: 215 · показаны первые 100"
+- takeScreenshot: ui-screenshots/pagination-after-restart

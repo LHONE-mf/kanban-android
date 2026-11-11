@@ -7,6 +7,9 @@ on:
     branches: [ui-testing]
     paths:
       - '.maestro/recurring-search.yaml'
+      - '.maestro/search-pagination.yaml'
+      - 'tools/create_search_pagination_fixture.py'
+      - '.github/scripts/run-focused-recurrence-ui.sh'
       - '.github/workflows/recurrence-ui.yml'
 
 permissions:

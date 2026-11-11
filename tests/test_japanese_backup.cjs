@@ -23,6 +23,7 @@ const localStorage={
  removeItem:key=>entries.delete(key)
 };
 const notices=[];
+let replacements=0;
 const ctx={
  localStorage,JSON,Blob,Date,console,
  state:{boards:[{id:'b1',name:'Board'}],_tasksByBoard:{b1:[]},activeBoardId:'b1',tasks:[]},
@@ -32,7 +33,7 @@ const ctx={
  location:{origin:'https://appassets.androidplatform.net'},
  undoStack:[],pendingMediaDeletes:new Map(),thumbCache:new Map(),
  apStop:()=>{},rebucket:()=>{},applyActiveBoard:()=>{},renderBoard:()=>{},saveUIState:()=>{},
- confirmDialog:async()=>true,dbReplaceAll:async()=>{},syncNativeReminder:()=>{},alert:message=>notices.push(message),
+ confirmDialog:async()=>true,dbReplaceAll:async()=>{replacements++},syncNativeReminder:()=>{},alert:message=>notices.push(message),
  buildImportPlan:async(data)=>({
   boards:[{id:'b1'}],tasks:[],activeBoardId:'b1',media:{},
   japanese:ctx.selectJapaneseBackup(data.japanese), report:{warnings:[]}
@@ -75,6 +76,23 @@ vm.runInContext(
     'A failed restore must not leave a partly overwritten learning record');
   assert(notices.some(n=>n.includes('не удалось записать')),
     'Import must explain if Japanese data could not be restored');
+
+  failKey=null;
+  for (const [key,value] of [
+    ['kanban-japanese-hiragana-v1','not JSON'],
+    ['kanban-japanese-hiragana-v1','{}'],
+    ['kanban-japanese-hiragana-v1','[123]'],
+    ['kanban-japanese-review-v1','[]'],
+    ['kanban-japanese-review-v1','{"あ":{"interval":-1,"due":20}}'],
+    ['kanban-japanese-quiz-progress-v1','null'],
+    ['kanban-japanese-quiz-progress-v1','{"score":"bad","total":3}']
+  ]) {
+    const before=JSON.stringify([...entries]), writes=replacements;
+    await ctx.handleImport({text:async()=>JSON.stringify({...backup,japanese:{[key]:value}})});
+    assert.equal(replacements,writes,'Invalid Japanese progress must stop BEFORE replacing boards');
+    assert.equal(JSON.stringify([...entries]),before,'Invalid progress must preserve all existing learning data');
+    assert.throws(()=>ctx.restoreJapaneseBackup({[key]:value}),/Некоррект/);
+  }
 
   const selected=ctx.selectJapaneseBackup({
     'kanban-japanese-review-v1':{bad:'object'},

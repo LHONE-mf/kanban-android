@@ -49,3 +49,12 @@ The APK workflow runs on every push. Full Android UI coverage is manual or
 triggered by editing its workflow; the focused recurrence/search flow runs
 when its Maestro file or workflow changes. Record exact workflow results in
 the execution handoff; a passing build does not establish device acceptance.
+
+## Japanese backup validation
+
+- Serialized learned-kana, review and quiz progress is validated during import
+  planning, before replacing boards or writing learning storage. Malformed
+  progress rejects the import and preserves existing records. Missing newer
+  quiz fields and legacy numeric-string counters remain supported.
+- Verified by failing-before-fix regression, real import-planning tests, all
+  fast suites, and real browser file import in both themes.

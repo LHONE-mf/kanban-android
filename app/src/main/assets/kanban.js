@@ -3004,7 +3004,34 @@ function selectJapaneseBackup(data) {
   const values = {};
   if (!data || typeof data !== 'object' || Array.isArray(data)) return values;
   for (const key of JAPANESE_BACKUP_KEYS) {
-    if (typeof data[key] === 'string' && data[key].length <= 100000) values[key] = data[key];
+    if (typeof data[key] !== 'string' || data[key].length > 100000) continue;
+    if (key !== 'kanban-japanese-script-v1' && key !== 'kanban-japanese-active-tab-v1') {
+      let parsed;
+      try { parsed = JSON.parse(data[key]); }
+      catch (_) { throw new Error('Некорректный прогресс японского в бэкапе'); }
+      const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+      let valid;
+      if (key === 'kanban-japanese-hiragana-v1') {
+        valid = Array.isArray(parsed) && parsed.every(value => typeof value === 'string');
+      } else if (key === 'kanban-japanese-review-v1') {
+        valid = object(parsed) && Object.values(parsed).every(value => object(value) &&
+          Number.isFinite(value.interval) && value.interval >= 0 &&
+          Number.isFinite(value.due) && value.due >= 0);
+      } else {
+        // Older quiz backups may omit newer fields or store numeric counters as strings.
+        valid = object(parsed) && ['score', 'total'].every(name => parsed[name] === undefined ||
+          (['number', 'string'].includes(typeof parsed[name]) &&
+           Number.isFinite(Number(parsed[name])) && Number(parsed[name]) >= 0)) &&
+          (parsed.recentQuestions === undefined || (Array.isArray(parsed.recentQuestions) &&
+            parsed.recentQuestions.every(value => typeof value === 'string'))) &&
+          (parsed.quizTurn === undefined || (Number.isSafeInteger(parsed.quizTurn) && parsed.quizTurn >= 0)) &&
+          (parsed.mistakeQueue === undefined || (Array.isArray(parsed.mistakeQueue) &&
+            parsed.mistakeQueue.every(value => object(value) && typeof value.kana === 'string' &&
+              Number.isSafeInteger(value.due) && value.due >= 0)));
+      }
+      if (!valid) throw new Error('Некорректный прогресс японского в бэкапе');
+    }
+    values[key] = data[key];
   }
   return values;
 }

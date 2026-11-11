@@ -40,6 +40,13 @@ vm.runInContext(core +
       type: 'text/plain', data: 'data:text/plain;base64,' + Buffer.from('Attachment ' + id).toString('base64')
     }]))
   };
+  await assert.rejects(ctx.buildImportPlan({...backup, japanese: {
+    'kanban-japanese-hiragana-v1': 'not JSON'
+  }}), /Некоррект/, 'Real import planning must reject malformed learning progress');
+  const legacyQuiz = await ctx.buildImportPlan({...backup, japanese: {
+    'kanban-japanese-quiz-progress-v1': '{"score":"2","total":"3"}'
+  }});
+  assert.equal(legacyQuiz.japanese['kanban-japanese-quiz-progress-v1'], '{"score":"2","total":"3"}');
   const plan = await ctx.buildImportPlan(JSON.parse(JSON.stringify(backup)));
   ctx.rebucket(plan.tasks, plan.boards, plan.activeBoardId);
   const state = ctx.getState();

@@ -11,7 +11,17 @@ is historical context, not a current test report.
   blocked during the write; successful unchanged drafts clear and failed saves
   retain their text. The regression fails before the fix and passes after it.
   Local verification: 27 Python tests, 30 Node suites, bundle check and syntax
-  check. Native build/startup results for this change are pending CI.
+  check. APK build passed at `802abe0`:
+  [build evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42991026964).
+  Android five-tab/startup, task create/open, search and restart smoke also passed:
+  [Android evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42991026969).
+- [x] Quick-add completion updates its original board's task list and names that
+  board in the confirmation even if the user switches boards during the write.
+  A regression exercises the real quick-add, board-switch, sanitization and
+  search functions with a deferred storage boundary: one result on the correct
+  board, unchanged navigation, and no board mutations when storage fails.
+  It fails before the fix. All 27 Python tests and 31 Node suites pass locally;
+  the new native build/startup checks are pending CI.
 - [x] Board deletion commits task removal and board settings in one IndexedDB
   transaction. Failed writes leave visible tasks, reminders and media intact.
   Successful deletion closes the old board settings.

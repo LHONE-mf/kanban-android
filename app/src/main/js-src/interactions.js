@@ -462,6 +462,9 @@ function parseQuick(input) {
 async function quickAddTask(text) {
   const p = parseQuick(text);
   if (!p.title) return false;
+  // Board navigation can finish before the task write does.
+  const sourceTasks = state.tasks;
+  const boardName = state.boardName;
   const col = state.columns[0];
   const task = sanitizeTask({
     id: generateId(), boardId: state.activeBoardId, columnId: col.id,
@@ -470,9 +473,9 @@ async function quickAddTask(text) {
   });
   try { await dbPutTask(task); }
   catch (e) { showToast('Не удалось добавить: ' + e.message); return false; }
-  state.tasks.push(task);
+  sourceTasks.push(task);
   notifyOtherTabs(); renderBoard();
-  showToast(`Добавлено в «${state.boardName}»`);
+  showToast(`Добавлено в «${boardName}»`);
   return true;
 }
 

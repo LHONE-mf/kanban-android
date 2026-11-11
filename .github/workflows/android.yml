@@ -63,6 +63,7 @@ jobs:
           node tests/test_recurring_tasks.cjs
           node tests/test_task_repeat_controls.cjs
           node tests/test_quick_add_pending.cjs
+          node tests/test_quick_add_board_switch.cjs
           node tests/test_global_search.cjs
           node tests/test_dashboard_all_boards.cjs
           node tests/test_tab_navigation.cjs

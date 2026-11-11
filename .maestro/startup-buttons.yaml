@@ -27,6 +27,49 @@ androidWebViewHierarchy: devtools
 - assertNotVisible:
     id: "textPromptInput"
 
+# All navigation tabs must execute their real view switches. A dead startup
+# handler can leave tabs visible while their content never becomes active.
+- tapOn:
+    id: "dashboardTab"
+- extendedWaitUntil:
+    visible: "Общий прогресс"
+    timeout: 15000
+- tapOn:
+    id: "mindmapTab"
+- extendedWaitUntil:
+    visible:
+      id: "mindmap"
+    timeout: 15000
+# Calendar is clipped on narrow screens, so scroll the tab strip horizontally
+# instead of trusting an offscreen WebView accessibility element.
+- scrollUntilVisible:
+    element:
+      id: "calendarTab"
+    direction: RIGHT
+    centerElement: true
+    visibilityPercentage: 100
+    timeout: 30000
+- tapOn:
+    id: "calendarTab"
+- extendedWaitUntil:
+    visible:
+      id: "calPrev"
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: "kanbanTab"
+    direction: LEFT
+    centerElement: true
+    visibilityPercentage: 100
+    timeout: 30000
+- tapOn:
+    id: "kanbanTab"
+- extendedWaitUntil:
+    visible:
+      id: "quickAdd"
+    timeout: 15000
+- takeScreenshot: ui-screenshots/startup-navigation-roundtrip
+
 # Create a task via the actual app UI, then open/close its editor.
 - tapOn:
     id: "quickAdd"

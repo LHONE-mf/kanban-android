@@ -1,0 +1,86 @@
+appId: com.kanban.offline
+androidWebViewHierarchy: devtools
+---
+# Disposable emulator only. Prove that the *real buttons* perform actions.
+# A successful APK build or visible WebView alone cannot detect dead controls.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "quickAdd"
+    timeout: 30000
+- assertVisible:
+    id: "addBoardBtn"
+- assertVisible:
+    id: "globalSearchTab"
+- takeScreenshot: ui-screenshots/startup-initial
+
+# Board creation button must open a usable dialog (cancel without changing data).
+- tapOn:
+    id: "addBoardBtn"
+- extendedWaitUntil:
+    visible:
+      id: "textPromptInput"
+    timeout: 15000
+- tapOn:
+    id: "textPromptCancel"
+- assertNotVisible:
+    id: "textPromptInput"
+
+# Create a task via the actual app UI, then open/close its editor.
+- tapOn:
+    id: "quickAdd"
+- inputText: "CI startup button smoke"
+- tapOn:
+    id: "quickAddSubmit"
+- scrollUntilVisible:
+    element:
+      id: "CI startup button smoke"
+    direction: DOWN
+    timeout: 30000
+- tapOn:
+    id: "CI startup button smoke"
+- extendedWaitUntil:
+    visible: "Редактирование задачи"
+    timeout: 15000
+- hideKeyboard
+- pressKey: Back
+- assertNotVisible: "Редактирование задачи"
+- takeScreenshot: ui-screenshots/startup-task-created
+
+# Search button must open a working view and find the stored task.
+- tapOn:
+    id: "globalSearchTab"
+- extendedWaitUntil:
+    visible:
+      id: "globalSearchInput"
+    timeout: 15000
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "startup button smoke"
+- hideKeyboard
+- assertVisible: "Найдено задач: 1"
+- assertVisible:
+    id: '^Открыть: CI startup button smoke, доска Моя доска$'
+- takeScreenshot: ui-screenshots/startup-search-works
+
+# A restart must reattach handlers and preserve the task in IndexedDB.
+- stopApp
+- launchApp:
+    clearState: false
+- extendedWaitUntil:
+    visible:
+      id: "globalSearchTab"
+    timeout: 30000
+- tapOn:
+    id: "globalSearchTab"
+- extendedWaitUntil:
+    visible:
+      id: "globalSearchInput"
+    timeout: 15000
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "startup button smoke"
+- hideKeyboard
+- assertVisible: "Найдено задач: 1"
+- takeScreenshot: ui-screenshots/startup-after-restart

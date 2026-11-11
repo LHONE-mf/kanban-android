@@ -4346,11 +4346,14 @@ async function init() {
   initPomo();
   const quickAddInput = $('#quickAdd');
   const quickAddButton = $('#quickAddSubmit');
+  let quickAddRevision = 0;
+  quickAddInput.addEventListener('input', () => { quickAddRevision++; });
   async function submitQuickAdd() {
     if (!quickAddInput.value.trim() || quickAddButton.disabled) return;
     quickAddButton.disabled = true;
+    const revision = quickAddRevision;
     try {
-      if (await quickAddTask(quickAddInput.value)) quickAddInput.value = '';
+      if (await quickAddTask(quickAddInput.value) && revision === quickAddRevision) quickAddInput.value = '';
     } finally {
       quickAddButton.disabled = false;
     }

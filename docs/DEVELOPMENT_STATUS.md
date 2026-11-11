@@ -6,6 +6,12 @@ is historical context, not a current test report.
 
 ## Reliability
 
+- [x] Quick-add preserves a new draft typed while the preceding task save is
+  pending, including a second task with the same title. Repeated submit remains
+  blocked during the write; successful unchanged drafts clear and failed saves
+  retain their text. The regression fails before the fix and passes after it.
+  Local verification: 27 Python tests, 30 Node suites, bundle check and syntax
+  check. Native build/startup results for this change are pending CI.
 - [x] Board deletion commits task removal and board settings in one IndexedDB
   transaction. Failed writes leave visible tasks, reminders and media intact.
   Successful deletion closes the old board settings.
@@ -35,6 +41,10 @@ is historical context, not a current test report.
 
 ## M4 search
 
+- [x] Dashboard totals summarize every board without switching the active board;
+  executable regression and APK/startup smoke passed at `74fda7f`:
+  [APK](https://github.com/LHONE-mf/kanban-android/actions/runs/42987300667),
+  [Android startup](https://github.com/LHONE-mf/kanban-android/actions/runs/42987300479).
 - [x] Existing executable regression covers cross-board/nested search, Unicode,
   combined filters, My Day, reset, pagination, renamed boards, removed tags,
   safe result text, and exact task navigation.

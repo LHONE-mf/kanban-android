@@ -72,8 +72,9 @@ androidWebViewHierarchy: devtools
     element:
       id: "globalSearchBoardFilter"
     direction: UP
+    speed: 100
     centerElement: true
-    timeout: 90000
+    timeout: 180000
 - tapOn:
     id: "globalSearchBoardFilter"
 - tapOn: "CI Search B"

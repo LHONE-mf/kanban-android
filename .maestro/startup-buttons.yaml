@@ -60,8 +60,12 @@ androidWebViewHierarchy: devtools
     duration: 450
 - assertVisible:
     id: "kanbanTab"
+- takeScreenshot: ui-screenshots/nav-before-kanban-return
+# WebView's accessibility tap coordinates can lag behind a horizontal swipe.
+# Use the visually verified first-tab position on our fixed Pixel 6 emulator.
+# The quickAdd assertion below proves that this tap really switched views.
 - tapOn:
-    id: "kanbanTab"
+    point: "12%, 14%"
 - extendedWaitUntil:
     visible:
       id: "quickAdd"

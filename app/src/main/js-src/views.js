@@ -861,7 +861,33 @@ function renderCalendar() {
 // ============================================================
 // DASHBOARD
 // ============================================================
+// Count top-level tasks using each board's own completed columns.
+function summarizeAllBoards(boards, tasksByBoard) {
+  const totals = { total: 0, active: 0, done: 0, overdue: 0 };
+  for (const board of boards) {
+    const doneColumns = new Set(board.columns.filter(col => col.isDone).map(col => col.id));
+    for (const task of tasksByBoard[board.id] || []) {
+      if (task.parentId) continue;
+      totals.total++;
+      if (doneColumns.has(task.columnId)) totals.done++;
+      else {
+        totals.active++;
+        if (task.deadline && dayDiff(task.deadline) < 0) totals.overdue++;
+      }
+    }
+  }
+  return totals;
+}
+
 function renderDashboard() {
+  const across = summarizeAllBoards(state.boards, state._tasksByBoard);
+  $('#allBoardsCaption').textContent =
+    'Досок: ' + state.boards.length + ' · Без учёта вложенных задач';
+  $('#allBoardsKpiGrid').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Всего задач</div><div class="kpi-value">${across.total}</div><div class="kpi-sub">на всех досках</div></div>
+    <div class="kpi-card"><div class="kpi-label">Не завершено</div><div class="kpi-value">${across.active}</div><div class="kpi-sub">к выполнению</div></div>
+    <div class="kpi-card"><div class="kpi-label">Завершено</div><div class="kpi-value">${across.done}</div><div class="kpi-sub">${across.total ? Math.round(across.done / across.total * 100) : 0}% от всех</div></div>
+    <div class="kpi-card"><div class="kpi-label">Просрочено</div><div class="kpi-value${across.overdue ? ' danger' : ''}">${across.overdue}</div><div class="kpi-sub">на всех досках</div></div>`;
   const total = cardsOnly().length;
   const doneCols = new Set(state.columns.filter(c => c.isDone).map(c => c.id));
   const progressCols = new Set(state.columns.filter(c => !c.isDone && c.id !== state.columns[0]?.id).map(c => c.id));

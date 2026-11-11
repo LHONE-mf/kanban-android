@@ -47,6 +47,7 @@ jobs:
         run: |
           python3 tools/build_kanban_js.py --check
           node tests/test_global_search.cjs
+          node tests/test_dashboard_all_boards.cjs
           node tests/test_tab_navigation.cjs
           node --check app/src/main/assets/kanban.js
           bash -n .github/scripts/run-startup-buttons-ui.sh

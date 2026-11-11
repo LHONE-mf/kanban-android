@@ -861,6 +861,11 @@ function searchAllBoards(query, limit = 100, filters = {}) {
           if (deadlineFilter === 'week' && (days < 0 || days > 6)) continue;
         }
       }
+      // Filter-only searches (including My Day) do not need task text.
+      if (!words.length) {
+        items.push({ board, task, score: 0 });
+        continue;
+      }
       const title = String(task.title || '').normalize('NFKC').toLocaleLowerCase();
       const boardName = String(board.name || '').normalize('NFKC').toLocaleLowerCase();
       const description = String(task.desc || '').normalize('NFKC').toLocaleLowerCase();

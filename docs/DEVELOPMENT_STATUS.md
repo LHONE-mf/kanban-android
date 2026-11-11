@@ -21,7 +21,9 @@ is historical context, not a current test report.
   search functions with a deferred storage boundary: one result on the correct
   board, unchanged navigation, and no board mutations when storage fails.
   It fails before the fix. All 27 Python tests and 31 Node suites pass locally;
-  the new native build/startup checks are pending CI.
+  APK build passed at `aa0597f`:
+  [build evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42991664282).
+  Android startup smoke is pending completion.
 - [x] Board deletion commits task removal and board settings in one IndexedDB
   transaction. Failed writes leave visible tasks, reminders and media intact.
   Successful deletion closes the old board settings.
@@ -108,3 +110,19 @@ the execution handoff; a passing build does not establish device acceptance.
   case and whitespace normalization remain supported; deadline ordering stays
   primary when a deadline filter is active. Failing-before-fix regression
   covers the previous recency tie and full-width query text.
+
+## Large-collection filtering
+
+- Filter-only search and My Day skip normalization of descriptions, titles and
+  checklists when there are no search words. Filters, deadline/recent ordering,
+  nested tasks, exact counts and pagination retain their existing behavior.
+- A deterministic regression covers 10,000 tasks across ten boards, combined
+  filters, Unicode tags, My Day, stable page expansion and full-text matching.
+  It fails before the change because filter-only search normalizes over 28
+  million unrelated text characters; it passes after the change.
+- Local Node comparison (20 measured iterations after three warm-ups): median
+  filter-only search 81.87 ms before / 0.73 ms after, using 10,000 tasks with
+  3,750-character descriptions. Text-query medians were 83.77 / 86.28 ms.
+  These measure the search function on the development host, not Android UI
+  response time. All 27 Python tests and 32 Node suites pass; generated bundle
+  and JavaScript syntax checks pass. Native CI for this change is pending.

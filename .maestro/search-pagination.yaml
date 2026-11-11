@@ -31,6 +31,39 @@ androidWebViewHierarchy: devtools
 - inputText: "CI pagination"
 - hideKeyboard
 - assertVisible: "Найдено задач: 215 · показаны первые 100"
+# Check filters at the top before traversing the long result list.
+- tapOn:
+    id: "globalSearchTab"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchBoardFilter"
+    direction: UP
+    centerElement: true
+    timeout: 30000
+- tapOn:
+    id: "globalSearchBoardFilter"
+- tapOn: "CI Search B"
+- tapOn:
+    id: "globalSearchPriorityFilter"
+- tapOn: "Высокий"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchSummary"
+    direction: DOWN
+    timeout: 30000
+- assertVisible: "Найдено задач: 58"
+- scrollUntilVisible:
+    element:
+      id: "globalSearchClearBtn"
+    direction: UP
+    timeout: 30000
+- tapOn:
+    id: "globalSearchClearBtn"
+- tapOn:
+    id: "globalSearchInput"
+- inputText: "CI pagination"
+- hideKeyboard
+- assertVisible: "Найдено задач: 215 · показаны первые 100"
 - scrollUntilVisible:
     element:
       id: "globalSearchMoreBtn"
@@ -66,39 +99,6 @@ androidWebViewHierarchy: devtools
 - assertVisible: ".*CI pagination 100.*"
 - pressKey: Back
 - assertNotVisible: "Редактирование задачи"
-- tapOn:
-    id: "globalSearchTab"
-- scrollUntilVisible:
-    element:
-      id: "globalSearchBoardFilter"
-    direction: UP
-    speed: 100
-    centerElement: true
-    timeout: 180000
-- tapOn:
-    id: "globalSearchBoardFilter"
-- tapOn: "CI Search B"
-- tapOn:
-    id: "globalSearchPriorityFilter"
-- tapOn: "Высокий"
-- scrollUntilVisible:
-    element:
-      id: "globalSearchSummary"
-    direction: DOWN
-    timeout: 30000
-- assertVisible: "Найдено задач: 58"
-- scrollUntilVisible:
-    element:
-      id: "globalSearchClearBtn"
-    direction: UP
-    timeout: 30000
-- tapOn:
-    id: "globalSearchClearBtn"
-- tapOn:
-    id: "globalSearchInput"
-- inputText: "CI pagination"
-- hideKeyboard
-- assertVisible: "Найдено задач: 215 · показаны первые 100"
 - stopApp
 - launchApp:
     clearState: false

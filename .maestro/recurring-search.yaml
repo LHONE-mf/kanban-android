@@ -208,21 +208,18 @@ androidWebViewHierarchy: devtools
     visible: "Редактирование задачи"
     timeout: 30000
 - hideKeyboard
-# Tap the actual move button by its stable DOM id. A text-only selector
-# long-pressed the label and opened Android's Copy/Share selection menu instead
-# of triggering the move. Keep the destination verification below to catch that.
+# Maestro's Android WebView hierarchy exposes this button by accessible
+# text, not by HTML id. Suppress WebView text-selection on the button in CSS
+# so a delayed tap cannot open the Copy/Share callout instead of moving.
 - scrollUntilVisible:
-    element:
-      id: "moveTaskBoardBtn"
+    element: "Переместить"
     direction: UP
     centerElement: true
-    visibilityPercentage: 100
     timeout: 30000
 - takeScreenshot: ui-screenshots/task-move-button-in-view
-# Only one destination is available here: Новая доска. This deliberately
-# avoids an unrelated native-select interaction while exercising the move.
-- tapOn:
-    id: "moveTaskBoardBtn"
+# Only one destination is available here: Новая доска. Keep the board
+# search/restart checks below as end-to-end confirmation of the move.
+- tapOn: "Переместить"
 - assertVisible: "Редактирование задачи"
 - takeScreenshot: ui-screenshots/moved-task-editor
 - hideKeyboard

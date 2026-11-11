@@ -145,7 +145,13 @@ button { font-family: inherit; }
 @media (max-width: 340px) { .global-search-filters { grid-template-columns: 1fr; } }
 .task-move-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .task-move-controls .select { flex: 1 1 175px; min-height: 44px; min-width: 0; }
-.task-move-controls .btn { min-height: 44px; }
+.task-move-controls .btn {
+  min-height: 44px;
+  /* Android WebView can select button text instead of activating a long tap. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 .global-search-summary { margin: 12px 0; }
 .global-search-results { display: grid; gap: 8px; }
 .global-search-return { position: sticky; top: 0; z-index: 2; display: block; min-height: 44px; margin: 0 0 8px auto; }

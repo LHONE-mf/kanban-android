@@ -5,6 +5,7 @@ const vm=require('node:vm');
 const tasks=fs.readFileSync('app/src/main/js-src/tasks.js','utf8');
 const html=fs.readFileSync('app/src/main/assets/kanban.html','utf8');
 const interactions=fs.readFileSync('app/src/main/js-src/interactions.js','utf8');
+const css=fs.readFileSync('app/src/main/assets/kanban.css','utf8');
 const start=tasks.indexOf('// CROSS-BOARD TASK MOVE');
 const end=tasks.indexOf('// ============================================================\n// TASK MODAL',start);
 assert(start>=0 && end>start,'Cross-board move logic must be available in tasks.js');
@@ -12,6 +13,9 @@ for(const id of ['taskMoveField','taskMoveBoard','moveTaskBoardBtn'])
   assert(html.includes('id="'+id+'"'),'Task editor must expose '+id);
 assert(interactions.includes("$('#moveTaskBoardBtn').onclick"),'Move button must be wired');
 assert(interactions.includes('isModalDirty()'),'Unsaved editor changes must be guarded');
+const moveButtonStyle=css.match(/\.task-move-controls \.btn\s*\{([^}]*)\}/)?.[1] || '';
+assert.match(moveButtonStyle,/\buser-select:\s*none\s*;/,'Move button text must not be selectable on long presses');
+assert.match(moveButtonStyle,/-webkit-touch-callout:\s*none\s*;/,'Android move button must not trigger the text callout');
 
 function fixture() {
   const file={id:'photo1',name:'inspection.jpg',type:'image/jpeg',size:1024};

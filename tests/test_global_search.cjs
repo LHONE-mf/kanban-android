@@ -69,7 +69,8 @@ const keyboardPanels = Object.fromEntries(
 );
 const keyboardCtx = {
   VALID_VIEWS: testViews, currentView: 'kanban',
-  $: () => keyboardTabs, $: selector => keyboardPanels[selector],
+  [String.fromCharCode(36, 36)]: () => keyboardTabs,
+  $: selector => keyboardPanels[selector],
   renderDashboard() {}, renderMindmap() {}, renderCalendar() {}, renderGlobalSearch() {}, saveUIState() {}
 };
 vm.createContext(keyboardCtx);

@@ -1774,6 +1774,25 @@ function renderHeatmap() {
 // ============================================================
 // VIEW SWITCH
 // ============================================================
+// Keyboard navigation is delegated to the tab bar, leaving touch clicks intact.
+function handleViewTabsKeydown(event) {
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  const tab = event.target.closest('.view-tab');
+  if (!tab) return;
+  const tabs = $$('.view-tab');
+  const index = tabs.indexOf(tab);
+  if (index < 0) return;
+  let next;
+  if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+  else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = tabs.length - 1;
+  else return;
+  event.preventDefault();
+  switchView(tabs[next].dataset.view);
+  tabs[next].focus();
+}
+
 function switchView(view) {
   if (!VALID_VIEWS.includes(view)) view = 'kanban';
   currentView = view;
@@ -1781,6 +1800,7 @@ function switchView(view) {
     const active = tab.dataset.view === view;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
   });
   $('#kanbanToolbar').style.display = view === 'kanban' ? '' : 'none';
   $('#board').hidden = view !== 'kanban';
@@ -3642,6 +3662,7 @@ function bindEvents() {
   };
 
   $$('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
+  $('.view-tabs').addEventListener('keydown', handleViewTabsKeydown);
 
   $('#globalSearchInput').addEventListener('input', renderGlobalSearch);
   $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);

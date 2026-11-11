@@ -196,6 +196,7 @@ function bindEvents() {
   };
 
   $$('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
+  $('.view-tabs').addEventListener('keydown', handleViewTabsKeydown);
 
   $('#globalSearchInput').addEventListener('input', renderGlobalSearch);
   $('#globalSearchBoardFilter').addEventListener('change', renderGlobalSearch);

@@ -133,14 +133,22 @@ androidWebViewHierarchy: devtools
 - tapOn: "Все доски"
 - assertVisible: "Найдено задач: 2"
 - takeScreenshot: ui-screenshots/search-filter-reset
+# The native Japanese dock covers the screen bottom; first scroll the
+# matching task into the unobstructed portion of the WebView before tapping.
+- scroll
 - scrollUntilVisible:
     element:
       id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска'
     direction: DOWN
+    centerElement: true
+    visibilityPercentage: 100
     timeout: 30000
+- takeScreenshot: ui-screenshots/search-result-tappable
 - tapOn:
     id: '^Открыть: CI weekly recurring task \(повтор\), доска Моя доска'
-- assertVisible: "Редактирование задачи"
+- extendedWaitUntil:
+    visible: "Редактирование задачи"
+    timeout: 30000
 - takeScreenshot: ui-screenshots/recurring-global-search-navigation
 
 # Task editor focuses its title; dismiss IME before Android Back.

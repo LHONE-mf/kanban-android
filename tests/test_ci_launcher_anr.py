@@ -37,6 +37,14 @@ class QuickstepAnrTests(unittest.TestCase):
         </hierarchy>"""
         self.assertIsNone(close_button_center(hierarchy))
 
+    def test_startup_smoke_gates_retry_on_verified_launcher_anr(self):
+        script = (Path(__file__).resolve().parents[1] /
+                  ".github/scripts/run-startup-buttons-ui.sh").read_text()
+        self.assertIn('if ! coords="$(python3 tools/ci_launcher_anr.py', script)
+        self.assertIn('ui-screenshots/startup-buttons-retry', script)
+        self.assertLess(script.index('tools/ci_launcher_anr.py'),
+                        script.index('ui-screenshots/startup-buttons-retry'))
+
 
 if __name__ == "__main__":
     unittest.main()

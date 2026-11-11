@@ -14,6 +14,10 @@ for(const id of ['globalSearch','globalSearchInput','globalMyDayBtn','globalSear
   assert(html.includes('id="'+id+'"'),'Missing cross-board UI element: '+id);
 assert(html.includes('data-view="search"'),'Search tab must be accessible from mobile navigation');
 assert(html.includes('id="globalSearchTab"'),'Search tab must have stable navigation identity for Android UI tests');
+const navigation = html.slice(html.indexOf('<nav class="view-tabs"'), html.indexOf('</nav>', html.indexOf('<nav class="view-tabs"')));
+assert(navigation.indexOf('data-view="search"') > navigation.indexOf('data-view="kanban"') &&
+  navigation.indexOf('data-view="search"') < navigation.indexOf('data-view="dashboard"'),
+  'Place cross-board search beside Kanban so it is reachable without horizontal scrolling on phones');
 assert(views.includes("$('#globalSearch').hidden = view !== 'search'"),'Search view must be correctly toggled');
 assert(interactions.includes("$('#globalSearchInput').addEventListener('input'"),'Search input must be live');
 assert(interactions.includes("$('#globalSearchBoardFilter').addEventListener('change'"),'Board filter must refresh live');

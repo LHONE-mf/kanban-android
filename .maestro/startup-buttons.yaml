@@ -42,26 +42,24 @@ androidWebViewHierarchy: devtools
     timeout: 15000
 # Calendar is clipped on narrow screens, so scroll the tab strip horizontally
 # instead of trusting an offscreen WebView accessibility element.
-- scrollUntilVisible:
-    element:
-      id: "calendarTab"
-    direction: RIGHT
-    centerElement: true
-    visibilityPercentage: 100
-    timeout: 30000
+- swipe:
+    start: 85%, 14%
+    end: 15%, 14%
+    duration: 450
+- assertVisible:
+    id: "calendarTab"
 - tapOn:
     id: "calendarTab"
 - extendedWaitUntil:
     visible:
       id: "calPrev"
     timeout: 15000
-- scrollUntilVisible:
-    element:
-      id: "kanbanTab"
-    direction: LEFT
-    centerElement: true
-    visibilityPercentage: 100
-    timeout: 30000
+- swipe:
+    start: 15%, 14%
+    end: 85%, 14%
+    duration: 450
+- assertVisible:
+    id: "kanbanTab"
 - tapOn:
     id: "kanbanTab"
 - extendedWaitUntil:

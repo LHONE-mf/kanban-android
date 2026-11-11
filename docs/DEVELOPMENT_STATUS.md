@@ -34,7 +34,8 @@ is historical context, not a current test report.
   All 27 Python tests and 33 Node suites pass locally;
   APK build passed at `89f9a0d`:
   [build evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42993587221).
-  Android startup smoke is pending completion.
+  Android startup smoke also passed:
+  [Android evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42993587183).
 - [x] Board deletion commits task removal and board settings in one IndexedDB
   transaction. Failed writes leave visible tasks, reminders and media intact.
   Successful deletion closes the old board settings.
@@ -86,11 +87,13 @@ is historical context, not a current test report.
   `aria-selected`; regression guards the multi-tab selector that once disabled
   Android buttons. APK and startup smoke passed at `8ca21c4`.
 - [ ] TalkBack and physical-device acceptance (not established by emulator).
-- [ ] Expanded Android startup smoke: reach Settings through the mobile menu,
+- [x] Expanded Android startup smoke: reach Settings through the mobile menu,
   edit and cancel a board name, reopen Settings, and close it using Android Back.
   The later exact search-result label verifies that cancellation did not rename
-  the board. YAML parsing and runner shell syntax pass; Android execution is
-  pending CI. Existing five-tab/task/search/restart assertions remain in place.
+  the board. Passed at `6f73962`:
+  [Android evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42994233882),
+  [APK evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42994233931).
+  Existing five-tab/task/search/restart assertions remain in place.
 
 The APK workflow runs on every push. Full Android UI coverage is manual or
 triggered by editing its workflow; the focused recurrence/search flow runs
@@ -145,3 +148,15 @@ the execution handoff; a passing build does not establish device acceptance.
   [build evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42992530728).
   Android startup smoke also passed:
   [Android evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42992530719).
+
+## Next priorities
+
+- [ ] Exercise a board/notification navigation change while the task editor is
+  saving multiple attachments. Verify that the real save path retains the
+  original board and all media, and that a finishing save cannot close a newer
+  editor. Investigate with a failing regression before changing behavior.
+- [ ] Complete physical OnePlus/TalkBack and broader upgrade acceptance from
+  `TESTING_ANDROID.md`. Emulator results do not establish those checks.
+
+M4 remains in progress. M5 productivity work stays deferred while these
+navigation and data-safety checks remain open.

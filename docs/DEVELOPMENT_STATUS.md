@@ -44,7 +44,15 @@ is historical context, not a current test report.
   pagination, focus/scroll, combined filters, Cyrillic/Japanese queries,
   reset, and exact nested-task navigation.
 - [x] Android 215-task pagination, combined board/priority filters, reset, exact nested-task opening and restart passed at `683b958`: [emulator evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42956499586).
-- [ ] TalkBack and physical-device acceptance.
+- [x] Android startup smoke exercises all five tabs, including horizontal
+  navigation on a narrow emulator; creates a task, searches across boards,
+  restarts and verifies persistence. Passed at `2a256d9`:
+  [Android navigation evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42985957999).
+  [APK evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42985957991).
+- [x] Keyboard Left/Right/Home/End navigation updates active tab, focus and
+  `aria-selected`; regression guards the multi-tab selector that once disabled
+  Android buttons. APK and startup smoke passed at `8ca21c4`.
+- [ ] TalkBack and physical-device acceptance (not established by emulator).
 
 The APK workflow runs on every push. Full Android UI coverage is manual or
 triggered by editing its workflow; the focused recurrence/search flow runs

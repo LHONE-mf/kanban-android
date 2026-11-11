@@ -1,8 +1,11 @@
 # Android smoke-test checklist
 
-Build/install the APK from the latest main branch. If you already have app data,
-**do not uninstall the existing app** just to update it: uninstalling may erase
-locally stored boards and attachments. Make an export backup first.
+For development testing, use a **successful APK workflow on the `ui-testing`
+branch** (not an unverified commit). For release acceptance, use the approved
+release build. If you already have app data, **do not uninstall the existing
+app** just to update it: uninstalling may erase locally stored boards and
+attachments. Make an export backup first. If Android reports a signing
+conflict, do not uninstall to work around it; report the error instead.
 
 ## 1. Launch and offline behavior
 - [ ] Launch with internet enabled; app opens without a blank screen.
@@ -43,6 +46,19 @@ locally stored boards and attachments. Make an export backup first.
 - [ ] Switch scripts during a quiz; question changes to the chosen script.
 - [ ] Test writing canvas and dark theme.
 - [ ] Navigate away and back; progress remains saved.
+
+## 6. Search and navigation accessibility (physical Android device)
+- [ ] With TalkBack enabled, swipe through all five navigation tabs. Each
+      should announce its name, tab role and selected state.
+- [ ] Double-tap Search, enter a task title and traverse results. Each result
+      should announce the task and board; open one from another board.
+- [ ] Edit a task and use Android Back. The editor should close without
+      losing edits or leaving TalkBack focus behind a closed dialog.
+- [ ] Increase Android font/display size and verify tab scrolling, Search,
+      filters and editor controls remain reachable.
+- [ ] With a hardware keyboard, Left/Right and Home/End navigate tabs and
+      Enter/Space still activate controls; touch must remain functional.
+- [ ] Turn TalkBack off; verify quick-add, Search and task editing again.
 
 ## Reporting bugs
 Include: device model, Android version, light/dark theme, screen name,

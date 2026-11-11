@@ -18,6 +18,25 @@ const navigation = html.slice(html.indexOf('<nav class="view-tabs"'), html.index
 assert(navigation.indexOf('data-view="search"') > navigation.indexOf('data-view="kanban"') &&
   navigation.indexOf('data-view="search"') < navigation.indexOf('data-view="dashboard"'),
   'Place cross-board search beside Kanban so it is reachable without horizontal scrolling on phones');
+
+assert(navigation.includes('aria-label="Разделы приложения"'), 'Navigation tabs need a screen reader group label');
+// Protect explicit relationships, without changing the working click handlers.
+for (const [tabId, panelId] of [
+  ['kanbanTab', 'board'],
+  ['globalSearchTab', 'globalSearch'],
+  ['dashboardTab', 'dashboard'],
+  ['mindmapTab', 'mindmap'],
+  ['calendarTab', 'calendar']
+]) {
+  const tab = navigation.split('\n').find(line => line.includes('id="' + tabId + '"'));
+  const panel = html.split('\n').find(line =>
+    (line.includes('<div ') || line.includes('<section ')) && line.includes('id="' + panelId + '"'));
+  assert(tab && tab.includes('role="tab"') && tab.includes('aria-controls="' + panelId + '"'),
+    'Tab must identify its panel: ' + tabId);
+  assert(panel && panel.includes('role="tabpanel"') && panel.includes('aria-labelledby="' + tabId + '"'),
+    'Panel must identify its tab: ' + panelId);
+}
+
 assert(views.includes("$('#globalSearch').hidden = view !== 'search'"),'Search view must be correctly toggled');
 assert(interactions.includes("$('#globalSearchInput').addEventListener('input'"),'Search input must be live');
 assert(interactions.includes("$('#globalSearchBoardFilter').addEventListener('change'"),'Board filter must refresh live');

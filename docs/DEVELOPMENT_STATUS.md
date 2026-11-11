@@ -43,7 +43,8 @@ is historical context, not a current test report.
   tasks across two boards at 320/768/1024/1440px in light and dark themes:
   pagination, focus/scroll, combined filters, Cyrillic/Japanese queries,
   reset, and exact nested-task navigation.
-- [ ] Android pagination acceptance with a large dataset and TalkBack enabled.
+- [x] Android 215-task pagination, combined board/priority filters, reset, exact nested-task opening and restart passed at `683b958`: [emulator evidence](https://github.com/LHONE-mf/kanban-android/actions/runs/42956499586).
+- [ ] TalkBack and physical-device acceptance.
 
 The APK workflow runs on every push. Full Android UI coverage is manual or
 triggered by editing its workflow; the focused recurrence/search flow runs
@@ -65,3 +66,10 @@ the execution handoff; a passing build does not establish device acceptance.
   three pages, exact nested-task opening, board/priority filters, reset and restart.
   The focused recurrence/search workflow executes both flows; native evidence
   is required before marking the Android pagination acceptance complete.
+
+## Long-list navigation
+
+- A pinned return control brings search and filters back into reach without
+  clearing the query, changing filters, or discarding loaded pages. Browser
+  checks cover 215 tasks in both themes at 320/768/1024/1440px; the Android
+  pagination flow also exercises return from page three and narrowing the query.

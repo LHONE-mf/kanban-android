@@ -49,7 +49,7 @@ function fakeNode(name='div'){
   setAttribute(k,v){this[k]=v}};
  nodes.push(n);return n;
 }
-const els=Object.fromEntries(['#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchDeadlineFilter','#globalSearchPriorityFilter','#globalSearchTagFilter','#globalSearchClearBtn','#globalSearchMoreBtn','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
+const els=Object.fromEntries(['#globalSearch','#globalSearchReturnBtn','#globalSearchInput','#globalSearchBoardFilter','#globalSearchStatusFilter','#globalSearchDeadlineFilter','#globalSearchPriorityFilter','#globalSearchTagFilter','#globalSearchClearBtn','#globalSearchMoreBtn','#globalSearchResults','#globalSearchSummary','#globalSearchEmpty']
  .map(key=>[key,fakeNode(key)]));
 const nav=[],toasts=[];
 let failSwitch=false;
@@ -63,6 +63,7 @@ vm.runInContext(views.slice(start,end),ctx);
 const find=(q,limit=100,filters={})=>ctx.searchAllBoards(q,limit,filters);
 
 ctx.renderGlobalSearch();
+assert.equal(els['#globalSearchReturnBtn'].hidden,true,'No return control without results');
 assert.equal(els['#globalSearchMoreBtn'].hidden,true,'No load-more button before a search');
 assert.equal(els['#globalSearchClearBtn'].disabled,true,'Clear search is disabled when there are no filters');
 assert.equal(els['#globalSearchSummary'].textContent,'Поиск по всем доскам, включая вложенные задачи',
@@ -261,6 +262,13 @@ assert.equal(els['#globalSearchResults'].children.length,200,'Second page reveal
 assert.equal(els['#globalSearchSummary'].textContent,'Найдено задач: 215 · показаны первые 200');
 assert.equal(focusedNode,els['#globalSearchResults'].children[100],
   'Load more puts keyboard focus on the first newly revealed task');
+els['#globalSearch'].scrollTop=8000;
+const expandedRows=els['#globalSearchResults'].children;
+ctx.returnToGlobalSearchFilters();
+assert.equal(els['#globalSearch'].scrollTop,0,'Return to filters must reset the actual search scroller');
+assert.equal(focusedNode,els['#globalSearchInput'],'Return must focus the existing query for keyboard navigation');
+assert.equal(els['#globalSearchInput'].value,'Batch task','Return must preserve query');
+assert.equal(els['#globalSearchResults'].children,expandedRows,'Return must not discard expanded results');
 ctx.renderGlobalSearch();
 assert.equal(els['#globalSearchResults'].children.length,200,
   'Re-render without changing query keeps the expanded result count');

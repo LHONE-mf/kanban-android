@@ -142,6 +142,11 @@ function clearGlobalSearch() {
   renderGlobalSearch();
 }
 
+function returnToGlobalSearchFilters() {
+  $('#globalSearch').scrollTop = 0;
+  $('#globalSearchInput').focus({ preventScroll: true });
+}
+
 function showGlobalMyDay() {
   resetGlobalSearchFilters();
   $('#globalSearchStatusFilter').value = 'active';
@@ -182,6 +187,7 @@ function renderGlobalSearch() {
     globalSearchVisibleLimit = GLOBAL_SEARCH_PAGE_SIZE;
   }
   const match = searchAllBoards(input.value, globalSearchVisibleLimit, filters);
+  $('#globalSearchReturnBtn').hidden = !match || !match.total;
   more.hidden = !match || match.total <= match.items.length;
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;

@@ -86,11 +86,17 @@ androidWebViewHierarchy: devtools
 - assertVisible:
     id: '^Открыть: CI pagination 200, доска CI Search B$'
 - takeScreenshot: ui-screenshots/pagination-page-3
-- scrollUntilVisible:
-    element:
-      id: '^Открыть: CI pagination 214, доска CI Search B$'
-    direction: DOWN
-    timeout: 30000
+# The pinned action must be reachable from page three without scrolling up.
+- tapOn:
+    id: "globalSearchReturnBtn"
+- hideKeyboard
+- assertVisible: "Найдено задач: 215"
+- tapOn:
+    id: "globalSearchInput"
+- eraseText
+- inputText: "CI pagination 214"
+- hideKeyboard
+- assertVisible: "Найдено задач: 1"
 - tapOn:
     id: '^Открыть: CI pagination 214, доска CI Search B$'
 - assertVisible: "Редактирование задачи"

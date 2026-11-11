@@ -961,6 +961,11 @@ function clearGlobalSearch() {
   renderGlobalSearch();
 }
 
+function returnToGlobalSearchFilters() {
+  $('#globalSearch').scrollTop = 0;
+  $('#globalSearchInput').focus({ preventScroll: true });
+}
+
 function showGlobalMyDay() {
   resetGlobalSearchFilters();
   $('#globalSearchStatusFilter').value = 'active';
@@ -1001,6 +1006,7 @@ function renderGlobalSearch() {
     globalSearchVisibleLimit = GLOBAL_SEARCH_PAGE_SIZE;
   }
   const match = searchAllBoards(input.value, globalSearchVisibleLimit, filters);
+  $('#globalSearchReturnBtn').hidden = !match || !match.total;
   more.hidden = !match || match.total <= match.items.length;
   results.replaceChildren();
   empty.hidden = !!match && match.total !== 0;
@@ -3645,6 +3651,7 @@ function bindEvents() {
   $('#globalMyDayBtn').addEventListener('click', showGlobalMyDay);
   $('#globalSearchClearBtn').addEventListener('click', clearGlobalSearch);
   $('#globalSearchMoreBtn').addEventListener('click', loadMoreGlobalSearchResults);
+  $('#globalSearchReturnBtn').addEventListener('click', returnToGlobalSearchFilters);
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);

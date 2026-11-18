@@ -91,7 +91,7 @@ function fixture() {
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.writes.length, 1, 'Create only one task');
   assert.equal(f.writes[0].boardId, 'a', 'Task belongs to its source board');
-  assert.deepEqual(f.writes[0].files.map(x => x.id), ['media-1','media-2']);
+  assert.deepEqual(Array.from(f.writes[0].files, x => x.id), ['media-1','media-2']);
   assert.equal(f.state._tasksByBoard.a.length, 1, 'Task is saved to the source board');
   assert.equal(f.state._tasksByBoard.b.length, 1, 'Target board stays unchanged');
   assert.equal(f.state.activeBoardId, 'b', 'Queued notification should navigate after successful save');

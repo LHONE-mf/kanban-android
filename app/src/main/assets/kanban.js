@@ -3268,12 +3268,13 @@ async function exportData() {
       + ',"activeBoardId":' + JSON.stringify(state.activeBoardId) + ',"boards":' + JSON.stringify(state.boards)
       + ',"tasks":' + JSON.stringify(allTasks) + ',"media":{'];
     const seen = new Set();
-    let n = 0, missing = 0;
+    let n = 0;
     for (const f of allTasks.flatMap(t => t.files)) {
       if (seen.has(f.id)) continue;
       seen.add(f.id);
-      const m = await mediaGet(f.id).catch(() => null);
-      if (!m) { missing++; continue; }
+      // Do not label an export "full" if a referenced attachment is absent.
+      const m = await mediaGet(f.id);
+      if (!m?.full) throw new Error('Нет данных вложения «' + f.name + '». Экспорт отменён');
       parts.push((n++ ? ',' : '') + JSON.stringify(f.id) + ':{"type":' + JSON.stringify(m.type || f.type)
         + ',"thumb":' + JSON.stringify(m.thumb || null) + ',"data":"' + await blobToBase64(m.full) + '"}');
     }
@@ -3283,7 +3284,7 @@ async function exportData() {
     if (window.KanbanBackup?.postMessage) {
       const saved = await saveBackupViaAndroid(backup, filename);
       if (!saved) { showToast('Сохранение бэкапа отменено'); return; }
-      showToast(`Бэкап сохранён: ${state.boards.length} досок, ${allTasks.length} узлов, ${n} файлов` + (missing ? `. Файлов не найдено: ${missing}` : ''));
+      showToast(`Бэкап сохранён: ${state.boards.length} досок, ${allTasks.length} узлов, ${n} файлов`);
     } else {
       if (location.origin === 'https://appassets.androidplatform.net') {
         throw new Error('Сохранение недоступно в этой версии Android WebView');

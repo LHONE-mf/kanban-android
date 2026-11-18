@@ -31,6 +31,7 @@ function fixture() {
     remove: name => {if (name === 'open') modal.open = false}
   }};
   inputs.taskModal = modal;
+  inputs.boardSelect = {value: 'a'};
   inputs.mediaPreview = {querySelectorAll: () => []};
   const writes = [], opened = [], toasts = [];
   let releaseFile;
@@ -76,8 +77,10 @@ function fixture() {
   const pendingSave = f.ctx.saveTaskFromModal();
   assert.equal(f.writes.length, 0, 'Attachments must finish before storing the task');
 
+  f.ctx.$('#boardSelect').value = 'b'; // What an Android select does before onchange.
   await f.ctx.switchBoard('b');
   assert.equal(f.state.activeBoardId, 'a', 'Board navigation must not switch during a pending save');
+  assert.equal(f.ctx.$('#boardSelect').value, 'a', 'Rejected navigation must restore the visible board selector');
   f.ctx.closeModal('taskModal');
   assert.equal(f.modal.open, true, 'Closing the editor during a save must be refused');
 

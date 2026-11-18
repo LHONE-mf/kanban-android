@@ -137,6 +137,10 @@ async function persistBoards() {
 }
 
 async function switchBoard(id) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return false;
+  }
   if (!getBoard(id) || id === state.activeBoardId) return;
   if ($('#taskModal').classList.contains('open')) closeModal('taskModal');
   state.activeBoardId = id;

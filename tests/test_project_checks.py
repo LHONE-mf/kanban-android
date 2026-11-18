@@ -244,7 +244,7 @@ class ReminderRegressionTests(unittest.TestCase):
         # Card completion now uses the atomic transaction shared with recurring tasks.
         # It persists both the completed task and its replacement before sending
         # native reminder reconciliation for all changed records.
-        self.assertIn("await persistTaskChanges([candidate])", self.views)
+        self.assertIn("await persistTaskChanges(includeDescendantColumnChanges([candidate]))", self.views)
         self.assertIn("syncNativeReminder(task)", self.tasks)
         self.assertIn("await dbPutTasks(write)", self.tasks)
         self.assertIn("syncNativeReminder(m)", self.views)

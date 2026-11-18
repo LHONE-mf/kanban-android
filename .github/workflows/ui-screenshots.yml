@@ -9,7 +9,9 @@ name: Android UI Smoke Tests and Screenshots
 on:
   workflow_dispatch:
   push:
-    branches: [ui-testing]
+    # Run full UI checks on explicit workflow edits in stabilization branches too.
+    # Normal source pushes continue to use the faster APK regression workflow.
+    branches: [ui-testing, 'fix/**']
     paths:
       - '.github/workflows/ui-screenshots.yml'
 

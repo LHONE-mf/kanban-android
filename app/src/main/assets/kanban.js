@@ -138,6 +138,9 @@ async function persistBoards() {
 
 async function switchBoard(id) {
   if (typeof savingTask !== 'undefined' && savingTask) {
+    // Android changes the select value before onchange; restore the actual board.
+    const select = $('#boardSelect');
+    if (select) select.value = state.activeBoardId;
     showToast('Дождитесь сохранения задачи');
     return false;
   }
@@ -2037,6 +2040,10 @@ async function persistTaskChanges(updates, boardTasks = state.tasks,
 // TASK OPS
 // ============================================================
 async function deleteTask(taskId) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return;
+  }
   const sourceTasks = state.tasks;
   const root = sourceTasks.find(t => t.id === taskId);
   if (!root) return;
@@ -2076,6 +2083,10 @@ async function deleteTask(taskId) {
 // Keep the entire nested subtree together and persist it in one IndexedDB
 // transaction. Never change the in-memory boards if storage rejects the write.
 async function moveTaskToBoard(taskId, destinationBoardId) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return false;
+  }
   const sourceBoard = getBoard(state.activeBoardId);
   const destination = getBoard(destinationBoardId);
   const sourceTasks = state._tasksByBoard[state.activeBoardId];
@@ -2657,6 +2668,10 @@ function closeModal(id) {
   }
 }
 async function duplicateTask(taskId) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return;
+  }
   const sourceTasks = state.tasks;
   const src = sourceTasks.find(t => t.id === taskId);
   if (!src) return;

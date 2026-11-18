@@ -23,7 +23,7 @@ const localStorage={
  removeItem:key=>entries.delete(key)
 };
 const notices=[];
-let replacements=0;
+let replacements=0, failDb=false;
 const ctx={
  localStorage,JSON,Blob,Date,console,
  state:{boards:[{id:'b1',name:'Board'}],_tasksByBoard:{b1:[]},activeBoardId:'b1',tasks:[]},
@@ -33,7 +33,7 @@ const ctx={
  location:{origin:'https://appassets.androidplatform.net'},
  undoStack:[],pendingMediaDeletes:new Map(),thumbCache:new Map(),
  apStop:()=>{},rebucket:()=>{},applyActiveBoard:()=>{},renderBoard:()=>{},saveUIState:()=>{},
- confirmDialog:async()=>true,dbReplaceAll:async()=>{replacements++},syncNativeReminder:()=>{},alert:message=>notices.push(message),
+ confirmDialog:async()=>true,dbReplaceAll:async()=>{replacements++;if(failDb)throw Error('DB full')},syncNativeReminder:()=>{},alert:message=>notices.push(message),
  buildImportPlan:async(data)=>({
   boards:[{id:'b1'}],tasks:[],activeBoardId:'b1',media:{},
   japanese:ctx.selectJapaneseBackup(data.japanese), report:{warnings:[]}
@@ -71,13 +71,29 @@ vm.runInContext(
   // A storage failure rolls back partial learning changes and warns the user.
   entries.set('kanban-japanese-hiragana-v1',JSON.stringify(['う']));
   failKey='kanban-japanese-review-v1';
+  const dbBeforeFullStorage=replacements;
   await ctx.handleImport({text:async()=>JSON.stringify(backup)});
+  assert.equal(replacements,dbBeforeFullStorage,
+    'Failed Japanese storage must not replace the existing IndexedDB records');
   assert.equal(localStorage.getItem('kanban-japanese-hiragana-v1'),JSON.stringify(['う']),
     'A failed restore must not leave a partly overwritten learning record');
   assert(notices.some(n=>n.includes('не удалось записать')),
     'Import must explain if Japanese data could not be restored');
 
+  // If the database commit fails, roll back staged Japanese progress (including
+  // keys that were absent before the attempted restore).
   failKey=null;
+  entries.set('kanban-japanese-hiragana-v1',JSON.stringify(['う']));
+  entries.delete('kanban-japanese-active-tab-v1');
+  const beforeDbFailure=new Map(entries);
+  failDb=true;
+  const dbBeforeFailure=replacements;
+  await ctx.handleImport({text:async()=>JSON.stringify(backup)});
+  failDb=false;
+  assert.equal(replacements,dbBeforeFailure+1,'IndexedDB failure was actually simulated');
+  assert.deepEqual([...entries],[...beforeDbFailure],
+    'A failed database commit must restore the previous Japanese progress exactly');
+
   for (const [key,value] of [
     ['kanban-japanese-hiragana-v1','not JSON'],
     ['kanban-japanese-hiragana-v1','{}'],

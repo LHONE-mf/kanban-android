@@ -109,8 +109,19 @@ async function checkRemovedBoardUndo() {
   assert(f.toasts.at(-1).includes('доска удалена'));
 }
 
+async function checkEditorSaveBlocksActions() {
+  const f = fixture();
+  f.ctx.savingTask = true;
+  await f.ctx.deleteTask('root');
+  await f.ctx.duplicateTask('root');
+  assert.equal(f.stored.size, 3, 'Busy editor must not delete or duplicate its task');
+  assert.deepEqual(f.state._tasksByBoard.a, [f.root, f.child]);
+  assert.equal(f.undos.length, 0);
+  assert(f.toasts.some(t => t.includes('сохранен')), 'Blocked action should explain why');
+}
+
 (async () => {
-  const results = await Promise.allSettled([checkDelete(), checkDuplicate(),
+  const results = await Promise.allSettled([checkEditorSaveBlocksActions(), checkDelete(), checkDuplicate(),
     checkFailure('deleteTask'), checkFailure('duplicateTask'), checkRemovedBoardUndo()]);
   const errors = results.filter(r => r.status === 'rejected').map(r => r.reason);
   if (errors.length) throw new AggregateError(errors, 'Pending task actions changed the wrong board');

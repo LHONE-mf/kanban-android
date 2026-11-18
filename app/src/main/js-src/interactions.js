@@ -83,8 +83,7 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await persistTaskChanges(toUpdate);
-        for (const c of toUpdate) await syncKids(c);
+        await persistTaskChanges(includeDescendantColumnChanges(toUpdate));
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }

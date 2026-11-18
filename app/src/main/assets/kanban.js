@@ -106,10 +106,34 @@ function normalizeTree(tasks) {
   }
   return fix;
 }
-async function syncKids(t) {
-  const ch = subtree(t.id).filter(d => d.columnId !== t.columnId).map(d => applyColumnChange(d, t.columnId));
-  if (!ch.length) return;
-  await persistTaskChanges(ch);
+// Expand every column move before its IndexedDB transaction, so descendants
+// cannot be stranded in an old column if a second write fails.
+function includeDescendantColumnChanges(updates, boardTasks = state.tasks) {
+  const changes = new Map(updates.map(task => [task.id, task]));
+  const children = new Map();
+  for (const task of boardTasks) {
+    if (!task.parentId) continue;
+    if (!children.has(task.parentId)) children.set(task.parentId, []);
+    children.get(task.parentId).push(task);
+  }
+  const roots = updates.filter(task => !changes.has(task.parentId));
+  const queue = [...(roots.length ? roots : updates)];
+  const visited = new Set();
+  while (queue.length) {
+    const parent = queue.shift();
+    if (visited.has(parent.id)) continue;
+    visited.add(parent.id);
+    for (const child of children.get(parent.id) || []) {
+      if (visited.has(child.id)) continue;
+      let updated = changes.get(child.id) || child;
+      if (updated.columnId !== parent.columnId) {
+        updated = applyColumnChange(updated, parent.columnId);
+        changes.set(child.id, updated);
+      }
+      queue.push(updated);
+    }
+  }
+  return [...changes.values()];
 }
 
 function applyActiveBoard() {
@@ -137,6 +161,13 @@ async function persistBoards() {
 }
 
 async function switchBoard(id) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    // Android changes the select value before onchange; restore the actual board.
+    const select = $('#boardSelect');
+    if (select) select.value = state.activeBoardId;
+    showToast('Дождитесь сохранения задачи');
+    return false;
+  }
   if (!getBoard(id) || id === state.activeBoardId) return;
   if ($('#taskModal').classList.contains('open')) closeModal('taskModal');
   state.activeBoardId = id;
@@ -1244,9 +1275,8 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   const targetCol = state.columns[newIdx];
   const candidate = applyColumnChange(task, targetCol.id);
   candidate.order = topOrder(targetCol.id);
-  try { await persistTaskChanges([candidate]); }
+  try { await persistTaskChanges(includeDescendantColumnChanges([candidate])); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
 }
@@ -1257,9 +1287,8 @@ async function markTaskDone(taskId) {
   if (idx === -1 || state.tasks[idx].columnId === doneCol.id) return;
   const candidate = applyColumnChange(state.tasks[idx], doneCol.id);
   candidate.order = topOrder(doneCol.id);
-  try { await persistTaskChanges([candidate]); }
+  try { await persistTaskChanges(includeDescendantColumnChanges([candidate])); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
 }
@@ -2033,6 +2062,10 @@ async function persistTaskChanges(updates, boardTasks = state.tasks,
 // TASK OPS
 // ============================================================
 async function deleteTask(taskId) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return;
+  }
   const sourceTasks = state.tasks;
   const root = sourceTasks.find(t => t.id === taskId);
   if (!root) return;
@@ -2072,6 +2105,10 @@ async function deleteTask(taskId) {
 // Keep the entire nested subtree together and persist it in one IndexedDB
 // transaction. Never change the in-memory boards if storage rejects the write.
 async function moveTaskToBoard(taskId, destinationBoardId) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return false;
+  }
   const sourceBoard = getBoard(state.activeBoardId);
   const destination = getBoard(destinationBoardId);
   const sourceTasks = state._tasksByBoard[state.activeBoardId];
@@ -2217,6 +2254,7 @@ function setTaskRepeat(value) {
 }
 
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   lastFocusBeforeModal = document.activeElement;
   editingTaskId = taskId;
   editingPriority = 'none';
@@ -2539,11 +2577,22 @@ let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
   savingTask = true;
-  try { await _saveTask(); } finally { savingTask = false; }
+  let saved = false;
+  try { saved = await _saveTask(); } finally { savingTask = false; }
+  // Only a committed save may close the editor. Release the lock first so
+  // native navigation queued during the write can be handled afterwards.
+  if (!saved) return;
+  closeModal('taskModal');
+  notifyOtherTabs();
+  renderBoard();
+  if (window.__kanbanNotificationPending) void window.kanbanApplyPendingNotification?.();
 }
 async function _saveTask() {
+  const sourceBoardId = state.activeBoardId;
+  const sourceTasks = state._tasksByBoard?.[sourceBoardId] || state.tasks;
+  const sourceBoard = state.boards?.find(b => b.id === sourceBoardId);
   const title = $('#taskTitle').value.trim(), deadline = $('#taskDeadline').value || '';
-  const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
+  const existing = editingTaskId ? sourceTasks.find(t => t.id === editingTaskId) : null;
   $('#taskTitleError').hidden = !!title;
   if (!title) {
     $('#taskTitle').focus();
@@ -2588,7 +2637,7 @@ async function _saveTask() {
   const moved = !existing || existing.parentId !== parentId || existing.columnId !== columnId;
   const sib = state.tasks.filter(t => t !== existing && t.parentId === parentId && (parentId || t.columnId === columnId));
   const candidate = {
-    id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : state.activeBoardId,
+    id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : sourceBoardId,
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, reminder, reminderRepeat, taskRepeat,
@@ -2598,16 +2647,18 @@ async function _saveTask() {
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  try { await persistTaskChanges([candidate]); }
+  // Commit parent and descendants together, matching drag and card actions.
+  const updates = includeDescendantColumnChanges([candidate], sourceTasks);
+  try { await persistTaskChanges(updates, sourceTasks, sourceBoard); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
-  await syncKids(candidate).catch(() => {});
-  closeModal('taskModal'); notifyOtherTabs(); renderBoard();
+  return true;
 }
 
 function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
     const ok = await confirmDialog('Закрыть без сохранения?', 'Введённые изменения будут потеряны.');
     if (!ok) return;
@@ -2615,6 +2666,10 @@ async function tryCloseTaskModal() {
   closeModal('taskModal');
 }
 function closeModal(id) {
+  if (id === 'taskModal' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return false;
+  }
   $('#' + id).classList.remove('open');
   releaseFocusTrap($('#' + id));
   if (lastFocusBeforeModal && typeof lastFocusBeforeModal.focus === 'function') {
@@ -2628,9 +2683,14 @@ function closeModal(id) {
     // A notification may have queued Mark Done while this editor was open.
     // It is safe to apply pending changes only after the draft is closed.
     window.kanbanRequestPendingActions?.();
+    if (window.__kanbanNotificationPending) void window.kanbanApplyPendingNotification?.();
   }
 }
 async function duplicateTask(taskId) {
+  if (typeof savingTask !== 'undefined' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return;
+  }
   const sourceTasks = state.tasks;
   const src = sourceTasks.find(t => t.id === taskId);
   if (!src) return;
@@ -3587,8 +3647,7 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await persistTaskChanges(toUpdate);
-        for (const c of toUpdate) await syncKids(c);
+        await persistTaskChanges(includeDescendantColumnChanges(toUpdate));
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
@@ -4291,7 +4350,9 @@ window.kanbanReceiveTaskActions = async (raw) => {
 let notificationUiReady = false;
 let notificationOpening = false;
 window.kanbanApplyPendingNotification = async () => {
-  if (!notificationUiReady || notificationOpening || !window.__kanbanNotificationPending) return;
+  // Leave the target queued rather than replacing an editor mid-save.
+  if ((typeof savingTask !== 'undefined' && savingTask) ||
+      !notificationUiReady || notificationOpening || !window.__kanbanNotificationPending) return;
   const target = window.__kanbanNotificationPending;
   delete window.__kanbanNotificationPending;
   notificationOpening = true;
@@ -4306,6 +4367,11 @@ window.kanbanApplyPendingNotification = async () => {
     if ($('#taskModal').classList.contains('open')) {
       if (isModalDirty() &&
           !await confirmDialog('Открыть задачу из уведомления?', 'Несохранённые изменения будут потеряны.')) return;
+      // The user may have started saving while the confirmation was open.
+      if (typeof savingTask !== 'undefined' && savingTask) {
+        window.__kanbanNotificationPending = target;
+        return;
+      }
       closeModal('taskModal');
     }
     if (state.activeBoardId !== board.id) await switchBoard(board.id);

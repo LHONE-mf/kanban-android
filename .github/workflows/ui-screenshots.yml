@@ -9,7 +9,9 @@ name: Android UI Smoke Tests and Screenshots
 on:
   workflow_dispatch:
   push:
-    branches: [ui-testing]
+    # Run full UI checks on explicit workflow edits in stabilization branches too.
+    # Normal source pushes continue to use the faster APK regression workflow.
+    branches: [ui-testing, 'fix/**']
     paths:
       - '.github/workflows/ui-screenshots.yml'
 
@@ -53,6 +55,8 @@ jobs:
           node tests/test_japanese_new_question.cjs
           node tests/test_android_backup.cjs
           node tests/test_android_file_open.cjs
+          node tests/test_task_save_navigation.cjs
+          node tests/test_atomic_column_moves.cjs
           python3 tools/build_kanban_js.py --check
           gradle :app:assembleDebug --no-daemon
       - name: Build sequentially versioned APKs for upgrade regression

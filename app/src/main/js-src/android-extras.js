@@ -306,7 +306,9 @@ window.kanbanReceiveTaskActions = async (raw) => {
 let notificationUiReady = false;
 let notificationOpening = false;
 window.kanbanApplyPendingNotification = async () => {
-  if (!notificationUiReady || notificationOpening || !window.__kanbanNotificationPending) return;
+  // Leave the target queued rather than replacing an editor mid-save.
+  if ((typeof savingTask !== 'undefined' && savingTask) ||
+      !notificationUiReady || notificationOpening || !window.__kanbanNotificationPending) return;
   const target = window.__kanbanNotificationPending;
   delete window.__kanbanNotificationPending;
   notificationOpening = true;
@@ -321,6 +323,11 @@ window.kanbanApplyPendingNotification = async () => {
     if ($('#taskModal').classList.contains('open')) {
       if (isModalDirty() &&
           !await confirmDialog('Открыть задачу из уведомления?', 'Несохранённые изменения будут потеряны.')) return;
+      // The user may have started saving while the confirmation was open.
+      if (typeof savingTask !== 'undefined' && savingTask) {
+        window.__kanbanNotificationPending = target;
+        return;
+      }
       closeModal('taskModal');
     }
     if (state.activeBoardId !== board.id) await switchBoard(board.id);

@@ -97,5 +97,28 @@ function fixture() {
   assert.equal(f.state.activeBoardId, 'b', 'Queued notification should navigate after successful save');
   assert.deepEqual(f.opened, ['other'], 'Queued notification opens the intended task once');
 
-  console.log('Pending task save: attachment isolation, board lock and deferred notification passed');
+  // Moving a parent to another column must commit descendant status changes
+  // together with the parent, not in a second best-effort write.
+  const nested = fixture();
+  const parent = {id:'parent', boardId:'a', columnId:'todo', parentId:'',
+    title:'Parent', files:[], tags:[], checklist:[], reminder:'', reminderRepeat:'none',
+    taskRepeat:'none', priority:'none', order:0, createdAt:1, updatedAt:2, completedAt:null};
+  const child = {...parent, id:'child', parentId:'parent', title:'Child'};
+  const grandchild = {...parent, id:'grand', parentId:'child', title:'Grandchild'};
+  nested.state.tasks.push(parent, child, grandchild);
+  nested.ctx.editingTaskId = 'parent';
+  nested.ctx.newFiles = [];
+  nested.ctx.$('#taskTitle').value = 'Updated parent';
+  nested.ctx.$('#taskParent').value = 'col:done';
+  nested.ctx.subtree = id => id === 'parent' ? [child, grandchild] : [];
+  nested.ctx.applyColumnChange = (task, columnId) => ({...task, columnId, updatedAt:3});
+  const batches = [];
+  nested.ctx.persistTaskChanges = async changes => { batches.push(changes) };
+  await nested.ctx.saveTaskFromModal();
+  assert.equal(batches.length, 1, 'One transaction must contain parent and children');
+  assert.deepEqual(Array.from(batches[0], t => t.id), ['parent','child','grand'],
+    'Parent and descendants must be written together');
+  assert(batches[0].every(t => t.columnId === 'done'), 'All descendants follow the parent status');
+
+  console.log('Pending task save: attachment isolation, deferred navigation and atomic descendants passed');
 })().catch(error => {console.error(error); process.exitCode = 1});

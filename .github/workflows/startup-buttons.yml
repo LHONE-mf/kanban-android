@@ -5,7 +5,7 @@ name: Android Startup Button Smoke
 on:
   workflow_dispatch:
   push:
-    branches: [ui-testing]
+    branches: [ui-testing, 'fix/**']
     paths:
       - 'app/src/main/assets/kanban.html'
       - 'app/src/main/assets/kanban.js'
@@ -46,6 +46,7 @@ jobs:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
         run: |
           python3 tools/build_kanban_js.py --check
+          python3 -m unittest discover -s tests -p 'test_japanese_back_navigation.py' -v
           node tests/test_global_search.cjs
           node tests/test_dashboard_all_boards.cjs
           node tests/test_tab_navigation.cjs

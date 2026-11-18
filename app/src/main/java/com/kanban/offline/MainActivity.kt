@@ -489,6 +489,11 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (webView.url?.startsWith("$appOrigin/assets/japanese.html") == true) {
+                    lastBackGestureAt = 0L
+                    webView.loadUrl("$appOrigin/assets/kanban.html")
+                    return
+                }
                 if (webView.url?.startsWith("$appOrigin/assets/kanban.html") == true) {
                     webView.evaluateJavascript("window.kanbanHandleBack && window.kanbanHandleBack()") { handled ->
                         if (handled == "true") lastBackGestureAt = 0L else confirmAppExit()

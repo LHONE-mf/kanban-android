@@ -112,6 +112,20 @@ androidWebViewHierarchy: devtools
     timeout: 15000
 - takeScreenshot: ui-screenshots/startup-navigation-roundtrip
 
+# Android Back from the Japanese page must return to Kanban without exiting.
+- tapOn: "日本語 · Учить"
+- extendedWaitUntil:
+    visible: "← Канбан"
+    timeout: 15000
+- hideKeyboard
+- pressKey: Back
+- extendedWaitUntil:
+    visible:
+      id: "quickAdd"
+    timeout: 15000
+- assertVisible: "日本語 · Учить"
+- takeScreenshot: ui-screenshots/startup-japanese-back-return
+
 # Create a task via the actual app UI, then open/close its editor.
 - tapOn:
     id: "quickAdd"

@@ -75,6 +75,7 @@ jobs:
           node tests/test_task_save_navigation.cjs
           node tests/test_atomic_column_moves.cjs
           node tests/test_backup_completeness.cjs
+          node tests/test_audio_attachment_staging.cjs
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax

@@ -369,6 +369,7 @@ function setTaskRepeat(value) {
 }
 
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   lastFocusBeforeModal = document.activeElement;
   editingTaskId = taskId;
   editingPriority = 'none';
@@ -691,11 +692,22 @@ let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
   savingTask = true;
-  try { await _saveTask(); } finally { savingTask = false; }
+  let saved = false;
+  try { saved = await _saveTask(); } finally { savingTask = false; }
+  // Only a committed save may close the editor. Release the lock first so
+  // native navigation queued during the write can be handled afterwards.
+  if (!saved) return;
+  closeModal('taskModal');
+  notifyOtherTabs();
+  renderBoard();
+  if (window.__kanbanNotificationPending) void window.kanbanApplyPendingNotification?.();
 }
 async function _saveTask() {
+  const sourceBoardId = state.activeBoardId;
+  const sourceTasks = state._tasksByBoard?.[sourceBoardId] || state.tasks;
+  const sourceBoard = state.boards?.find(b => b.id === sourceBoardId);
   const title = $('#taskTitle').value.trim(), deadline = $('#taskDeadline').value || '';
-  const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
+  const existing = editingTaskId ? sourceTasks.find(t => t.id === editingTaskId) : null;
   $('#taskTitleError').hidden = !!title;
   if (!title) {
     $('#taskTitle').focus();
@@ -740,7 +752,7 @@ async function _saveTask() {
   const moved = !existing || existing.parentId !== parentId || existing.columnId !== columnId;
   const sib = state.tasks.filter(t => t !== existing && t.parentId === parentId && (parentId || t.columnId === columnId));
   const candidate = {
-    id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : state.activeBoardId,
+    id: existing ? existing.id : generateId(), boardId: existing ? existing.boardId : sourceBoardId,
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, reminder, reminderRepeat, taskRepeat,
@@ -750,16 +762,17 @@ async function _saveTask() {
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  try { await persistTaskChanges([candidate]); }
+  try { await persistTaskChanges([candidate], sourceTasks, sourceBoard); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   await syncKids(candidate).catch(() => {});
-  closeModal('taskModal'); notifyOtherTabs(); renderBoard();
+  return true;
 }
 
 function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
     const ok = await confirmDialog('Закрыть без сохранения?', 'Введённые изменения будут потеряны.');
     if (!ok) return;
@@ -767,6 +780,10 @@ async function tryCloseTaskModal() {
   closeModal('taskModal');
 }
 function closeModal(id) {
+  if (id === 'taskModal' && savingTask) {
+    showToast('Дождитесь сохранения задачи');
+    return false;
+  }
   $('#' + id).classList.remove('open');
   releaseFocusTrap($('#' + id));
   if (lastFocusBeforeModal && typeof lastFocusBeforeModal.focus === 'function') {
@@ -780,6 +797,7 @@ function closeModal(id) {
     // A notification may have queued Mark Done while this editor was open.
     // It is safe to apply pending changes only after the draft is closed.
     window.kanbanRequestPendingActions?.();
+    if (window.__kanbanNotificationPending) void window.kanbanApplyPendingNotification?.();
   }
 }
 async function duplicateTask(taskId) {

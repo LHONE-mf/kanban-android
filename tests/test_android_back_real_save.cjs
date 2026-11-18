@@ -37,7 +37,7 @@ const context={
   rec:{mr:null},isValidISODate:value=>!value||/^\d{4}-\d{2}-\d{2}$/.test(value),
   computeCompletedAt:()=>null,
   persistTaskChanges:async tasks=>{if(rejectWrites)throw new Error('No storage space');saved.push(...tasks);return {created:[]}},
-  syncNativeReminder:()=>{},syncKids:async()=>{},notifyOtherTabs:()=>{},renderBoard:()=>{},
+  syncNativeReminder:()=>{},subtree:()=>[],notifyOtherTabs:()=>{},renderBoard:()=>{},
   closeModal:id=>{if(id==='taskModal')modal.open=false},
   closeLightbox:()=>{},showToast:message=>toasts.push(message),
   storeFile:async()=>{throw new Error('Unexpected file')}, mediaDelete:async()=>{},

@@ -60,7 +60,7 @@ async function verify(operation) {
   if(operation==='move')await f.ctx.moveCardToAdjacentColumn('root',1);
   else await f.ctx.markTaskDone('root');
   assert.equal(f.writes.length,1,operation+': parent and children need ONE storage transaction');
-  assert.deepEqual(f.writes[0].map(t=>t.id).sort(),
+  assert.deepEqual(Array.from(f.writes[0], t=>t.id).sort(),
     ['root','child','grand'].sort(),operation+': all descendants must be in the same batch');
   assert(f.writes[0].every(t=>t.columnId==='done'),operation+': every child follows status');
   assert.equal(f.state.tasks.find(t=>t.id==='other').columnId,'todo');

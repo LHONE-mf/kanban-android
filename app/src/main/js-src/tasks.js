@@ -830,7 +830,13 @@ async function duplicateTask(taskId) {
     boardId: src.boardId || state.activeBoardId
   };
   try { await dbPutTask(copy); }
-  catch (e) { showToast('Не удалось дублировать: ' + e.message); return; }
+  catch (e) {
+    // The task write failed: discard media copied before it, without touching
+    // the original task's attachments.
+    files.forEach(file => mediaDelete(file.id).catch(() => {}));
+    showToast('Не удалось дублировать: ' + e.message);
+    return;
+  }
   sourceTasks.push(copy);
   syncNativeReminder(copy);
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();

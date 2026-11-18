@@ -138,6 +138,9 @@ async function persistBoards() {
 
 async function switchBoard(id) {
   if (typeof savingTask !== 'undefined' && savingTask) {
+    // Android changes the select value before onchange; restore the actual board.
+    const select = $('#boardSelect');
+    if (select) select.value = state.activeBoardId;
     showToast('Дождитесь сохранения задачи');
     return false;
   }

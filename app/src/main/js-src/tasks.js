@@ -542,9 +542,10 @@ async function storeFile(file) {
     name = name.replace(/\.[^.]+$/, '') + '.jpg';
   }
   if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
+  // Decode before writing: failed audio metadata must not leave an orphan.
+  const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   const id = 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
-  const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   return { id, name, type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {

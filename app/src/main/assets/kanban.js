@@ -106,10 +106,34 @@ function normalizeTree(tasks) {
   }
   return fix;
 }
-async function syncKids(t) {
-  const ch = subtree(t.id).filter(d => d.columnId !== t.columnId).map(d => applyColumnChange(d, t.columnId));
-  if (!ch.length) return;
-  await persistTaskChanges(ch);
+// Expand every column move before its IndexedDB transaction, so descendants
+// cannot be stranded in an old column if a second write fails.
+function includeDescendantColumnChanges(updates, boardTasks = state.tasks) {
+  const changes = new Map(updates.map(task => [task.id, task]));
+  const children = new Map();
+  for (const task of boardTasks) {
+    if (!task.parentId) continue;
+    if (!children.has(task.parentId)) children.set(task.parentId, []);
+    children.get(task.parentId).push(task);
+  }
+  const roots = updates.filter(task => !changes.has(task.parentId));
+  const queue = [...(roots.length ? roots : updates)];
+  const visited = new Set();
+  while (queue.length) {
+    const parent = queue.shift();
+    if (visited.has(parent.id)) continue;
+    visited.add(parent.id);
+    for (const child of children.get(parent.id) || []) {
+      if (visited.has(child.id)) continue;
+      let updated = changes.get(child.id) || child;
+      if (updated.columnId !== parent.columnId) {
+        updated = applyColumnChange(updated, parent.columnId);
+        changes.set(child.id, updated);
+      }
+      queue.push(updated);
+    }
+  }
+  return [...changes.values()];
 }
 
 function applyActiveBoard() {
@@ -1251,9 +1275,8 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   const targetCol = state.columns[newIdx];
   const candidate = applyColumnChange(task, targetCol.id);
   candidate.order = topOrder(targetCol.id);
-  try { await persistTaskChanges([candidate]); }
+  try { await persistTaskChanges(includeDescendantColumnChanges([candidate])); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
 }
@@ -1264,9 +1287,8 @@ async function markTaskDone(taskId) {
   if (idx === -1 || state.tasks[idx].columnId === doneCol.id) return;
   const candidate = applyColumnChange(state.tasks[idx], doneCol.id);
   candidate.order = topOrder(doneCol.id);
-  try { await persistTaskChanges([candidate]); }
+  try { await persistTaskChanges(includeDescendantColumnChanges([candidate])); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
 }
@@ -2625,12 +2647,9 @@ async function _saveTask() {
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  // A parent and its descendants must commit as one unit. The old second
-  // syncKids() write could fail after the parent had already been stored.
-  const childUpdates = existing ? subtree(existing.id)
-    .filter(t => t.columnId !== candidate.columnId)
-    .map(t => applyColumnChange(t, candidate.columnId)) : [];
-  try { await persistTaskChanges([candidate, ...childUpdates], sourceTasks, sourceBoard); }
+  // Commit parent and descendants together, matching drag and card actions.
+  const updates = includeDescendantColumnChanges([candidate], sourceTasks);
+  try { await persistTaskChanges(updates, sourceTasks, sourceBoard); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
@@ -3628,8 +3647,7 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await persistTaskChanges(toUpdate);
-        for (const c of toUpdate) await syncKids(c);
+        await persistTaskChanges(includeDescendantColumnChanges(toUpdate));
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }

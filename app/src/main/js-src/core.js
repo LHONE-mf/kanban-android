@@ -106,10 +106,34 @@ function normalizeTree(tasks) {
   }
   return fix;
 }
-async function syncKids(t) {
-  const ch = subtree(t.id).filter(d => d.columnId !== t.columnId).map(d => applyColumnChange(d, t.columnId));
-  if (!ch.length) return;
-  await persistTaskChanges(ch);
+// Expand every column move before its IndexedDB transaction, so descendants
+// cannot be stranded in an old column if a second write fails.
+function includeDescendantColumnChanges(updates, boardTasks = state.tasks) {
+  const changes = new Map(updates.map(task => [task.id, task]));
+  const children = new Map();
+  for (const task of boardTasks) {
+    if (!task.parentId) continue;
+    if (!children.has(task.parentId)) children.set(task.parentId, []);
+    children.get(task.parentId).push(task);
+  }
+  const roots = updates.filter(task => !changes.has(task.parentId));
+  const queue = [...(roots.length ? roots : updates)];
+  const visited = new Set();
+  while (queue.length) {
+    const parent = queue.shift();
+    if (visited.has(parent.id)) continue;
+    visited.add(parent.id);
+    for (const child of children.get(parent.id) || []) {
+      if (visited.has(child.id)) continue;
+      let updated = changes.get(child.id) || child;
+      if (updated.columnId !== parent.columnId) {
+        updated = applyColumnChange(updated, parent.columnId);
+        changes.set(child.id, updated);
+      }
+      queue.push(updated);
+    }
+  }
+  return [...changes.values()];
 }
 
 function applyActiveBoard() {

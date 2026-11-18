@@ -770,12 +770,9 @@ async function _saveTask() {
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  // A parent and its descendants must commit as one unit. The old second
-  // syncKids() write could fail after the parent had already been stored.
-  const childUpdates = existing ? subtree(existing.id)
-    .filter(t => t.columnId !== candidate.columnId)
-    .map(t => applyColumnChange(t, candidate.columnId)) : [];
-  try { await persistTaskChanges([candidate, ...childUpdates], sourceTasks, sourceBoard); }
+  // Commit parent and descendants together, matching drag and card actions.
+  const updates = includeDescendantColumnChanges([candidate], sourceTasks);
+  try { await persistTaskChanges(updates, sourceTasks, sourceBoard); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));

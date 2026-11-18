@@ -6,6 +6,9 @@ const vm = require('node:vm');
 const tasks = fs.readFileSync('app/src/main/js-src/tasks.js', 'utf8');
 const core = fs.readFileSync('app/src/main/js-src/core.js', 'utf8');
 const extras = fs.readFileSync('app/src/main/js-src/android-extras.js', 'utf8');
+const helperStart = core.indexOf('function includeDescendantColumnChanges(');
+const helperEnd = core.indexOf('function applyActiveBoard(', helperStart);
+assert(helperStart >= 0 && helperEnd > helperStart);
 function section(source, start, end) {
   const from = source.indexOf(start), to = source.indexOf(end, from);
   assert(from >= 0 && to > from, 'Missing source section: ' + start);
@@ -67,7 +70,8 @@ function fixture() {
     isModalDirty: () => false
   };
   vm.createContext(ctx);
-  vm.runInContext(saveSource + '\n' + boardSource + '\n' + notificationSource, ctx);
+  vm.runInContext(core.slice(helperStart, helperEnd) + '\n' +
+    saveSource + '\n' + boardSource + '\n' + notificationSource, ctx);
   vm.runInContext('notificationUiReady = true', ctx);
   return {ctx, state, modal, writes, opened, toasts, releaseFile};
 }

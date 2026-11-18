@@ -3,6 +3,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const views = fs.readFileSync('app/src/main/js-src/views.js', 'utf8');
+const core = fs.readFileSync('app/src/main/js-src/core.js', 'utf8');
+const interactions = fs.readFileSync('app/src/main/js-src/interactions.js', 'utf8');
+const helperStart = core.indexOf('function includeDescendantColumnChanges(');
+const helperEnd = core.indexOf('function applyActiveBoard(', helperStart);
+assert(helperStart >= 0 && helperEnd > helperStart, 'Atomic descendant helper is required');
+const dragStart = interactions.indexOf('async function onPointerUp(');
+const dragEnd = interactions.indexOf('function onPointerCancel()', dragStart);
+assert(dragStart >= 0 && dragEnd > dragStart);
+assert(interactions.slice(dragStart, dragEnd).includes('persistTaskChanges(includeDescendantColumnChanges(toUpdate))'),
+  'Drag/drop must also use one atomic parent/descendant write');
 const from = views.indexOf('function topOrder(');
 const to = views.indexOf('function updateTagFilter(', from);
 assert(from >= 0 && to > from);
@@ -42,7 +52,7 @@ function fixture() {
     notifyOtherTabs(){},renderBoard(){},showToast:s=>toasts.push(s)
   };
   vm.createContext(ctx);
-  vm.runInContext(code,ctx);
+  vm.runInContext(core.slice(helperStart, helperEnd) + '\n' + code,ctx);
   return {ctx,state,writes,toasts,setFail:v=>fail=v};
 }
 async function verify(operation) {

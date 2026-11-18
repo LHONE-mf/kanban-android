@@ -425,9 +425,8 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   const targetCol = state.columns[newIdx];
   const candidate = applyColumnChange(task, targetCol.id);
   candidate.order = topOrder(targetCol.id);
-  try { await persistTaskChanges([candidate]); }
+  try { await persistTaskChanges(includeDescendantColumnChanges([candidate])); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
 }
@@ -438,9 +437,8 @@ async function markTaskDone(taskId) {
   if (idx === -1 || state.tasks[idx].columnId === doneCol.id) return;
   const candidate = applyColumnChange(state.tasks[idx], doneCol.id);
   candidate.order = topOrder(doneCol.id);
-  try { await persistTaskChanges([candidate]); }
+  try { await persistTaskChanges(includeDescendantColumnChanges([candidate])); }
   catch (e) { showToast('Не удалось переместить: ' + e.message); return; }
-  await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderBoard();
 }

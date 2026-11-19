@@ -332,8 +332,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Keep the WebView clear of system bars and place chat controls BELOW
-        // the Kanban content, rather than floating over task dialogs.
+        // Keep the WebView clear of system bars and Japanese learning controls
+        // below the Kanban content, rather than floating over task dialogs.
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.rgb(10, 10, 10))
@@ -350,16 +350,6 @@ class MainActivity : ComponentActivity() {
             setPadding(12, 0, 12, 0)
             setBackgroundColor(Color.rgb(26, 26, 26))
         }
-        val nearbyButton = Button(this).apply {
-            text = "Чат по Bluetooth"
-            textSize = 12f
-            isAllCaps = false
-            setOnClickListener {
-                startActivity(Intent(this@MainActivity, NearbyActivity::class.java).apply {
-                    putExtra("dark_theme", miniDarkTheme)
-                })
-            }
-        }
         japaneseButton = Button(this).apply {
             text = "日本語 · Учить"
             textSize = 12f
@@ -373,8 +363,6 @@ class MainActivity : ComponentActivity() {
         }
         bottomToolbar = toolbar
         toolbar.addView(japaneseButton, LinearLayout.LayoutParams(0,
-            LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        toolbar.addView(nearbyButton, LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         toolbar.addView(Button(this).apply {
             text = "あ"

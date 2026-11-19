@@ -774,3 +774,39 @@ button { font-family: inherit; }
 @media(max-width:600px) { .comrade-panel { padding:6px; }
   .comrade-dialog { width:100%; max-height:calc(100dvh - 12px); }
   .comrade-head { padding:9px 10px; } #comradeInput { font-size:16px; } }
+
+/* Compact Android mobile workspace: tools must not consume the board viewport.
+   All controls remain reachable by horizontally scrolling their own toolbar. */
+@media (max-width: 720px) {
+  .header {
+    display:flex; flex-direction:column; align-items:stretch; flex-wrap:nowrap;
+    gap:5px; padding:6px 10px 4px;
+  }
+  .header-left { flex:0 0 auto; flex-wrap:nowrap; min-width:0; }
+  .board-select { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
+  .header-actions {
+    display:flex; width:100%; min-width:0; flex-wrap:nowrap;
+    overflow-x:auto; overflow-y:hidden; padding-bottom:2px;
+    overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin;
+  }
+  .header-actions .btn { flex:0 0 auto; min-height:32px; }
+  .view-tab { padding:5px 10px 9px; }
+  .toolbar {
+    display:flex; flex-wrap:nowrap; min-width:0; gap:8px;
+    overflow-x:auto; overflow-y:hidden; padding:6px 10px;
+    overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;
+    scrollbar-width:thin;
+  }
+  .toolbar > * { flex-shrink:0; }
+  #quickAdd { flex:0 0 230px; width:230px; max-width:none; }
+  .search-input { flex:0 0 210px; width:210px; max-width:none; }
+  .toolbar .select { min-width:146px; }
+  .storage-info { margin-left:0; }
+  .board { flex:1 1 auto; min-height:0; }
+  .column { height:100%; max-height:100%; min-height:0; }
+  .task-list { min-height:0; }
+  .comrade-dialog { height:min(76dvh,580px); max-height:calc(100dvh - 12px); }
+  .comrade-log { min-height:0; }
+  .comrade-hint { font-size:10px; }
+}

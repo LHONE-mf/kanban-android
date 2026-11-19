@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var appRoot: LinearLayout
     private lateinit var bottomToolbar: LinearLayout
     private var bannerDismissedThisSession = false
+    private var miniExpanded = false // Compact by default: preserve room for task cards.
     private var lastBackGestureAt = 0L
     private var dailyQuestionIndex = 0
     private var miniQuestionNumber = 0
@@ -375,6 +376,17 @@ class MainActivity : ComponentActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         toolbar.addView(nearbyButton, LinearLayout.LayoutParams(0,
             LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        toolbar.addView(Button(this).apply {
+            text = "あ"
+            textSize = 15f
+            isAllCaps = false
+            contentDescription = "Показать или скрыть японское задание"
+            setOnClickListener {
+                miniExpanded = !miniExpanded
+                if (miniExpanded) bannerDismissedThisSession = false
+                updateDailyBannerVisibility(webView.url)
+            }
+        }, LinearLayout.LayoutParams(dp(42), LinearLayout.LayoutParams.WRAP_CONTENT))
         applyMiniTheme(miniDarkTheme)
         root.addView(toolbar, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -521,8 +533,9 @@ class MainActivity : ComponentActivity() {
 
     private fun updateDailyBannerVisibility(url: String?) {
         dailyBanner.visibility =
-            if (!bannerDismissedThisSession && url?.endsWith("/kanban.html") == true)
-                View.VISIBLE else View.GONE
+            if (miniExpanded && !bannerDismissedThisSession &&
+                url?.endsWith("/kanban.html") == true
+            ) View.VISIBLE else View.GONE
     }
 
 
@@ -647,6 +660,7 @@ class MainActivity : ComponentActivity() {
             setPadding(0, 0, 0, 0)
             setOnClickListener {
                 bannerDismissedThisSession = true
+                miniExpanded = false
                 panel.visibility = View.GONE
             }
         }, LinearLayout.LayoutParams(dp(40), dp(38)))

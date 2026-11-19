@@ -106,6 +106,14 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("isAppearanceLightStatusBars = !darkTheme", self.nearby)
         self.assertIn("isAppearanceLightNavigationBars = !darkTheme", self.nearby)
 
+    def test_mobile_board_keeps_vertical_room_and_japanese_panel_is_optional(self):
+        self.assertIn("overflow-x:auto; overflow-y:hidden; padding:6px 10px;", self.css)
+        self.assertIn(".toolbar > * { flex-shrink:0; }", self.css)
+        self.assertIn(".column { height:100%; max-height:100%; min-height:0; }", self.css)
+        self.assertIn("private var miniExpanded = false", self.main)
+        self.assertIn("if (miniExpanded && !bannerDismissedThisSession", self.main)
+        self.assertIn('contentDescription = "Показать или скрыть японское задание"', self.main)
+
     def test_comrade_bounded_actions_do_not_clear_database(self):
         code = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
         for symbol in ("comradeCreateTask(", "comradeChangeTask(", "comradeList(", "comradeConfirm("):

@@ -6,6 +6,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +61,28 @@ jobs:
         with:
           name: kanban-debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      # Actions artifacts are ZIP containers, which some Android file managers
+      # cannot unpack. GitHub Releases publishes the original signed APK bytes.
+      - name: Publish standalone Comrade APK (no ZIP)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          cp "$APK" "$RUNNER_TEMP/Comrade.apk"
+          (cd "$RUNNER_TEMP" && sha256sum Comrade.apk > Comrade.apk.sha256)
+          gh release create "comrade-build-${GITHUB_RUN_NUMBER}" \
+            "$RUNNER_TEMP/Comrade.apk" \
+            "$RUNNER_TEMP/Comrade.apk.sha256" \
+            --title "Comrade Android · сборка ${GITHUB_RUN_NUMBER}" \
+            --notes "Прямой APK для установки на Android, без ZIP-архива. Тестовая debug-сборка с постоянной подписью. Устанавливайте поверх текущего Comrade, не удаляя приложение и его данные." \
+            --latest \
+            --target "$GITHUB_SHA"
+
 
       - name: Check release signing configuration
         if: github.event_name != 'pull_request'

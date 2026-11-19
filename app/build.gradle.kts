@@ -24,7 +24,7 @@ android {
         targetSdk = 35
         // A higher code is required for Android to accept an in-place update.
         versionCode = System.getenv("KANBAN_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = "0.4.0"
+        versionName = "0.4.1"
     }
 
     signingConfigs {

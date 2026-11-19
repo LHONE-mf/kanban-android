@@ -58,9 +58,11 @@ assert.ok(rows.some(t=>t.id==='today-medium' && t.board==='Лаборатори�
 assert.ok(rows.some(t=>t.id==='high-no-date'),'important unscheduled tasks included');
 assert.ok(rows.some(t=>t.id==='inprogress'),'work-in-progress included');
 assert.ok(rows.some(t=>t.id==='tomorrow-high'),'tomorrow high priority included');
-for(const id of ['done','subtask','future-low','no-date-low']) {
+for(const id of ['done','subtask']) {
   assert.ok(!rows.some(t=>t.id===id),'exclude '+id);
 }
+assert.ok(rows.some(t=>t.id==='future-low'),'future tasks remain selectable');
+assert.ok(rows.some(t=>t.id==='no-date-low'),'unscheduled tasks remain selectable');
 assert.ok(rows.findIndex(t=>t.id==='overdue-high')<
   rows.findIndex(t=>t.id==='today-high'),'overdue before due today');
 assert.ok(rows.findIndex(t=>t.id==='today-high')<

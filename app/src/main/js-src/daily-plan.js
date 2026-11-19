@@ -32,7 +32,12 @@ function comradeDayCandidates(today = todayISO()) {
       ].join('-');
       if (task.deadline === tomorrow) { rank = 200; reason = 'Высокий приоритет · завтра'; }
     }
-    if (!rank) return [];
+    // Keep all remaining unfinished top-level tasks selectable too.
+    // Their low score keeps them out of the default six-task suggestion.
+    if (!rank) {
+      rank = task.deadline ? 90 : 50;
+      reason = task.deadline ? 'Позднее' : 'Без срока';
+    }
     return [{
       id: task.id, title: task.title, board: board.name, boardId: board.id,
       priority: task.priority || 'none', deadline: task.deadline || '',
@@ -103,8 +108,9 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
   const note = document.createElement('p');
   note.className = 'comrade-day-note';
   note.textContent = 'Все ' + state.boards.length + ' доски · ' + candidates.length +
-    ' подходящих задач. Сначала просроченные, затем сегодняшние, ' +
-    'в работе и важные без срока. Укажи порядок и выбери нужные.';
+    ' незавершённых задач. Сначала просроченные, сегодняшние и важные. ' +
+    'Остальные тоже можно выбрать. Измени порядок стрелками.' +
+    (candidates.length >= 60 ? ' Показаны первые 60 задач по срочности.' : '');
   const list = document.createElement('div');
   list.className = 'comrade-day-list';
   const footer = document.createElement('div');

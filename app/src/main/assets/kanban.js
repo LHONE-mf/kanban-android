@@ -911,14 +911,21 @@ function createTaskCard(task, column) {
     const cls = 'task-footer-item' + ((!column.isDone && diff < 0) ? ' overdue' : (!column.isDone && diff === 0 ? ' today' : ''));
     deadlineHtml = `<span class="${cls}">📅 ${escapeHtml(formatDate(task.deadline))}</span>`;
   }
-  const priorityHtml = task.priority && task.priority !== 'none'
-    ? `<span class="task-priority p-${escapeHtml(task.priority)}">${escapeHtml(PRIORITY_LABELS[task.priority])}</span>` : '';
+  // Priority and deadline belong at the top: the footer gets obscured on phones
+  // when the card contains a long title, a description, or a checklist.
+  const priority = Object.prototype.hasOwnProperty.call(PRIORITY_LABELS, task.priority)
+    ? task.priority : 'none';
+  const priorityLabel = priority === 'none' ? 'Без приоритета' : PRIORITY_LABELS[priority];
+  const prioritySymbol = {high:'●', medium:'●', low:'●', none:'○'}[priority];
+  const priorityHtml = `<span class="task-priority p-${escapeHtml(priority)}" title="Приоритет: ${escapeHtml(priorityLabel)}" aria-label="Приоритет: ${escapeHtml(priorityLabel)}">${prioritySymbol} ${escapeHtml(priorityLabel)}</span>`;
+  card.setAttribute('aria-label', `${task.title}. Приоритет: ${priorityLabel}`);
 
   card.innerHTML = `
+    <div class="task-card-meta">${priorityHtml}${deadlineHtml}</div>
     <div class="task-title">${escapeHtml(task.title)}</div>
     ${descHtml}${mediaHtml}${task.files.some(isAudio) ? '<div class="task-audio"></div>' : ''}${tagsHtml}${checklistHtml}
     <div class="task-footer">
-      ${deadlineHtml}${priorityHtml}${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
+      ${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
       <span class="task-id">#${escapeHtml(task.id.slice(-4))}</span>
     </div>
     <div class="task-quick-actions">

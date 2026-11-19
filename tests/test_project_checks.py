@@ -106,6 +106,14 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("isAppearanceLightStatusBars = !darkTheme", self.nearby)
         self.assertIn("isAppearanceLightNavigationBars = !darkTheme", self.nearby)
 
+    def test_card_priority_is_top_aligned_and_always_visible(self):
+        views = (ROOT / "app/src/main/js-src/views.js").read_text(encoding="utf-8")
+        self.assertIn('class="task-card-meta"', views)
+        self.assertIn("priority === 'none' ? 'Без приоритета'", views)
+        self.assertIn("card.setAttribute('aria-label',", views)
+        self.assertIn(".task-card-meta {", self.css)
+        self.assertIn(".task-priority.p-none", self.css)
+
     def test_mobile_board_keeps_vertical_room_and_japanese_panel_is_optional(self):
         self.assertIn("overflow-x:auto; overflow-y:hidden; padding:6px 10px;", self.css)
         self.assertIn(".toolbar > * { flex-shrink:0; }", self.css)

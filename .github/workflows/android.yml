@@ -35,6 +35,8 @@ jobs:
         run: node --check app/src/main/assets/kanban.js
       - name: Test Comrade command parser
         run: node tests/test_assistant_planner.js
+      - name: Test task priority badges in all four states
+        run: node tests/test_task_priority_badges.js
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore

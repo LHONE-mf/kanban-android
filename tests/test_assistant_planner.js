@@ -25,6 +25,13 @@ const sandbox = {
     };
   },
   todayISO: () => '2026-11-19',
+  isValidISODate: s => {
+    if (!s) return true;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const [year,month,day]=s.split('-').map(Number);
+    const date=new Date(year,month-1,day);
+    return date.getFullYear()===year && date.getMonth()===month-1 && date.getDate()===day;
+  },
   document: {},
   console
 };
@@ -66,4 +73,45 @@ const found = expression("comradeBasic('Найди задачу электрод
 assert.equal(found.action, 'search');
 assert.equal(found.query, 'электроды');
 
-console.log('Comrade command parser: 8 checks passed.');
+console.log('Comrade command parser: 8 existing checks passed.');
+
+// Regression: the requested due date must be written into deadline, not the title.
+const dueFriday = expression("comradeBasic('Добавь задачу проверить электроды до пятницы, высокий приоритет')");
+assert.equal(dueFriday.action,'create');
+assert.equal(dueFriday.title,'проверить электроды');
+assert.equal(dueFriday.deadline,'2026-11-20');
+assert.equal(dueFriday.priority,'high');
+
+const dueNovember = expression("comradeBasic('Создай задачу подготовить отчёт к 25 ноября на доску Производство')");
+assert.equal(dueNovember.title,'подготовить отчёт');
+assert.equal(dueNovember.deadline,'2026-11-25');
+assert.equal(dueNovember.board,'Производство');
+
+const numericDate = expression("comradeBasic('Создай задачу оформить документы до 25.11.2026 с высоким приоритетом')");
+assert.equal(numericDate.title,'оформить документы');
+assert.equal(numericDate.priority,'high');
+assert.equal(numericDate.deadline,'2026-11-25');
+
+const isoDate = expression("comradeBasic('Добавь задачу сдать протокол к 2026-11-23')");
+assert.equal(isoDate.title,'сдать протокол');
+assert.equal(isoDate.deadline,'2026-11-23');
+
+const nextDay = expression("comradeBasic('Добавь задачу закончить отчёт послезавтра')");
+assert.equal(nextDay.title,'закончить отчёт');
+assert.equal(nextDay.deadline,'2026-11-21');
+
+const invalidDate = expression("comradeBasic('Добавь задачу срочная проверка к 31 февраля')");
+assert.equal(invalidDate.action,'answer');
+assert.match(invalidDate.text,/дат[ауе]|срок/i);
+
+const unclearDate = expression("comradeBasic('Создай задачу провести аудит до конца недели')");
+assert.equal(unclearDate.action,'answer');
+assert.match(unclearDate.text,/дат[ауе]|срок/i);
+
+const noDate = expression("comradeBasic('Создай задачу купить перчатки')");
+assert.equal(noDate.title,'купить перчатки');
+assert.equal(noDate.deadline,'');
+assert.equal(noDate.priority,'none');
+
+console.log('Comrade date and priority regression: 8 checks passed.');
+

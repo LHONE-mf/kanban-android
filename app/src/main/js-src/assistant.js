@@ -144,10 +144,15 @@ async function comradeCreateTask(plan) {
   if (!board) { comradeLog('Не нашёл доску.'); return; }
   const col = board.columns.find(c => !c.isDone) || board.columns[0];
   if (!col) { comradeLog('Не нашёл колонку для задач.'); return; }
-  const deadline = typeof plan.deadline === 'string' && isValidISODate(plan.deadline) ? plan.deadline : '';
-  const priority = ['none','low','medium','high'].includes(plan.priority) ? plan.priority : 'none';
+  const provided=typeof plan.deadline==='string'?plan.deadline:'';
+  if(provided&&!isValidISODate(provided)){
+    comradeLog('Некорректный срок: '+provided+'. Укажи ГГГГ-ММ-ДД.');return;
+  }
+  const deadline=provided;
+  const priority=['none','low','medium','high'].includes(plan.priority)?plan.priority:'none';
+  const levels={none:'без приоритета',low:'низкий',medium:'средний',high:'высокий'};
   if (!(await comradeConfirm('Создать «' + title + '» в «' + board.name + '»' +
-    (deadline ? ' к ' + deadline : '') + '?'))) { comradeLog('Отменено.'); return; }
+    '\nСрок: '+(deadline||'не указан')+' · Приоритет: '+levels[priority]+'?'))) { comradeLog('Отменено.'); return; }
   const bucket = state._tasksByBoard[board.id] || [];
   const siblings = bucket.filter(t => t.columnId === col.id && !t.parentId);
   const order = siblings.length ? Math.min(...siblings.map(t => t.order || 0)) - 1 : 0;
@@ -290,7 +295,10 @@ async function comradeApply(plan, request) {
     if (!/^(добавь|создай|запиши|запланируй|поставь|add|create)/i.test(request)) {
       comradeLog('Для создания задачи попроси явно: «Добавь задачу…».'); return;
     }
-    await comradeCreateTask(plan);
+    // The natural-language request, not the model's JSON, defines task fields.
+    const canonical=comradeParseCreate(request);
+    if(canonical?.action==='answer'){comradeLog(canonical.text);return;}
+    await comradeCreateTask(canonical||plan);
   } else if (plan.action === 'list') {
     comradeList(['today','overdue'].includes(plan.filter) ? plan.filter : 'all',
       typeof plan.board === 'string' ? plan.board : '');
@@ -316,6 +324,79 @@ async function comradeApply(plan, request) {
   }
 }
 
+
+/* Only the assistant's action selection is probabilistic. Task fields are parsed
+ * and validated independently before any IndexedDB write. */
+function comradeISO(year,month,day) {
+  const d=new Date(year,month-1,day,12);
+  if (d.getFullYear()!==year || d.getMonth()!==month-1 || d.getDate()!==day) return null;
+  return [year,String(month).padStart(2,'0'),String(day).padStart(2,'0')].join('-');
+}
+function comradeSchedule(raw) {
+  let title=String(raw||''), deadline='', error='';
+  const now=new Date(todayISO()+'T12:00:00');
+  const dayOffset=n=>{const d=new Date(now);d.setDate(d.getDate()+n);
+    return comradeISO(d.getFullYear(),d.getMonth()+1,d.getDate());};
+  const consume=(regex,convert)=>{
+    if(deadline||error)return;
+    const match=title.match(regex);
+    if(!match)return;
+    deadline=convert(match)||'';
+    if(!deadline)error='Некорректная или непонятная дата. Укажи срок как ГГГГ-ММ-ДД.';
+    else title=title.replace(match[0],' ');
+  };
+  consume(/(?:^|[\s,])(?:(?:до|к|на|в)\s+)?(\d{4}-\d{2}-\d{2})(?=$|[\s,.;!?])/i,
+    m=>isValidISODate(m[1])?m[1]:null);
+  consume(/(?:^|[\s,])(?:(?:до|к|на|в)\s+)?(\d{1,2})[./](\d{1,2})(?:[./](\d{4}))?(?=$|[\s,;!?])/i,
+    m=>{const day=+m[1],month=+m[2];let year=m[3]?+m[3]:now.getFullYear();
+      let val=comradeISO(year,month,day);
+      if(!m[3]&&val&&val<todayISO())val=comradeISO(++year,month,day);
+      return val;});
+  const months=['январ','феврал','март','апрел','мая','июн','июл','август',
+    'сентябр','октябр','ноябр','декабр'];
+  consume(/(?:^|[\s,])(?:(?:до|к|на|в)\s+)?(\d{1,2})\s+(январ[ья]|феврал[ья]|март[а]?|апрел[ья]|мая|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья])(?:\s+(\d{4})(?:\s+года?)?)?(?=$|[\s,;.!?])/i,
+    m=>{const day=+m[1],month=months.findIndex(x=>m[2].toLowerCase().startsWith(x))+1;
+      let year=m[3]?+m[3]:now.getFullYear();let val=comradeISO(year,month,day);
+      if(!m[3]&&val&&val<todayISO())val=comradeISO(++year,month,day);
+      return val;});
+  consume(/(?:^|[\s,])(?:(?:до|к|на|в)\s+)?(послезавтра|сегодня|завтра|today|tomorrow)(?=$|[\s,.!?])/i,
+    m=>dayOffset(/послезавтра/i.test(m[1])?2:/завтра|tomorrow/i.test(m[1])?1:0));
+  consume(/(?:^|[\s,])через\s+(\d{1,3})\s+(?:день|дня|дней|суток)(?=$|[\s,.!?])/i,
+    m=>+m[1]>0&&+m[1]<=365?dayOffset(+m[1]):null);
+  consume(/(?:^|[\s,])через\s+неделю(?=$|[\s,.!?])/i,()=>dayOffset(7));
+  consume(/(?:^|[\s,])(?:к|до|на|в|во)\s+(?:(?:ближайш[а-яё]*|следующ[а-яё]*|эт[а-яё]*)\s+)?(понедельник[ау]?|вторник[ау]?|сред[ауые]|четверг[ау]?|пятниц[ауые]|суббот[ауые]|воскресень[еяю])(?=$|[\s,.!?])/i,
+    m=>{const w=m[1].toLowerCase();const desired=w.startsWith('понед')?1:
+      w.startsWith('втор')?2:w.startsWith('сред')?3:w.startsWith('четв')?4:
+      w.startsWith('пятниц')?5:w.startsWith('суббот')?6:0;
+      return dayOffset((desired-now.getDay()+7)%7||7);});
+  if(!deadline&&!error&&/(?:^|[\s,])(?:к|до|на|в)\s+(?:концу|началу|следующ[а-яё]+\s+недел)/i.test(title))
+    error='Уточни конкретную дату срока (ГГГГ-ММ-ДД).';
+  return {title,deadline,error};
+}
+function comradeParseCreate(input) {
+  const match=String(input||'').trim().match(/^(?:добавь|создай|запиши|поставь|запланируй|add|create)\s+(?:мне\s+)?(?:задачу|напоминание)?\s*[:\-]?\s*(.+)$/i);
+  if(!match)return null;
+  let title=match[1];const board=comradeMentionedBoard(input);
+  if(board) {
+    const escaped=board.name.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&');
+    const clause=new RegExp('(?:^|[\\s,])(?:на|в)\\s+доск(?:у|е)\\s+'+escaped+'(?=$|[\\s,.!?])','i');
+    title=title.replace(clause,' ');
+  }
+  let explicitPriority='';
+  const p=title.match(/(?:^|[\s,])(?:(?:с|со)\s+)?(?:приоритет(?:ом)?\s*[:=]?\s*(высокий|средний|низкий|high|medium|low)|(высок(?:ий|им)|средн(?:ий|им)|низк(?:ий|им))\s+приоритет(?:ом)?)(?=$|[\s,.!?])/i);
+  if(p) {
+    const label=(p[1]||p[2]).toLowerCase();
+    explicitPriority=/высок|high/.test(label)?'high':/средн|medium/.test(label)?'medium':'low';
+    title=title.replace(p[0],' ');
+  }
+  const date=comradeSchedule(title);
+  if(date.error)return {action:'answer',text:date.error};
+  const quick=parseQuick(date.title);
+  const clean=quick.title.replace(/^[\s,;:.\-]+|[\s,;:.\-]+$/g,'').replace(/\s+/g,' ').trim();
+  if(clean.length<2)return {action:'answer',text:'Назови задачу точнее.'};
+  return {action:'create',title:clean,deadline:date.deadline||quick.deadline,
+    priority:explicitPriority||quick.priority,board:board?.name||''};
+}
 function comradeBasic(text) {
   const query = text.trim();
   const search = query.match(/^(?:найди|отыщи|поиск|search)\s+(?:задач[уи]?\s+)?(.+)$/i);
@@ -331,26 +412,8 @@ function comradeBasic(text) {
   if (priorityUpdate) return {action:'update',task:priorityUpdate[1],
     priority: /высок|high/i.test(priorityUpdate[2]) ? 'high' :
       /средн|medium/i.test(priorityUpdate[2]) ? 'medium' : 'low'};
-  const found = query.match(/^(?:добавь|создай|запиши|поставь|запланируй|add|create)\s+(?:мне\s+)?(?:задачу|напоминание)?\s*[:\-]?\s*(.+)$/i);
-  if (found) {
-    const board = comradeMentionedBoard(query);
-    let title = found[1];
-    if (board && title.toLocaleLowerCase('ru').includes('доску ' + board.name.toLocaleLowerCase('ru'))) {
-      const point = title.toLocaleLowerCase('ru').indexOf('доску ' + board.name.toLocaleLowerCase('ru'));
-      title = title.slice(0,point).replace(/\s+(?:на|в)\s*$/,'') +
-        title.slice(point + 6 + board.name.length);
-    }
-    let preferredPriority = '';
-    const priorityMatch = title.match(/(?:с|,)?\s*(?:высок(ий|им)|средн(ий|им)|низк(ий|им))\s+приоритет(?:ом)?/i);
-    if (priorityMatch) {
-      preferredPriority = /высок/i.test(priorityMatch[0]) ? 'high' :
-        /средн/i.test(priorityMatch[0]) ? 'medium' : 'low';
-      title = title.replace(priorityMatch[0], ' ').trim();
-    }
-    const extracted = parseQuick(title);
-    return {action:'create', title:extracted.title, deadline:extracted.deadline,
-      priority:preferredPriority || extracted.priority, board:board?.name || ''};
-  }
+  const planned=comradeParseCreate(query);
+  if(planned)return planned;
   const done = query.match(/^(?:заверши|закрой|отметь выполненной|выполни|complete)\s+(?:задачу\s+)?(.+)$/i);
   if (done) return {action:'complete', task:done[1]};
   return null;

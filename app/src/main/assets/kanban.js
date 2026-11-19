@@ -2765,715 +2765,26 @@ async function quickAddTask(text) {
 }
 
 
-// COMRADE: local, request-driven task assistant. All writes use Kanban's IndexedDB helpers.
-let comradeBusy = false;
-let comradeRequestId = 0;
-let comradeQuestion = '';
-let comradeCancelConfirm = null;
-let comradeRewriteResolve = null;
-let comradeDayAdviceResolve = null;
-const comradeEl = id => document.getElementById(id);
-
-function comradeLog(message, user = false) {
-  const element = document.createElement('div');
-  element.className = 'comrade-line ' + (user ? 'comrade-user' : 'comrade-response');
-  element.textContent = String(message).slice(0, 3500);
-  const log = comradeEl('comradeLog');
-  log.appendChild(element);
-  log.scrollTop = log.scrollHeight;
-}
-
-function comradeNative(type, data = {}) {
-  if (!window.KanbanAssistant?.postMessage) return false;
-  window.KanbanAssistant.postMessage(JSON.stringify({ type, ...data }));
-  return true;
-}
-
-function comradeBusySet(busy) {
-  comradeBusy = busy;
-  comradeEl('comradeSend').disabled = busy;
-  comradeEl('comradeInput').disabled = busy;
-  comradeEl('comradeWait').hidden = !busy;
-}
-
-function comradeBoard(name) {
-  if (!name) return state.boards.find(b => b.id === state.activeBoardId) || state.boards[0];
-  const needle = name.toLocaleLowerCase('ru');
-  return state.boards.find(b => b.name.toLocaleLowerCase('ru') === needle) ||
-    state.boards.find(b => b.name.toLocaleLowerCase('ru').includes(needle));
-}
-
-function comradeMentionedBoard(text) {
-  const value = text.toLocaleLowerCase('ru');
-  return [...state.boards].sort((a,b) => b.name.length-a.name.length)
-    .find(b => value.includes(b.name.toLocaleLowerCase('ru'))) || comradeBoard();
-}
-const comradeTasks = () => Object.values(state._tasksByBoard).flat();
-
-// Only confirmed, successful writes enter the private on-device action log.
-const COMRADE_AUDIT_KEY = 'kanban_comrade_audit_v1';
-function comradeAudit(action, title, board) {
-  try {
-    const items = JSON.parse(localStorage.getItem(COMRADE_AUDIT_KEY) || '[]');
-    const rows = Array.isArray(items) ? items : [];
-    rows.unshift({at: Date.now(), action: String(action).slice(0,32),
-      title: String(title).slice(0,200), board: String(board || '').slice(0,100)});
-    localStorage.setItem(COMRADE_AUDIT_KEY, JSON.stringify(rows.slice(0,50)));
-  } catch (_) { /* Storage may be disabled; task writes must still succeed. */ }
-}
-function comradeShowAudit() {
-  try {
-    const rows = JSON.parse(localStorage.getItem(COMRADE_AUDIT_KEY) || '[]');
-    if (!Array.isArray(rows) || !rows.length) {
-      comradeLog('Журнал действий пока пуст.'); return;
-    }
-    comradeLog('Последние действия:\n' + rows.slice(0,10).map(row =>
-      '• ' + new Date(row.at).toLocaleString('ru') + ' · ' + row.action +
-      ' · ' + row.title + (row.board ? ' (' + row.board + ')' : '')
-    ).join('\n'));
-  } catch (_) { comradeLog('Не удалось прочитать журнал действий.'); }
-}
-
-function comradeMatches(query, boardName = '') {
-  const needle = String(query || '').trim().toLocaleLowerCase('ru');
-  const board = boardName ? comradeBoard(boardName) : null;
-  if (boardName && !board) return [];
-  return comradeTasks().filter(task => {
-    if (board && task.boardId !== board.id) return false;
-    return [task.title, task.desc, ...(task.tags || [])]
-      .some(x => String(x || '').toLocaleLowerCase('ru').includes(needle));
-  });
-}
-
-function comradeResolveTask(query, boardName = '') {
-  const name = String(query || '').trim().toLocaleLowerCase('ru');
-  if (name.length < 3) return {error:'Уточни название задачи (минимум 3 символа).'};
-  const exact = comradeMatches(name, boardName).filter(t => t.title.toLocaleLowerCase('ru') === name);
-  const found = exact.length ? exact : comradeMatches(name, boardName)
-    .filter(t => t.title.toLocaleLowerCase('ru').includes(name));
-  if (!found.length) return {error:'Задача не найдена: ' + query};
-  if (found.length > 1) return {error:'Несколько подходящих задач, уточни название:\n' +
-    found.slice(0,8).map(t => '• ' + t.title).join('\n')};
-  return {task:found[0]};
-}
-
-
-function comradeList(filter = 'all', boardName = '') {
-  const board = boardName ? comradeBoard(boardName) : null;
-  if (boardName && !board) { comradeLog('Доска не найдена: ' + boardName); return; }
-  const today = todayISO();
-  const found = comradeTasks().filter(task => {
-    if (board && board.id !== task.boardId) return false;
-    const b = state.boards.find(x => x.id === task.boardId);
-    if (b?.columns.some(c => c.id === task.columnId && c.isDone)) return false;
-    if (filter === 'today') return task.deadline && task.deadline <= today;
-    if (filter === 'overdue') return task.deadline && task.deadline < today;
-    return true;
-  }).sort((a,b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'));
-  comradeLog(found.length ? ('Найдено: ' + found.length + '\n' +
-    found.slice(0,20).map(t => '• ' + t.title +
-      (t.deadline ? ' · ' + t.deadline : '') +
-      ' (' + (state.boards.find(b => b.id === t.boardId)?.name || '') + ')').join('\n') +
-    (found.length > 20 ? '\nПоказаны первые 20 задач.' : ''))
-    : 'Подходящих незавершённых задач нет.');
-}
-
-function comradeConfirm(label) {
-  return new Promise(resolve => {
-    const entry = document.createElement('div');
-    entry.className = 'comrade-line comrade-response';
-    const title = document.createElement('div');
-    title.textContent = label;
-    const yes = document.createElement('button');
-    yes.className = 'btn btn-small'; yes.textContent = 'Подтвердить';
-    const no = document.createElement('button');
-    no.className = 'btn btn-secondary btn-small'; no.textContent = 'Отменить';
-    const row = document.createElement('div');
-    row.className = 'comrade-confirm';
-    row.append(yes,no); entry.append(title,row);
-    comradeEl('comradeLog').appendChild(entry);
-    entry.scrollIntoView({block:'nearest'});
-    const done = val => {
-      entry.remove();
-      if (comradeCancelConfirm === cancel) comradeCancelConfirm = null;
-      resolve(val);
-    };
-    const cancel = () => done(false);
-    comradeCancelConfirm = cancel;
-    yes.onclick = () => done(true);
-    no.onclick = cancel;
-  });
-}
-
-
-/**
- * A rejected draft is NOT a final cancellation. Keep structured fields editable
- * and offer an AI rewrite on demand. The model may suggest title text, but cannot
- * alter the user's deadline, board, priority or write to IndexedDB.
- */
-function comradeReviewCreate(draft) {
-  return new Promise(resolve => {
-    const entry=document.createElement('div');
-    entry.className='comrade-line comrade-response comrade-draft';
-    const heading=document.createElement('strong');
-    heading.textContent='Проверь задачу перед сохранением';
-    entry.appendChild(heading);
-    const field=(caption,element)=>{
-      const label=document.createElement('label');
-      label.className='comrade-draft-field';
-      const name=document.createElement('span'); name.textContent=caption;
-      label.append(name,element);entry.appendChild(label);
-      return element;
-    };
-    const title=field('Название',document.createElement('textarea'));
-    title.rows=2; title.maxLength=200; title.value=draft.title||'';
-    const deadline=field('Срок',document.createElement('input'));
-    deadline.type='date'; deadline.value=draft.deadline||'';
-    const priority=field('Приоритет',document.createElement('select'));
-    for(const [value,caption] of [['none','Без приоритета'],['low','Низкий'],
-      ['medium','Средний'],['high','Высокий']]){
-      const option=document.createElement('option');
-      option.value=value;option.textContent=caption;priority.appendChild(option);
-    }
-    priority.value=draft.priority||'none';
-    const board=field('Доска',document.createElement('select'));
-    for(const item of state.boards) {
-      const option=document.createElement('option');
-      option.value=item.name;option.textContent=item.name;board.appendChild(option);
-    }
-    board.value=draft.board||comradeBoard()?.name||'';
-    const hint=document.createElement('div');hint.className='comrade-draft-hint';
-    hint.textContent='Поля можно исправить вручную. Дата и доска не попадут в заголовок.';
-    entry.appendChild(hint);
-    const row=document.createElement('div');row.className='comrade-confirm';
-    const button=(name,kind)=>{
-      const b=document.createElement('button');
-      b.type='button';b.className=kind||'btn btn-small';b.textContent=name;
-      row.appendChild(b);return b;
-    };
-    const yes=button('Создать');
-    const retry=button('Не подходит · другой вариант AI','btn btn-secondary btn-small');
-    const close=button('Закрыть','btn btn-ghost btn-small');
-    entry.appendChild(row);
-    const error=document.createElement('div');error.className='comrade-draft-hint';
-    entry.appendChild(error);
-    comradeEl('comradeLog').appendChild(entry);
-    entry.scrollIntoView({block:'nearest'});
-    const take=()=>({
-      title:title.value.trim().slice(0,200),
-      deadline:deadline.value,
-      priority:priority.value,
-      board:board.value
-    });
-    const finish=(action,fields)=>{
-      if(comradeCancelConfirm===cancel)comradeCancelConfirm=null;
-      entry.remove();resolve({action,draft:fields});
-    };
-    const cancel=()=>finish('cancel',take());
-    comradeCancelConfirm=cancel;
-    yes.onclick=()=>{
-      const fields=take();
-      if(fields.title.length<2){error.textContent='Укажи название задачи.';return;}
-      if(fields.deadline&&!isValidISODate(fields.deadline)){
-        error.textContent='Укажи корректную дату.';return;
-      }
-      if(!comradeBoard(fields.board)){error.textContent='Выбери существующую доску.';return;}
-      finish('save',fields);
-    };
-    retry.onclick=()=>finish('rewrite',take());
-    close.onclick=cancel;
-  });
-}
-function comradeAIRewrite(draft) {
-  return new Promise(resolve=>{
-    const id=++comradeRequestId;
-    comradeRewriteResolve=resolve;
-    const request=(
-      'Сформулируй одним ясным коротким названием задачу, сохрани исходный смысл: '+
-      draft.title+'. Не упоминай дату, доску, приоритет. '+
-      'Верни JSON {"action":"create","title":"новое название задачи"}.'
-    ).slice(0,800);
-    comradeLog('Запрашиваю альтернативную формулировку у локальной модели…');
-    if(!comradeNative('infer',{
-      requestId:id, text:draft.title.slice(0,200),context:'',purpose:'rewrite_title'
-    })) {
-      comradeRewriteResolve=null;
-      comradeLog('Модель недоступна. Отредактируй название вручную.');
-      resolve(null);
-    }
-  });
-}
-async function comradeCreateTask(plan) {
-  let draft={
-    title:String(plan.title||'').trim().slice(0,200),
-    deadline:typeof plan.deadline==='string'?plan.deadline:'',
-    priority:['none','low','medium','high'].includes(plan.priority)?plan.priority:'none',
-    board:plan.board||comradeBoard()?.name||''
-  };
-  if(draft.title.length<2){comradeLog('Укажи название задачи.');return;}
-  if(draft.deadline&&!isValidISODate(draft.deadline)){
-    comradeLog('Некорректная дата. Укажи ГГГГ-ММ-ДД.');return;
-  }
-  // The user can revise the proposal repeatedly; no task is saved until Save.
-  while(true) {
-    const review=await comradeReviewCreate(draft);
-    draft=review.draft;
-    if(review.action==='cancel') {
-      comradeLog('Задача не создана. Изменить запрос можно в поле чата.');
-      return;
-    }
-    if(review.action==='rewrite'){
-      const suggestion=await comradeAIRewrite(draft);
-      if(suggestion) {
-        const clean=comradeSchedule(suggestion);
-        // Never accept a generated title with a different or undeclared deadline.
-        if(!clean.error&&clean.title.trim().length>=2) {
-          draft.title=clean.title.trim().slice(0,200);
-          comradeLog('Другой вариант: '+draft.title);
-        } else comradeLog('Модель не предложила пригодный вариант. Исправь название вручную.');
-      }
-      continue;
-    }
-    break;
-  }
-  const title=draft.title.trim().slice(0,200);
-  const board=comradeBoard(draft.board);
-  if(!board){comradeLog('Доска не найдена. Задача не сохранена.');return;}
-  const col=board.columns.find(c=>!c.isDone)||board.columns[0];
-  if(!col){comradeLog('Не нашёл колонку для задач.');return;}
-  const deadline=draft.deadline;
-  const priority=draft.priority;
-  const bucket=state._tasksByBoard[board.id]||[];
-  const siblings=bucket.filter(t=>t.columnId===col.id&&!t.parentId);
-  const order=siblings.length?Math.min(...siblings.map(t=>t.order||0))-1:0;
-  const task=sanitizeTask({id:generateId(),boardId:board.id,
-    columnId:col.id,title,deadline,priority,order});
-  try {
-    await dbPutTask(task);
-    if(!state._tasksByBoard[board.id])state._tasksByBoard[board.id]=bucket;
-    bucket.push(task);
-    if(board.id===state.activeBoardId){state.tasks=bucket;renderBoard();}
-    notifyOtherTabs();
-    comradeAudit('Создать',title,board.name);
-    comradeLog('Готово. Создана задача «'+title+'» · '+board.name+
-      (deadline?' · '+deadline:'')+'.');
-  } catch(e){comradeLog('Ошибка сохранения: '+(e.message||e));}
-}
-
-async function comradeChangeTask(plan, action) {
-  const targetText = String(plan.task || '').trim().toLocaleLowerCase('ru');
-  if (targetText.length < 3) { comradeLog('Уточни название задачи.'); return; }
-  const boardHint = plan.board ? comradeBoard(String(plan.board)) : null;
-  const found = comradeTasks().filter(t => {
-    if (boardHint && t.boardId !== boardHint.id) return false;
-    const title = t.title.toLocaleLowerCase('ru');
-    return title === targetText || title.includes(targetText);
-  });
-  if (!found.length) { comradeLog('Задача не найдена: ' + targetText); return; }
-  if (found.length > 1) {
-    comradeLog('Есть несколько совпадений, уточни название:\n' +
-      found.slice(0,8).map(t => '• ' + t.title).join('\n')); return;
-  }
-  const task = found[0];
-  const board = state.boards.find(b => b.id === task.boardId);
-  const column = action === 'complete'
-    ? board?.columns.find(c => c.isDone)
-    : board?.columns.find(c => c.title.toLocaleLowerCase('ru') ===
-        String(plan.column || '').toLocaleLowerCase('ru')) ||
-      ((/(работ|progress)/i).test(String(plan.column || ''))
-        ? board?.columns.find(c => !c.isDone && c.id !== task.columnId) : null);
-  if (!column) { comradeLog('Нет подходящей колонки.'); return; }
-  if (!(await comradeConfirm('Перенести «' + task.title + '» в «' + column.title + '»?'))) {
-    comradeLog('Отменено.'); return;
-  }
-  const updated = {...task, columnId:column.id, updatedAt:Date.now(),
-    completedAt:column.isDone ? (task.completedAt || Date.now()) : null};
-  try {
-    await dbPutTask(updated);
-    const bucket = state._tasksByBoard[task.boardId];
-    const idx = bucket.findIndex(t => t.id === task.id);
-    if (idx >= 0) bucket[idx] = updated;
-    if (task.boardId === state.activeBoardId) { state.tasks = bucket; renderBoard(); }
-    notifyOtherTabs();
-    comradeAudit(action === 'complete' ? 'Завершить' : 'Перенести',
-      task.title, board?.name || '');
-    comradeLog('Готово. Задача перемещена в «' + column.title + '».');
-  } catch(e) { comradeLog('Не удалось изменить задачу: ' + (e.message || e)); }
-}
-
-async function comradeUpdateTask(plan, request = '') {
-  const resolved = comradeResolveTask(plan.task, typeof plan.board === 'string' ? plan.board : '');
-  if (!resolved.task) { comradeLog(resolved.error); return; }
-  const task = resolved.task;
-  const fields = {};
-  // Never let an LLM change fields the user's request did not explicitly mention.
-  if (/назван|переимен|заголов|title/i.test(request) &&
-      typeof plan.title === 'string' && plan.title.trim().length >= 2)
-    fields.title = plan.title.trim().slice(0,200);
-  if (/описан|текст|description/i.test(request) && typeof plan.desc === 'string')
-    fields.desc = plan.desc.trim().slice(0,3000);
-  if (/приоритет|важност|priority/i.test(request) &&
-      typeof plan.priority === 'string' && ['none','low','medium','high'].includes(plan.priority))
-    fields.priority = plan.priority;
-  if (/срок|дат|дедлайн|завтра|сегодня|deadline|due/i.test(request) &&
-      typeof plan.deadline === 'string' && isValidISODate(plan.deadline))
-    fields.deadline = plan.deadline;
-  if (!Object.keys(fields).length) {
-    comradeLog('Уточни, что менять: название, описание, приоритет или дату.'); return;
-  }
-  const board = state.boards.find(b => b.id === task.boardId);
-  const summary = Object.entries(fields).map(([k,v]) => k + ': ' + v).join('; ');
-  if (!(await comradeConfirm('Изменить «' + task.title + '»? ' + summary))) {
-    comradeLog('Отменено.'); return;
-  }
-  const next = {...task, ...fields, updatedAt:Date.now()};
-  try {
-    await dbPutTask(next);
-    const bucket = state._tasksByBoard[task.boardId] || [];
-    const idx = bucket.findIndex(t => t.id === task.id);
-    if (idx >= 0) bucket[idx] = next;
-    if (state.activeBoardId === task.boardId) {
-      state.tasks = bucket; renderBoard();
-    }
-    notifyOtherTabs();
-    comradeAudit('Изменить', task.title, board?.name);
-    comradeLog('Готово. Задача обновлена.');
-  } catch (e) { comradeLog('Ошибка обновления: ' + (e.message || e)); }
-}
-
-async function comradeSubtask(plan) {
-  const title = typeof plan.title === 'string' ? plan.title.trim().slice(0,200) : '';
-  if (title.length < 2) { comradeLog('Назови подзадачу.'); return; }
-  const resolved = comradeResolveTask(plan.task, typeof plan.board === 'string' ? plan.board : '');
-  if (!resolved.task) { comradeLog(resolved.error); return; }
-  const parent = resolved.task;
-  const board = state.boards.find(b => b.id === parent.boardId);
-  if (!board) { comradeLog('Доска не найдена.'); return; }
-  if (!(await comradeConfirm('Добавить подзадачу «' + title + '» в «' + parent.title + '»?'))) {
-    comradeLog('Отменено.'); return;
-  }
-  const bucket = state._tasksByBoard[parent.boardId] || [];
-  const siblings = bucket.filter(t => t.parentId === parent.id);
-  const order = siblings.length ? Math.max(...siblings.map(t => t.order || 0)) + 1 : 0;
-  const task = sanitizeTask({
-    id:generateId(), boardId:parent.boardId, columnId:parent.columnId,
-    parentId:parent.id, title, order, priority:parent.priority
-  });
-  try {
-    await dbPutTask(task);
-    bucket.push(task);
-    if (state.activeBoardId === parent.boardId) { state.tasks = bucket; renderBoard(); }
-    notifyOtherTabs();
-    comradeAudit('Подзадача', title, board.name);
-    comradeLog('Готово. Подзадача добавлена в «' + parent.title + '».');
-  } catch (e) { comradeLog('Не удалось добавить подзадачу: ' + (e.message || e)); }
-}
-
-function comradeSearch(plan) {
-  const query = String(plan.query || plan.task || '').trim();
-  if (query.length < 2) { comradeLog('Уточни, что искать.'); return; }
-  const result = comradeMatches(query, typeof plan.board === 'string' ? plan.board : '');
-  comradeLog(result.length ? 'Совпадений: ' + result.length + '\n' +
-    result.slice(0,20).map(t => '• ' + t.title +
-      ' (' + (state.boards.find(b => b.id === t.boardId)?.name || '') + ')' +
-      (t.deadline ? ' · ' + t.deadline : '')
-    ).join('\n') : 'По запросу «' + query + '» задачи не найдены.');
-}
-
-async function comradeApply(plan, request) {
-  if (!plan || typeof plan !== 'object') { comradeLog('Не понял команду.'); return; }
-  if (plan.action === 'create') {
-    if (!/^(добавь|создай|запиши|запланируй|поставь|add|create)/i.test(request)) {
-      comradeLog('Для создания задачи попроси явно: «Добавь задачу…».'); return;
-    }
-    // The natural-language request, not the model's JSON, defines task fields.
-    const canonical=comradeParseCreate(request);
-    if(canonical?.action==='answer'){comradeLog(canonical.text);return;}
-    await comradeCreateTask(canonical||plan);
-  } else if (plan.action === 'plan_day') {
-    await comradeOpenDailyPlan({fresh:true,allowBusy:true});
-  } else if (plan.action === 'list') {
-    comradeList(['today','overdue'].includes(plan.filter) ? plan.filter : 'all',
-      typeof plan.board === 'string' ? plan.board : '');
-  } else if (plan.action === 'search') {
-    comradeSearch(plan);
-  } else if (plan.action === 'update') {
-    if (!/измени|поменяй|исправь|установи|обнови|переимен|поставь.*приоритет|update|change/i.test(request)) {
-      comradeLog('Для изменения задачи нужна явная команда.'); return;
-    }
-    await comradeUpdateTask(plan, request);
-  } else if (plan.action === 'subtask') {
-    if (!/подзадач|подзадачу|добавь.*этап|создай.*этап|subtask/i.test(request)) {
-      comradeLog('Для создания подзадачи попроси явно.'); return;
-    }
-    await comradeSubtask(plan);
-  } else if (plan.action === 'complete' || plan.action === 'move') {
-    if (!/заверш|выполн|закрой|отметь|перенес|перемест|complete|move/i.test(request)) {
-      comradeLog('Для изменения задачи попроси об этом явно.'); return;
-    }
-    await comradeChangeTask(plan, plan.action);
-  } else {
-    comradeLog(typeof plan.text === 'string' ? plan.text : 'Не удалось распознать действие.');
-  }
-}
-
-
-/* Only the assistant's action selection is probabilistic. Task fields are parsed
- * and validated independently before any IndexedDB write. */
-function comradeISO(year,month,day) {
-  const d=new Date(year,month-1,day,12);
-  if (d.getFullYear()!==year || d.getMonth()!==month-1 || d.getDate()!==day) return null;
-  return [year,String(month).padStart(2,'0'),String(day).padStart(2,'0')].join('-');
-}
-function comradeSchedule(raw) {
-  let title=String(raw||''), deadline='', error='';
-  const now=new Date(todayISO()+'T12:00:00');
-  const dayOffset=n=>{const d=new Date(now);d.setDate(d.getDate()+n);
-    return comradeISO(d.getFullYear(),d.getMonth()+1,d.getDate());};
-  const consume=(regex,convert)=>{
-    if(deadline||error)return;
-    const match=title.match(regex);
-    if(!match)return;
-    deadline=convert(match)||'';
-    if(!deadline)error='Некорректная или непонятная дата. Укажи срок как ГГГГ-ММ-ДД.';
-    else title=title.replace(match[0],' ');
-  };
-  consume(/(?:^|[\s,])(?:(?:до|к|на|в|дата|датой|срок(?:ом)?|дедлайн)\s*[:=]?\s+)?(\d{4}-\d{2}-\d{2})(?=$|[\s,.;!?])/i,
-    m=>isValidISODate(m[1])?m[1]:null);
-  // Accept 19.11.26, 19.11.2026 and 19.11. A two-digit explicit year
-  // maps to 20xx; only a missing year may roll forward to next year.
-  consume(/(?:^|[\s,])(?:(?:до|к|на|в|дата|датой|срок(?:ом)?|дедлайн)\s*[:=]?\s+)?(\d{1,2})[./](\d{1,2})(?:[./](\d{4}|\d{2}))?(?=$|[\s,;.!?])/i,
-    m=>{const day=+m[1],month=+m[2];let year=m[3]?(m[3].length===2?2000+Number(m[3]):Number(m[3])):now.getFullYear();
-      let val=comradeISO(year,month,day);
-      if(!m[3]&&val&&val<todayISO())val=comradeISO(++year,month,day);
-      return val;});
-  const months=['январ','феврал','март','апрел','мая','июн','июл','август',
-    'сентябр','октябр','ноябр','декабр'];
-  consume(/(?:^|[\s,])(?:(?:до|к|на|в|дата|датой|срок(?:ом)?|дедлайн)\s*[:=]?\s+)?(\d{1,2})\s+(январ[ья]|феврал[ья]|март[а]?|апрел[ья]|мая|июн[ья]|июл[ья]|август[а]?|сентябр[ья]|октябр[ья]|ноябр[ья]|декабр[ья])(?:\s+(\d{4})(?:\s+года?)?)?(?=$|[\s,;.!?])/i,
-    m=>{const day=+m[1],month=months.findIndex(x=>m[2].toLowerCase().startsWith(x))+1;
-      let year=m[3]?+m[3]:now.getFullYear();let val=comradeISO(year,month,day);
-      if(!m[3]&&val&&val<todayISO())val=comradeISO(++year,month,day);
-      return val;});
-  consume(/(?:^|[\s,])(?:(?:до|к|на|в)\s+)?(послезавтра|сегодня|завтра|today|tomorrow)(?=$|[\s,.!?])/i,
-    m=>dayOffset(/послезавтра/i.test(m[1])?2:/завтра|tomorrow/i.test(m[1])?1:0));
-  consume(/(?:^|[\s,])через\s+(\d{1,3})\s+(?:день|дня|дней|суток)(?=$|[\s,.!?])/i,
-    m=>+m[1]>0&&+m[1]<=365?dayOffset(+m[1]):null);
-  consume(/(?:^|[\s,])через\s+неделю(?=$|[\s,.!?])/i,()=>dayOffset(7));
-  consume(/(?:^|[\s,])(?:к|до|на|в|во)\s+(?:(?:ближайш[а-яё]*|следующ[а-яё]*|эт[а-яё]*)\s+)?(понедельник[ау]?|вторник[ау]?|сред[ауые]|четверг[ау]?|пятниц[ауые]|суббот[ауые]|воскресень[еяю])(?=$|[\s,.!?])/i,
-    m=>{const w=m[1].toLowerCase();const desired=w.startsWith('понед')?1:
-      w.startsWith('втор')?2:w.startsWith('сред')?3:w.startsWith('четв')?4:
-      w.startsWith('пятниц')?5:w.startsWith('суббот')?6:0;
-      return dayOffset((desired-now.getDay()+7)%7||7);});
-  if(!deadline&&!error&&/(?:^|[\s,])(?:к|до|на|в)\s+(?:(?:конц[ау]|начал[ау])\s+(?:недел[иью]|месяц[ауе]?|год[ауе]?)|следующ[а-яё]+\s+недел[июе])/i.test(title))
-    error='Уточни конкретную дату срока (ГГГГ-ММ-ДД).';
-  return {title,deadline,error};
-}
-function comradeParseCreate(input) {
-  const match=String(input||'').trim().match(/^(?:добавь|создай|запиши|поставь|запланируй|add|create)\s+(?:мне\s+)?(?:задачу|напоминание)?\s*[:\-]?\s*(.+)$/i);
-  if(!match)return null;
-  let title=match[1];const board=comradeMentionedBoard(input);
-  // A board can appear in the middle or end, separated by a comma or
-  // a full stop: "от СИМБЫ. Текучка, срок 19.11.26".
-  // Do not remove a board word embedded in the actual task title.
-  if(board) {
-    const clauses=title.split(/\s*[,;]\s*|\.\s+(?=[А-ЯЁа-яё])/u);
-    const kept=clauses.filter(part=>part.trim().toLocaleLowerCase('ru')!==
-      board.name.toLocaleLowerCase('ru'));
-    if(kept.length!==clauses.length)title=kept.join(', ');
-  }
-  if(board) {
-    const escaped=board.name.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&');
-    const clause=new RegExp('(?:^|[\\s,])(?:на|в)\\s+доск(?:у|е)\\s+'+escaped+'(?=$|[\\s,.!?])','i');
-    title=title.replace(clause,' ');
-  }
-  let explicitPriority='';
-  const p=title.match(/(?:^|[\s,])(?:(?:с|со)\s+)?(?:приоритет(?:ом)?\s*[:=]?\s*(высокий|средний|низкий|high|medium|low)|(высок(?:ий|им)|средн(?:ий|им)|низк(?:ий|им))\s+приоритет(?:ом)?)(?=$|[\s,.!?])/i);
-  if(p) {
-    const label=(p[1]||p[2]).toLowerCase();
-    explicitPriority=/высок|high/.test(label)?'high':/средн|medium/.test(label)?'medium':'low';
-    title=title.replace(p[0],' ');
-  }
-  const date=comradeSchedule(title);
-  if(date.error)return {action:'answer',text:date.error};
-  // A declared date that remained in the title must be clarified, not stored.
-  if(/(?:^|[\s,])(?:дата|датой|срок(?:ом)?|дедлайн)\s*[:=]?\s*(?:\d|$)/i.test(date.title))
-    return {action:'answer',text:'Не удалось выделить срок. Укажи дату как 19.11.2026.'};
-  const quick=parseQuick(date.title);
-  const clean=quick.title.replace(/^[\s,;:.\-]+|[\s,;:.\-]+$/g,'').replace(/\s+/g,' ').trim();
-  if(clean.length<2)return {action:'answer',text:'Назови задачу точнее.'};
-  return {action:'create',title:clean,deadline:date.deadline||quick.deadline,
-    priority:explicitPriority||quick.priority,board:board?.name||''};
-}
-function comradeBasic(text) {
-  const query = text.trim();
-  // Daily planning is deterministic and reads all boards, not only the current one.
-  if (/^(?:составь|сформируй|спланируй|подготовь|сделай|покажи|открой|обнови)\s+(?:мне\s+)?(?:план(?:\s+на\s+сегодня|\s+дня|\s+задач)?|мой\s+день)(?:\s|$)/i.test(query) ||
-      /^(?:что|какие)\s+(?:мне\s+)?(?:дела|задачи)\b.*\bсегодня\b/i.test(query)) {
-    return {action:'plan_day'};
-  }
-  const search = query.match(/^(?:найди|отыщи|поиск|search)\s+(?:задач[уи]?\s+)?(.+)$/i);
-  if (search) return {action:'search',query:search[1]};
-  if (/^(покажи|список|какие|что.*(?:задач|сделать)|list|show)/i.test(query)) {
-    return {action:'list', filter:/просроч/i.test(query) ? 'overdue' :
-      /сегодня|today/i.test(query) ? 'today' : 'all',
-      board: comradeMentionedBoard(query)?.name || ''};
-  }
-  const subtask = query.match(/^(?:добавь|создай)\s+подзадачу\s+(.+?)\s+(?:к|для|в)\s+задач[еёиу]\s+(.+)$/i);
-  if (subtask) return {action:'subtask',title:subtask[1],task:subtask[2]};
-  const priorityUpdate = query.match(/^(?:измени|поменяй|установи|поставь)\s+приоритет\s+(?:задач[еиу]\s+)?(.+?)\s+(?:на|в)\s+(высокий|средний|низкий|high|medium|low)$/i);
-  if (priorityUpdate) return {action:'update',task:priorityUpdate[1],
-    priority: /высок|high/i.test(priorityUpdate[2]) ? 'high' :
-      /средн|medium/i.test(priorityUpdate[2]) ? 'medium' : 'low'};
-  const planned=comradeParseCreate(query);
-  if(planned)return planned;
-  const done = query.match(/^(?:заверши|закрой|отметь выполненной|выполни|complete)\s+(?:задачу\s+)?(.+)$/i);
-  if (done) return {action:'complete', task:done[1]};
-  return null;
-}
-
-function comradeModelContext(question = '') {
-  // Bounded lexical prefilter: never feed the entire IndexedDB collection to the LLM.
-  const words = (question.toLocaleLowerCase('ru').match(/[\p{L}\p{N}]{4,}/gu) || [])
-    .filter(x => !['задачу','задача','можешь','пожалуйста','сегодня','завтра','добавь'].includes(x));
-  const candidates = comradeTasks().map(t => ({
-    task:t,
-    score:words.reduce((n,w)=> n + (t.title.toLocaleLowerCase('ru').includes(w) ? 3 : 0) +
-      (String(t.desc).toLocaleLowerCase('ru').includes(w) ? 1 : 0),0)
-  })).sort((a,b)=> b.score - a.score || (a.task.deadline || '9999').localeCompare(b.task.deadline || '9999'));
-  return JSON.stringify({
-    today:todayISO(),
-    activeBoard:comradeBoard()?.name || '',
-    boards:state.boards.slice(0,12).map(b=>({name:b.name,columns:b.columns.map(c=>c.title)})),
-    tasks:candidates.slice(0,12).map(({task:t})=>({
-      title:t.title.slice(0,100),
-      board:state.boards.find(b=>b.id===t.boardId)?.name || '',
-      deadline:t.deadline, priority:t.priority,
-      column:state.boards.find(b=>b.id===t.boardId)?.columns.find(c=>c.id===t.columnId)?.title || ''
-    }))
-  }).slice(0,4800);
-}
-
-async function comradeSend() {
-  if (comradeBusy) return;
-  const box = comradeEl('comradeInput');
-  const question = box.value.trim().slice(0,800);
-  if (!question) return;
-  const direct = comradeBasic(question);
-  // Preserve a malformed command for editing instead of making the user
-  // retype it after a format error.
-  if(direct?.action!=='answer')box.value='';
-  comradeLog(question,true);
-  if (direct) {
-    comradeBusySet(true);
-    try { await comradeApply(direct, question); }
-    finally { comradeBusySet(false); }
-    return;
-  }
-  comradeQuestion = question;
-  comradeBusySet(true);
-  const id = ++comradeRequestId;
-  if (!comradeNative('infer',{requestId:id,text:question,context:comradeModelContext(question)})) {
-    comradeBusySet(false);
-    comradeLog('Локальная LLM доступна только в Android APK. Простые задачи работают без модели.');
-  }
-}
-
-window.kanbanAssistantReceive = async function(payload) {
-  let data;
-  try { data=typeof payload==='string' ? JSON.parse(payload) : payload; } catch(_) { return; }
-  if (!data || typeof data!=='object') return;
-  if (data.type==='status' || data.type==='model') {
-    comradeEl('comradeModelName').textContent = data.name || 'Модель не выбрана';
-    if (data.text) comradeLog(data.text);
-    return;
-  }
-  if (data.type!=='result' || data.requestId!==comradeRequestId) return;
-  // Alternative title generation is a different workflow from task commands.
-  if(comradeDayAdviceResolve){
-    const complete=comradeDayAdviceResolve;comradeDayAdviceResolve=null;
-    if(data.error){comradeLog('Совет AI недоступен: '+data.error);complete(null);return;}
-    const raw=String(data.text||'').replace(/<think>[\s\S]*?<\/think>/g,'').trim();
-    let suggestion=raw;
-    try {
-      const json=raw.match(/\{[\s\S]*\}/);
-      const parsed=JSON.parse(json?json[0]:raw);
-      suggestion=typeof parsed.text==='string'?parsed.text:raw;
-    } catch(_) {}
-    complete(suggestion.slice(0,1100)||null);
-    return;
-  }
-  if(comradeRewriteResolve){
-    const complete=comradeRewriteResolve;comradeRewriteResolve=null;
-    if(data.error){comradeLog('Модель: '+data.error);complete(null);return;}
-    let title='';
-    try {
-      const body=String(data.text||'').replace(/<think>[\s\S]*?<\/think>/g,'').trim();
-      const json=body.match(/\{[\s\S]*\}/);
-      const reply=JSON.parse(json?json[0]:body);
-      title=typeof reply.title==='string'?reply.title.trim():'';
-    } catch(_){/* Invalid output must not reach IndexedDB. */}
-    if(!title)comradeLog('Модель не выдала корректное название. Можно изменить его вручную.');
-    complete(title||null);return;
-  }
-  if (data.error) { comradeBusySet(false); comradeLog(data.error); return; }
-  const reply = String(data.text || '').slice(0,4500);
-  let plan;
-  try {
-    const clean = reply.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
-    const braces = clean.match(/\{[\s\S]*\}/);
-    plan = JSON.parse(braces ? braces[0] : clean);
-  } catch(_) {
-    comradeBusySet(false);
-    comradeLog(reply || 'Не удалось разобрать ответ модели. Уточни команду.');
-    return;
-  }
-  try { await comradeApply(plan,comradeQuestion); }
-  finally { comradeBusySet(false); }
-};
-
-function comradeBind() {
-  const panel=comradeEl('comradePanel');
-  if (!panel) return;
-  comradeEl('comradeOpen').onclick=()=>{
-    panel.hidden=false;
-    comradeEl('comradeInput').focus();
-    comradeNative('status');
-  };
-  comradeEl('comradeClose').onclick=()=>{
-    if (comradeCancelConfirm) comradeCancelConfirm();
-    if (comradeRewriteResolve) {
-      const complete=comradeRewriteResolve;comradeRewriteResolve=null;complete(null);
-    }
-    if (comradeDayAdviceResolve) {
-      const complete=comradeDayAdviceResolve;comradeDayAdviceResolve=null;complete(null);
-    }
-    panel.hidden=true;
-    comradeRequestId++;
-    comradeBusySet(false);
-    comradeNative('release');
-  };
-  comradeEl('comradeChooseModel').onclick=()=>{
-    if (!comradeNative('choose_model')) comradeLog('Выбор GGUF доступен в Android-приложении.');
-  };
-  comradeEl('comradeSend').onclick=()=>{void comradeSend();};
-  const auditBtn = comradeEl('comradeAudit');
-  if (auditBtn) auditBtn.onclick=comradeShowAudit;
-  const planBtn=comradeEl('comradePlanBtn');
-  if(planBtn) planBtn.onclick=()=>{void comradeOpenDailyPlan();};
-  comradeEl('comradeInput').onkeydown=e=>{
-    if (e.key==='Enter' && !e.shiftKey && !e.isComposing) {
-      e.preventDefault(); void comradeSend();
-    }
-  };
-}
-
 // Daily plan is an ordered, dated selection of existing task IDs.
 // It never moves cards, changes task priorities, or rewrites deadlines.
+// Preserve previous daily-plan records across the assistant's removal.
 const COMRADE_DAY_KEY = 'comrade_day_plan_v1';
+const dayPlanEl = id => document.getElementById(id);
+const dayPlanTasks = () => Object.values(state._tasksByBoard).flat();
+function dayPlanNotice(message) {
+  const item=document.createElement('div');
+  item.className='day-plan-notice';
+  item.textContent=String(message);
+  const log=dayPlanEl('dayPlanLog');
+  if(log){log.appendChild(item);log.scrollTop=log.scrollHeight;}
+}
+function bindDailyPlan() {
+  dayPlanEl('dayPlanClose').onclick=()=>{dayPlanEl('dayPlanPanel').hidden=true;};
+}
 
 function comradeDayCandidates(today = todayISO()) {
   const boards = new Map(state.boards.map(board => [board.id, board]));
-  return comradeTasks().flatMap(task => {
+  return dayPlanTasks().flatMap(task => {
     if (task.parentId) return []; // Avoid listing the same work twice via parent and child.
     const board = boards.get(task.boardId);
     if (!board) return [];
@@ -3544,24 +2855,22 @@ async function comradePersistDay(ids, date = todayISO()) {
   return validIds;
 }
 
-async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
-  if (comradeBusy && !allowBusy) {
-    comradeLog('Дождись завершения текущей команды.'); return;
-  }
-  const panel = comradeEl('comradePanel');
-  panel.hidden = false;
-  const today = todayISO();
+async function comradeOpenDailyPlan({fresh = false} = {}) {
+  const panel=dayPlanEl('dayPlanPanel');
+  panel.hidden=false;
+  dayPlanEl('dayPlanLog').replaceChildren();
+  const today=todayISO();
   let saved;
   try {
     const settings = await dbGetSettings();
     saved = settings[COMRADE_DAY_KEY];
   } catch(e) {
-    comradeLog('Не удалось прочитать план: ' + (e.message || e)); return;
+    dayPlanNotice('Не удалось прочитать план: ' + (e.message || e)); return;
   }
   if (panel.hidden) return;
   const candidates = comradeDayCandidates(today);
   if (!candidates.length) {
-    comradeLog('На ' + today + ' нет незавершённых просроченных, сегодняшних ' +
+    dayPlanNotice('На ' + today + ' нет незавершённых просроченных, сегодняшних ' +
       'или высокоприоритетных задач. Проверил все ' + state.boards.length + ' доски.');
     return;
   }
@@ -3569,20 +2878,20 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
   const rows = draft.rows.slice();
   const selected = new Set(draft.selected);
   const entry = document.createElement('section');
-  entry.className = 'comrade-line comrade-response comrade-day';
+  entry.className = 'day-plan-card';
   const title = document.createElement('strong');
   title.textContent = (draft.fromSaved?'Сохранённый план':'Предложенный план') +
     ' на ' + today;
   const note = document.createElement('p');
-  note.className = 'comrade-day-note';
+  note.className = 'day-plan-note';
   note.textContent = 'Все ' + state.boards.length + ' доски · ' + candidates.length +
     ' незавершённых задач. Сначала просроченные, сегодняшние и важные. ' +
     'Остальные тоже можно выбрать. Измени порядок стрелками.' +
     (candidates.length >= 60 ? ' Показаны первые 60 задач по срочности.' : '');
   const list = document.createElement('div');
-  list.className = 'comrade-day-list';
+  list.className = 'day-plan-list';
   const footer = document.createElement('div');
-  footer.className = 'comrade-confirm';
+  footer.className = 'day-plan-actions';
   const control = (text,klass='btn btn-secondary btn-small')=>{
     const button=document.createElement('button');
     button.type='button';button.className=klass;button.textContent=text;
@@ -3590,16 +2899,15 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
   };
   const save=control('Сохранить в «Мой день»','btn btn-small');
   const rebuild=control('Новый вариант');
-  const advise=control('Совет AI (по желанию)');
   const close=control('Закрыть');
   entry.append(title,note,list,footer);
-  comradeEl('comradeLog').appendChild(entry);
+  dayPlanEl('dayPlanLog').appendChild(entry);
   entry.scrollIntoView({block:'nearest'});
   function redraw() {
     list.replaceChildren();
     rows.forEach((item,index)=>{
-      const row=document.createElement('div');row.className='comrade-day-row';
-      const label=document.createElement('label');label.className='comrade-day-description';
+      const row=document.createElement('div');row.className='day-plan-row';
+      const label=document.createElement('label');label.className='day-plan-description';
       const check=document.createElement('input');check.type='checkbox';
       check.checked=selected.has(item.id);
       check.setAttribute('aria-label','Включить в план: '+item.title);
@@ -3612,7 +2920,7 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
         (item.deadline?' · до '+item.deadline:'');
       details.append(name,meta);
       label.append(check,details);
-      const arrows=document.createElement('div');arrows.className='comrade-day-arrows';
+      const arrows=document.createElement('div');arrows.className='day-plan-arrows';
       const makeArrow=(symbol,move,disabled)=>{
         const button=document.createElement('button');
         button.type='button';button.className='btn btn-ghost btn-small';
@@ -3635,51 +2943,18 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
   }
   redraw();
   save.onclick=async()=>{
-    if(comradeBusy)return;
     const ids=rows.filter(item=>selected.has(item.id)).map(item=>item.id);
     save.disabled=true;
     try {
       const persisted=await comradePersistDay(ids,today);
       title.textContent='Сохранённый план на '+today;
-      comradeLog('Сохранено '+persisted.length+' задач в «Мой день» по всем доскам. '+
+      dayPlanNotice('Сохранено '+persisted.length+' задач в «Мой день» по всем доскам. '+
         'Их сроки, статусы, приоритеты и доски не изменены.');
-    } catch(e){comradeLog('Ошибка сохранения плана: '+(e.message||e));}
+    } catch(e){dayPlanNotice('Ошибка сохранения плана: '+(e.message||e));}
     finally{redraw();}
   };
   rebuild.onclick=()=>{entry.remove();void comradeOpenDailyPlan({fresh:true});};
-  close.onclick=()=>entry.remove();
-  advise.onclick=async()=>{
-    const active=rows.filter(item=>selected.has(item.id)).slice(0,10);
-    if(!active.length){comradeLog('Выбери хотя бы одну задачу.');return;}
-    advise.disabled=true;
-    try {
-      const answer=await comradeRequestDayAdvice(active,today);
-      if(answer && !panel.hidden) comradeLog('Совет AI (без изменений задач):\n'+answer);
-    } finally {advise.disabled=false;}
-  };
-}
-
-function comradeRequestDayAdvice(tasks, date) {
-  if (comradeBusy)return Promise.resolve(null);
-  const context=JSON.stringify({
-    date,tasks:tasks.slice(0,10).map(item=>({
-      title:item.title.slice(0,120),board:item.board.slice(0,80),
-      deadline:item.deadline,priority:item.priority,reason:item.reason
-    }))
-  }).slice(0,4400);
-  return new Promise(resolve=>{
-    const id=++comradeRequestId;
-    comradeBusySet(true);
-    const complete=text=>{comradeBusySet(false);resolve(text);};
-    comradeDayAdviceResolve=complete;
-    if(!comradeNative('infer',{requestId:id,purpose:'day_advice',
-      text:'Предложи краткий реалистичный порядок работы на сегодня и один совет по фокусу.',
-      context})) {
-      comradeDayAdviceResolve=null;
-      comradeLog('AI доступен только в Android APK. План можно сохранить без модели.');
-      complete(null);
-    }
-  });
+  close.onclick=()=>{panel.hidden=true;};
 }
 // ============================================================
 // POMODORO
@@ -3949,7 +3224,7 @@ async function init() {
     e.preventDefault();
     if (await quickAddTask(e.target.value)) e.target.value = '';
   });
-  comradeBind();
+  bindDailyPlan();
   registerServiceWorker();
 }
 

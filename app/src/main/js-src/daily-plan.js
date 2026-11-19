@@ -1,11 +1,24 @@
 
 // Daily plan is an ordered, dated selection of existing task IDs.
 // It never moves cards, changes task priorities, or rewrites deadlines.
+// Preserve previous daily-plan records across the assistant's removal.
 const COMRADE_DAY_KEY = 'comrade_day_plan_v1';
+const dayPlanEl = id => document.getElementById(id);
+const dayPlanTasks = () => Object.values(state._tasksByBoard).flat();
+function dayPlanNotice(message) {
+  const item=document.createElement('div');
+  item.className='day-plan-notice';
+  item.textContent=String(message);
+  const log=dayPlanEl('dayPlanLog');
+  if(log){log.appendChild(item);log.scrollTop=log.scrollHeight;}
+}
+function bindDailyPlan() {
+  dayPlanEl('dayPlanClose').onclick=()=>{dayPlanEl('dayPlanPanel').hidden=true;};
+}
 
 function comradeDayCandidates(today = todayISO()) {
   const boards = new Map(state.boards.map(board => [board.id, board]));
-  return comradeTasks().flatMap(task => {
+  return dayPlanTasks().flatMap(task => {
     if (task.parentId) return []; // Avoid listing the same work twice via parent and child.
     const board = boards.get(task.boardId);
     if (!board) return [];
@@ -76,24 +89,22 @@ async function comradePersistDay(ids, date = todayISO()) {
   return validIds;
 }
 
-async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
-  if (comradeBusy && !allowBusy) {
-    comradeLog('Дождись завершения текущей команды.'); return;
-  }
-  const panel = comradeEl('comradePanel');
-  panel.hidden = false;
-  const today = todayISO();
+async function comradeOpenDailyPlan({fresh = false} = {}) {
+  const panel=dayPlanEl('dayPlanPanel');
+  panel.hidden=false;
+  dayPlanEl('dayPlanLog').replaceChildren();
+  const today=todayISO();
   let saved;
   try {
     const settings = await dbGetSettings();
     saved = settings[COMRADE_DAY_KEY];
   } catch(e) {
-    comradeLog('Не удалось прочитать план: ' + (e.message || e)); return;
+    dayPlanNotice('Не удалось прочитать план: ' + (e.message || e)); return;
   }
   if (panel.hidden) return;
   const candidates = comradeDayCandidates(today);
   if (!candidates.length) {
-    comradeLog('На ' + today + ' нет незавершённых просроченных, сегодняшних ' +
+    dayPlanNotice('На ' + today + ' нет незавершённых просроченных, сегодняшних ' +
       'или высокоприоритетных задач. Проверил все ' + state.boards.length + ' доски.');
     return;
   }
@@ -101,20 +112,20 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
   const rows = draft.rows.slice();
   const selected = new Set(draft.selected);
   const entry = document.createElement('section');
-  entry.className = 'comrade-line comrade-response comrade-day';
+  entry.className = 'day-plan-card';
   const title = document.createElement('strong');
   title.textContent = (draft.fromSaved?'Сохранённый план':'Предложенный план') +
     ' на ' + today;
   const note = document.createElement('p');
-  note.className = 'comrade-day-note';
+  note.className = 'day-plan-note';
   note.textContent = 'Все ' + state.boards.length + ' доски · ' + candidates.length +
     ' незавершённых задач. Сначала просроченные, сегодняшние и важные. ' +
     'Остальные тоже можно выбрать. Измени порядок стрелками.' +
     (candidates.length >= 60 ? ' Показаны первые 60 задач по срочности.' : '');
   const list = document.createElement('div');
-  list.className = 'comrade-day-list';
+  list.className = 'day-plan-list';
   const footer = document.createElement('div');
-  footer.className = 'comrade-confirm';
+  footer.className = 'day-plan-actions';
   const control = (text,klass='btn btn-secondary btn-small')=>{
     const button=document.createElement('button');
     button.type='button';button.className=klass;button.textContent=text;
@@ -122,16 +133,15 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
   };
   const save=control('Сохранить в «Мой день»','btn btn-small');
   const rebuild=control('Новый вариант');
-  const advise=control('Совет AI (по желанию)');
   const close=control('Закрыть');
   entry.append(title,note,list,footer);
-  comradeEl('comradeLog').appendChild(entry);
+  dayPlanEl('dayPlanLog').appendChild(entry);
   entry.scrollIntoView({block:'nearest'});
   function redraw() {
     list.replaceChildren();
     rows.forEach((item,index)=>{
-      const row=document.createElement('div');row.className='comrade-day-row';
-      const label=document.createElement('label');label.className='comrade-day-description';
+      const row=document.createElement('div');row.className='day-plan-row';
+      const label=document.createElement('label');label.className='day-plan-description';
       const check=document.createElement('input');check.type='checkbox';
       check.checked=selected.has(item.id);
       check.setAttribute('aria-label','Включить в план: '+item.title);
@@ -144,7 +154,7 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
         (item.deadline?' · до '+item.deadline:'');
       details.append(name,meta);
       label.append(check,details);
-      const arrows=document.createElement('div');arrows.className='comrade-day-arrows';
+      const arrows=document.createElement('div');arrows.className='day-plan-arrows';
       const makeArrow=(symbol,move,disabled)=>{
         const button=document.createElement('button');
         button.type='button';button.className='btn btn-ghost btn-small';
@@ -167,49 +177,16 @@ async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
   }
   redraw();
   save.onclick=async()=>{
-    if(comradeBusy)return;
     const ids=rows.filter(item=>selected.has(item.id)).map(item=>item.id);
     save.disabled=true;
     try {
       const persisted=await comradePersistDay(ids,today);
       title.textContent='Сохранённый план на '+today;
-      comradeLog('Сохранено '+persisted.length+' задач в «Мой день» по всем доскам. '+
+      dayPlanNotice('Сохранено '+persisted.length+' задач в «Мой день» по всем доскам. '+
         'Их сроки, статусы, приоритеты и доски не изменены.');
-    } catch(e){comradeLog('Ошибка сохранения плана: '+(e.message||e));}
+    } catch(e){dayPlanNotice('Ошибка сохранения плана: '+(e.message||e));}
     finally{redraw();}
   };
   rebuild.onclick=()=>{entry.remove();void comradeOpenDailyPlan({fresh:true});};
-  close.onclick=()=>entry.remove();
-  advise.onclick=async()=>{
-    const active=rows.filter(item=>selected.has(item.id)).slice(0,10);
-    if(!active.length){comradeLog('Выбери хотя бы одну задачу.');return;}
-    advise.disabled=true;
-    try {
-      const answer=await comradeRequestDayAdvice(active,today);
-      if(answer && !panel.hidden) comradeLog('Совет AI (без изменений задач):\n'+answer);
-    } finally {advise.disabled=false;}
-  };
-}
-
-function comradeRequestDayAdvice(tasks, date) {
-  if (comradeBusy)return Promise.resolve(null);
-  const context=JSON.stringify({
-    date,tasks:tasks.slice(0,10).map(item=>({
-      title:item.title.slice(0,120),board:item.board.slice(0,80),
-      deadline:item.deadline,priority:item.priority,reason:item.reason
-    }))
-  }).slice(0,4400);
-  return new Promise(resolve=>{
-    const id=++comradeRequestId;
-    comradeBusySet(true);
-    const complete=text=>{comradeBusySet(false);resolve(text);};
-    comradeDayAdviceResolve=complete;
-    if(!comradeNative('infer',{requestId:id,purpose:'day_advice',
-      text:'Предложи краткий реалистичный порядок работы на сегодня и один совет по фокусу.',
-      context})) {
-      comradeDayAdviceResolve=null;
-      comradeLog('AI доступен только в Android APK. План можно сохранить без модели.');
-      complete(null);
-    }
-  });
+  close.onclick=()=>{panel.hidden=true;};
 }

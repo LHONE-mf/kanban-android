@@ -33,8 +33,8 @@ jobs:
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax
         run: node --check app/src/main/assets/kanban.js
-      - name: Test Comrade command parser
-        run: node tests/test_assistant_planner.js
+      - name: Verify removal of the AI experiment
+        run: node tests/test_no_ai.js
       - name: Test task priority badges in all four states
         run: node tests/test_task_priority_badges.js
       - name: Test all-board Comrade daily planning

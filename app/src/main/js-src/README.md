@@ -9,7 +9,8 @@ That generated file is assembled from these ordered source files:
 4. `app/src/main/js-src/media-dialogs.js` — image processing, lightbox, settings, confirmations, toasts and theme.
 5. `app/src/main/js-src/data-transfer.js` — import, export and board clearing.
 6. `app/src/main/js-src/interactions.js` — drag-and-drop, event bindings and quick add.
-7. `app/src/main/js-src/android-extras.js` — timer, service worker, audio and initialization.
+7. `app/src/main/js-src/daily-plan.js` — cross-board daily planning without AI.
+8. `app/src/main/js-src/android-extras.js` — timer, service worker, audio and initialization.
 
 **Edit the source files, not the generated `kanban.js`.**
 

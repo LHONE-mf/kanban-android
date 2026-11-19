@@ -24,7 +24,7 @@ android {
         targetSdk = 35
         // A higher code is required for Android to accept an in-place update.
         versionCode = System.getenv("KANBAN_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = "0.4.7"
+        versionName = "0.4.8"
     }
 
     signingConfigs {
@@ -70,7 +70,5 @@ android {
 
 dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
-    implementation("io.github.its-hazratbilal:android-ai-kit-chat:1.0.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.activity:activity-ktx:1.9.3")
 }

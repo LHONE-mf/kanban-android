@@ -40,7 +40,6 @@ import androidx.webkit.WebViewClientCompat
 
 class MainActivity : ComponentActivity() {
     private lateinit var webView: WebView
-    private lateinit var comradeAssistant: KanbanAssistantEngine
     private lateinit var japaneseButton: Button
     private lateinit var dailyBanner: LinearLayout
     private lateinit var appRoot: LinearLayout
@@ -94,26 +93,14 @@ class MainActivity : ComponentActivity() {
 
     private val appOrigin = "https://appassets.androidplatform.net"
 
-    private val comradeModelPicker = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null && ::comradeAssistant.isInitialized) {
-            comradeAssistant.selectFile(uri)
-        }
-    }
-
-    private fun sendComradeResponse(response: JSONObject) {
-        runOnUiThread {
-            if (::webView.isInitialized &&
-                webView.url?.endsWith("/kanban.html") == true
-            ) {
-                val encoded = JSONObject.quote(response.toString())
-                webView.evaluateJavascript(
-                    "window.kanbanAssistantReceive && window.kanbanAssistantReceive(" +
-                        encoded + ")", null
-                )
-            }
-        }
+    /** Remove only private copies of the old GGUF; preserve IndexedDB and user files. */
+    private fun removeOldModelCopy() {
+        val directory=File(filesDir,"kanban_comrade")
+        File(directory,"active.gguf").delete()
+        File(directory,"active.gguf.part").delete()
+        directory.delete()
+        getSharedPreferences("kanban_comrade", MODE_PRIVATE).edit()
+            .remove("model_name").apply()
     }
 
     private val filePicker = registerForActivityResult(
@@ -143,7 +130,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        comradeAssistant = KanbanAssistantEngine(applicationContext, ::sendComradeResponse)
+        removeOldModelCopy()
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
@@ -239,37 +226,6 @@ class MainActivity : ComponentActivity() {
                                 android.widget.Toast.LENGTH_LONG
                             ).show()
                         }
-                    }
-                }
-            }
-        }
-
-        // Trust only our bundled Kanban page. A local LLM can only request
-        // bounded commands; it cannot execute JavaScript or access IndexedDB directly.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-            WebViewCompat.addWebMessageListener(
-                webView, "KanbanAssistant", setOf(appOrigin)
-            ) { _, message, sourceOrigin, isMainFrame, _ ->
-                if (!isMainFrame ||
-                    sourceOrigin.toString().removeSuffix("/") != appOrigin ||
-                    webView.url?.endsWith("/kanban.html") != true
-                ) return@addWebMessageListener
-                val raw = message.data ?: return@addWebMessageListener
-                if (raw.length > 6200) return@addWebMessageListener
-                val value = try { JSONObject(raw) } catch (_: Exception) {
-                    return@addWebMessageListener
-                }
-                runOnUiThread {
-                    when (value.optString("type")) {
-                        "status" -> comradeAssistant.status()
-                        "release" -> comradeAssistant.release()
-                        "choose_model" -> comradeModelPicker.launch(arrayOf("*/*"))
-                        "infer" -> comradeAssistant.infer(
-                            value.optInt("requestId", -1),
-                            value.optString("text"),
-                            value.optString("context"),
-                            value.optString("purpose")
-                        )
                     }
                 }
             }
@@ -674,18 +630,11 @@ class MainActivity : ComponentActivity() {
         return panel
     }
 
-    override fun onStop() {
-        // Release RAM if Android sends Kanban into the background.
-        if (::comradeAssistant.isInitialized) comradeAssistant.release()
-        super.onStop()
-    }
-
     override fun onDestroy() {
         pendingMicRequest?.deny()
         pendingMicRequest = null
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null
-        if (::comradeAssistant.isInitialized) comradeAssistant.close()
         webView.destroy()
         japaneseSpeech?.stop()
         japaneseSpeech?.shutdown()

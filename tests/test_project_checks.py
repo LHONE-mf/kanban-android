@@ -125,43 +125,43 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("if (miniExpanded && !bannerDismissedThisSession", self.main)
         self.assertIn('contentDescription = "Показать или скрыть японское задание"', self.main)
 
-    def test_rejected_comrade_proposals_are_editable_and_can_retry_with_llm(self):
-        assistant = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
-        engine = (ROOT / "app/src/main/java/com/kanban/offline/KanbanAssistantEngine.kt").read_text(encoding="utf-8")
-        self.assertIn("comradeReviewCreate(draft)", assistant)
-        self.assertIn("comradeAIRewrite(draft)", assistant)
-        self.assertIn("comradeRewriteResolve", assistant)
-        self.assertIn("Другой вариант", assistant)
-        self.assertIn("purpose:'rewrite_title'", assistant)
-        self.assertIn('if (purpose == "rewrite_title")', engine)
-        self.assertIn('value.optString("purpose")', self.main)
-        self.assertIn(".comrade-draft-field", self.css)
-
-    def test_daily_plan_is_cross_board_and_does_not_mutate_tasks(self):
+    def test_daily_plan_is_cross_board_and_keeps_existing_storage(self):
         source = (ROOT / "app/src/main/js-src/daily-plan.js").read_text(encoding="utf-8")
-        assistant = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
         android = (ROOT / "app/src/main/js-src/android-extras.js").read_text(encoding="utf-8")
-        html = (ROOT / "app/src/main/assets/kanban.html").read_text(encoding="utf-8")
         self.assertIn("function comradeDayCandidates(", source)
         self.assertIn("function comradeDayDraft(", source)
         self.assertIn("async function comradePersistDay(", source)
+        self.assertIn("comrade_day_plan_v1", source)
         self.assertIn("dbPutSettingsBulk([[COMRADE_DAY_KEY", source)
         self.assertNotIn("dbPutTask(", source)
         self.assertNotIn("dbPutTasks(", source)
-        self.assertIn("comradeOpenDailyPlan({fresh:true,allowBusy:true})", assistant)
+        self.assertIn("dayPlanTasks()", source)
         self.assertIn("comradeOpenDailyPlan();", android)
-        self.assertIn('id="comradePlanBtn"', html)
-        self.assertIn(".comrade-day-row", self.css)
+        self.assertIn("bindDailyPlan();", android)
+        self.assertIn('id="myDayBtn"', self.html)
+        self.assertIn('id="dayPlanPanel"', self.html)
+        self.assertIn('id="dayPlanClose"', self.html)
+        self.assertIn(".day-plan-row", self.css)
 
-    def test_comrade_bounded_actions_do_not_clear_database(self):
-        code = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
-        for symbol in ("comradeCreateTask(", "comradeChangeTask(", "comradeList(", "comradeConfirm("):
-            self.assertIn(symbol, code)
-        self.assertIn("dbPutTask(", code)
-        self.assertNotIn("indexedDB.deleteDatabase", code)
-        self.assertNotIn("eval(", code)
-        html = (ROOT / "app/src/main/assets/kanban.html").read_text(encoding="utf-8")
-        self.assertIn('id="comradeOpen"', html)
+    def test_ai_experiment_removed_and_original_app_data_preserved(self):
+        source_root = ROOT / "app/src/main"
+        java = source_root / "java/com/kanban/offline"
+        self.assertFalse((java / "KanbanAssistantEngine.kt").exists())
+        self.assertFalse((ROOT / "app/src/main/js-src/assistant.js").exists())
+        self.assertFalse((ROOT / "tests/test_assistant_planner.js").exists())
+        self.assertNotIn("KanbanAssistant", self.main)
+        self.assertNotIn("comradeOpen", self.html)
+        self.assertNotIn("comradePanel", self.html)
+        self.assertNotIn("comradeNative(", self.html)
+        self.assertNotIn("GGUF", self.html)
+        self.assertNotIn("★ AI", self.html)
+        self.assertIn('File(directory,"active.gguf").delete()', self.main)
+        self.assertNotIn("indexedDB.deleteDatabase", self.main)
+        dependencies = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
+        self.assertNotIn("android-ai-kit", dependencies)
+        self.assertIn('applicationId = "com.kanban.offline"', dependencies)
+        self.assertNotIn("assistant.js", build.PARTS)
+        self.assertIn("daily-plan.js", build.PARTS)
 
 
 if __name__ == "__main__":

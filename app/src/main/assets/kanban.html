@@ -49,7 +49,6 @@
     <button class="btn btn-ghost btn-icon" id="addBoardBtn" title="Новая доска" aria-label="Новая доска">+</button>
   </div>
   <div class="actions header-actions">
-    <button class="btn btn-secondary btn-small" id="comradeOpen" type="button" title="Локальный помощник Kanban">★ AI</button>
     <button class="btn btn-ghost btn-icon" id="focusBtn" title="Таймер фокуса (Pomodoro)" aria-label="Таймер фокуса">🍅</button>
     <button class="btn btn-ghost btn-icon" id="themeBtn" aria-label="Переключить тему" aria-pressed="false">◐</button>
     <button class="btn btn-ghost" id="exportBtn" title="Полный бэкап: доски, структура, карта, файлы">Экспорт</button>
@@ -96,7 +95,7 @@
     <option value="priority_desc">По приоритету</option>
     <option value="title">По названию</option>
   </select>
-  <button class="btn btn-secondary btn-small" id="myDayBtn" title="Просроченные и сегодняшние задачи">🔥 Мой день</button>
+  <button class="btn btn-secondary btn-small" id="myDayBtn" title="План на сегодня по всем доскам">🔥 Мой день</button>
    <span class="storage-info" id="storageInfo" title="Использование хранилища">…</span>
 </div>
 
@@ -297,38 +296,17 @@
 </div>
 <div class="toast-container" id="toasts" aria-live="polite"></div>
 
-<div id="comradePanel" class="comrade-panel" role="dialog" aria-modal="true"
-     aria-label="Помощник Comrade" hidden>
-  <section class="comrade-dialog">
-    <header class="comrade-head">
-      <div><strong>★ Comrade AI</strong>
-        <div class="comrade-subtitle">Команды для задач — без интернета</div>
+<div id="dayPlanPanel" class="day-plan-panel" role="dialog" aria-modal="true"
+     aria-label="План на сегодня по всем доскам" hidden>
+  <section class="day-plan-dialog">
+    <header class="day-plan-header">
+      <div><strong>🔥 Мой день</strong>
+        <div class="day-plan-subtitle">План по всем доскам · без нейросети</div>
       </div>
-      <button id="comradeClose" class="btn btn-ghost btn-small"
-              type="button" aria-label="Закрыть помощника">✕</button>
+      <button id="dayPlanClose" class="btn btn-ghost btn-small" type="button"
+              aria-label="Закрыть план">✕</button>
     </header>
-    <div class="comrade-model">
-      <button id="comradeChooseModel" type="button" class="btn btn-secondary btn-small">
-        Выбрать локальную GGUF
-      </button>
-      <span id="comradeModelName">Модель не выбрана</span>
-      <button id="comradePlanBtn" type="button" class="btn btn-ghost btn-small"
-              title="План на сегодня по всем доскам">Мой день</button>
-      <button id="comradeAudit" type="button" class="btn btn-ghost btn-small"
-              title="История подтверждённых операций">Журнал</button>
-    </div>
-    <div class="comrade-subtitle" style="padding:4px 12px">Для быстрых команд: GGUF 0.8–2B, например Qwen3-1.7B Q4_K_M. Модель загружается по запросу и освобождает память после 90 секунд простоя.</div>
-    <div id="comradeLog" class="comrade-log" role="log" aria-live="polite">
-      <div class="comrade-line comrade-response">Привет! Я могу показать задачи, создать их и отметить выполненными. Простые команды не запускают нейросеть. Для свободных запросов выбери небольшую GGUF (0.8–2B).</div>
-    </div>
-    <div id="comradeWait" class="comrade-wait" hidden>Модель обрабатывает команду…</div>
-    <footer class="comrade-form">
-      <textarea id="comradeInput" rows="2"
-                placeholder="Например: Добавь задачу проверить отчёт завтра"
-                aria-label="Команда помощнику"></textarea>
-      <button id="comradeSend" type="button" class="btn">Отправить</button>
-    </footer>
-    <div class="comrade-hint">Enter — отправить · Shift+Enter — новая строка. Запись и изменения требуют подтверждения.</div>
+    <div id="dayPlanLog" class="day-plan-log" aria-live="polite"></div>
   </section>
 </div>
 <script src="kanban.js"></script>

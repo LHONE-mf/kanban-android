@@ -266,7 +266,7 @@ async function init() {
     e.preventDefault();
     if (await quickAddTask(e.target.value)) e.target.value = '';
   });
-  comradeBind();
+  bindDailyPlan();
   registerServiceWorker();
 }
 

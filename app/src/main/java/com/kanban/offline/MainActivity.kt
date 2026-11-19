@@ -671,6 +671,12 @@ class MainActivity : ComponentActivity() {
         return panel
     }
 
+    override fun onStop() {
+        // Release RAM if Android sends Kanban into the background.
+        if (::comradeAssistant.isInitialized) comradeAssistant.release()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         pendingMicRequest?.deny()
         pendingMicRequest = null

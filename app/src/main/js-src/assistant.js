@@ -3,6 +3,7 @@
 let comradeBusy = false;
 let comradeRequestId = 0;
 let comradeQuestion = '';
+let comradeCancelConfirm = null;
 const comradeEl = id => document.getElementById(id);
 
 function comradeLog(message, user = false) {
@@ -124,9 +125,15 @@ function comradeConfirm(label) {
     row.append(yes,no); entry.append(title,row);
     comradeEl('comradeLog').appendChild(entry);
     entry.scrollIntoView({block:'nearest'});
-    const done = val => { entry.remove(); resolve(val); };
+    const done = val => {
+      entry.remove();
+      if (comradeCancelConfirm === cancel) comradeCancelConfirm = null;
+      resolve(val);
+    };
+    const cancel = () => done(false);
+    comradeCancelConfirm = cancel;
     yes.onclick = () => done(true);
-    no.onclick = () => done(false);
+    no.onclick = cancel;
   });
 }
 
@@ -290,7 +297,7 @@ async function comradeApply(plan, request) {
   } else if (plan.action === 'search') {
     comradeSearch(plan);
   } else if (plan.action === 'update') {
-    if (!/измени|поменяй|исправь|установи|обнови|поставь.*приоритет|update|change/i.test(request)) {
+    if (!/измени|поменяй|исправь|установи|обнови|переимен|поставь.*приоритет|update|change/i.test(request)) {
       comradeLog('Для изменения задачи нужна явная команда.'); return;
     }
     await comradeUpdateTask(plan, request);
@@ -322,6 +329,8 @@ function comradeBasic(text) {
   if (subtask) return {action:'subtask',title:subtask[1],task:subtask[2]};
   const priorityUpdate = query.match(/^(?:измени|поменяй|установи|поставь)\s+приоритет\s+(?:задач[еиу]\s+)?(.+?)\s+(?:на|в)\s+(высокий|средний|низкий|high|medium|low)$/i);
   if (priorityUpdate) return {action:'update',task:priorityUpdate[1],
+    priority: /высок|high/i.test(priorityUpdate[2]) ? 'high' :
+      /средн|medium/i.test(priorityUpdate[2]) ? 'medium' : 'low'};
   const found = query.match(/^(?:добавь|создай|запиши|поставь|запланируй|add|create)\s+(?:мне\s+)?(?:задачу|напоминание)?\s*[:\-]?\s*(.+)$/i);
   if (found) {
     const board = comradeMentionedBoard(query);
@@ -344,14 +353,12 @@ function comradeBasic(text) {
   }
   const done = query.match(/^(?:заверши|закрой|отметь выполненной|выполни|complete)\s+(?:задачу\s+)?(.+)$/i);
   if (done) return {action:'complete', task:done[1]};
-    priority: /высок|high/i.test(priorityUpdate[2]) ? 'high' :
-      /средн|medium/i.test(priorityUpdate[2]) ? 'medium' : 'low'};
   return null;
 }
 
 function comradeModelContext(question = '') {
   // Bounded lexical prefilter: never feed the entire IndexedDB collection to the LLM.
-  const words = (question.toLocaleLowerCase('ru').match(/[\\p{L}\\p{N}]{4,}/gu) || [])
+  const words = (question.toLocaleLowerCase('ru').match(/[\p{L}\p{N}]{4,}/gu) || [])
     .filter(x => !['задачу','задача','можешь','пожалуйста','сегодня','завтра','добавь'].includes(x));
   const candidates = comradeTasks().map(t => ({
     task:t,
@@ -379,7 +386,12 @@ async function comradeSend() {
   box.value='';
   comradeLog(question,true);
   const direct = comradeBasic(question);
-  if (direct) { await comradeApply(direct,question); return; }
+  if (direct) {
+    comradeBusySet(true);
+    try { await comradeApply(direct, question); }
+    finally { comradeBusySet(false); }
+    return;
+  }
   comradeQuestion = question;
   comradeBusySet(true);
   const id = ++comradeRequestId;
@@ -399,16 +411,20 @@ window.kanbanAssistantReceive = async function(payload) {
     return;
   }
   if (data.type!=='result' || data.requestId!==comradeRequestId) return;
-  comradeBusySet(false);
-  if (data.error) { comradeLog(data.error); return; }
+  if (data.error) { comradeBusySet(false); comradeLog(data.error); return; }
   const reply = String(data.text || '').slice(0,4500);
   let plan;
   try {
     const clean = reply.replace(/<think>[\s\S]*?<\/think>/g,'').trim();
     const braces = clean.match(/\{[\s\S]*\}/);
     plan = JSON.parse(braces ? braces[0] : clean);
-  } catch(_) { comradeLog(reply || 'Ответ модели пуст.'); return; }
-  await comradeApply(plan,comradeQuestion);
+  } catch(_) {
+    comradeBusySet(false);
+    comradeLog(reply || 'Не удалось разобрать ответ модели. Уточни команду.');
+    return;
+  }
+  try { await comradeApply(plan,comradeQuestion); }
+  finally { comradeBusySet(false); }
 };
 
 function comradeBind() {
@@ -420,6 +436,7 @@ function comradeBind() {
     comradeNative('status');
   };
   comradeEl('comradeClose').onclick=()=>{
+    if (comradeCancelConfirm) comradeCancelConfirm();
     panel.hidden=true;
     comradeRequestId++;
     comradeBusySet(false);

@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlin.coroutines.resume
@@ -105,8 +106,13 @@ internal class KanbanAssistantEngine(
                         }
                         // Staging is on the same filesystem; atomic replace preserves
                         // the previous file until the replacement is fully copied.
-                        Files.move(stage.toPath(), file.toPath(),
-                            StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                        try {
+                            Files.move(stage.toPath(), file.toPath(),
+                                StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                        } catch (_: AtomicMoveNotSupportedException) {
+                            Files.move(stage.toPath(), file.toPath(),
+                                StandardCopyOption.REPLACE_EXISTING)
+                        }
                     } finally {
                         stage.delete()
                     }
@@ -232,14 +238,15 @@ internal class KanbanAssistantEngine(
 
     fun close() {
         chat?.cancelGeneration()
-        working?.cancel()
-        val engine = kit
-        if (engine != null) {
-            // Best-effort final native cleanup without blocking the activity UI thread.
-            CoroutineScope(Dispatchers.Default).launch {
-                try { if (engine.isModelLoaded()) engine.unloadModel() } catch (_: Throwable) {}
+        scope.launch {
+            try {
+                working?.cancelAndJoin()
+                unload() // Wait for generation cancellation before freeing native memory.
+            } catch (_: Throwable) {
+                // Android can destroy an Activity while a model is loading.
+            } finally {
+                scope.cancel()
             }
         }
-        scope.cancel()
     }
 }

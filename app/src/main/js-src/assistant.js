@@ -345,7 +345,7 @@ function comradeBasic(text) {
     if (priorityMatch) {
       preferredPriority = /высок/i.test(priorityMatch[0]) ? 'high' :
         /средн/i.test(priorityMatch[0]) ? 'medium' : 'low';
-      title = title.replace(priorityMatch[0], ' ');
+      title = title.replace(priorityMatch[0], ' ').trim();
     }
     const extracted = parseQuick(title);
     return {action:'create', title:extracted.title, deadline:extracted.deadline,

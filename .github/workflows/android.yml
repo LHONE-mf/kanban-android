@@ -13,13 +13,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android SDK 35
+      - name: Install Android SDK 37
         run: |
           echo "y" | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '9.3.1'
       - name: Restore stable development signing key
         run: |
           base64 --decode .github/keys/kanban-debug.keystore.b64 > .github/keys/kanban-debug.keystore
@@ -31,6 +31,8 @@ jobs:
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax
         run: node --check app/src/main/assets/kanban.js
+      - name: Test Comrade command parser
+        run: node tests/test_assistant_planner.js
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
@@ -43,12 +45,12 @@ jobs:
       - name: Verify development APK signature
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -q 'Signer #1 certificate SHA-256 digest'
-          ACTUAL=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | grep -q 'Signer #1 certificate SHA-256 digest'
+          ACTUAL=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
           EXPECTED=$(keytool -list -v -keystore .github/keys/kanban-debug.keystore -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')
           test -n "$ACTUAL" && test "$ACTUAL" = "$EXPECTED"
-          INFO=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "^package:")
+          INFO=$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep "^package:")
           echo "$INFO"
           echo "$INFO" | grep -q "name='com.kanban.offline'"
           echo "$INFO" | grep -q "versionCode='${{ github.run_number }}'"

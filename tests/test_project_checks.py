@@ -106,6 +106,16 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("isAppearanceLightStatusBars = !darkTheme", self.nearby)
         self.assertIn("isAppearanceLightNavigationBars = !darkTheme", self.nearby)
 
+    def test_comrade_bounded_actions_do_not_clear_database(self):
+        code = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
+        for symbol in ("comradeCreateTask(", "comradeChangeTask(", "comradeList(", "comradeConfirm("):
+            self.assertIn(symbol, code)
+        self.assertIn("dbPutTask(", code)
+        self.assertNotIn("indexedDB.deleteDatabase", code)
+        self.assertNotIn("eval(", code)
+        html = (ROOT / "app/src/main/assets/kanban.html").read_text(encoding="utf-8")
+        self.assertIn('id="comradeOpen"', html)
+
     def test_bluetooth_has_required_interactive_elements(self):
         for control in ("startNearby()", "stopNearby()", "sendMessage()"):
             with self.subTest(control=control):

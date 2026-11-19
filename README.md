@@ -75,3 +75,35 @@ Trigger **Actions → Android APK → Run workflow**. After all four secrets exi
 **Existing debug installation:** A release APK signed by a new key **cannot** update an existing debug-signed APK. First export a JSON backup from the old app, verify the backup exists, uninstall the old debug APK, install the signed release APK, then import the backup. Do not uninstall until your backup and import path are verified. This one-time migration is necessary unless the exact previous signing key can be recovered.
 
 **Critical:** Keep an offline backup of the keystore and passwords. Losing the signing key prevents updates to installations signed with it. Never put signing secrets in public repository files.
+
+## ★ Comrade — встроенный локальный помощник Kanban (эксперимент v0.3.0)
+
+Новый чат открывается поверх доски. **Данные Kanban остаются в прежнем IndexedDB**,
+никакой миграции или очистки БД нет. Пакет `com.kanban.offline` и постоянная
+подпись обновлений сохранены.
+
+- Прямые команды «Покажи просроченные задачи», «Добавь задачу проверить электроды завтра»,
+  «Закрой задачу проверить электроды» работают без запуска модели.
+- Для остальных команд выберите GGUF 1–2B Q4 один раз через кнопку Comrade.
+  Файл копируется в приватное хранилище Kanban, при открытии APK сама модель
+  **не загружается в RAM**. Она загружается при сложном сообщении и выгружается
+  при закрытии чата. После четырёх обращений обновляется контекст.
+- Модель получает небольшой список досок и задач (локально, без облачного API),
+  предлагает только `list`, `create`, `complete`, `move` либо уточнение.
+  Модель **не может исполнять SQL/JS** или напрямую менять базу.
+- Создание и изменение задачи **требуют подтверждения**. Удаление через чат
+  не разрешено. Сами изменения сохраняются существующим IndexedDB API.
+- Приложение Comrade и Kanban используют разные Android-песочницы, поэтому
+  импортированный в Comrade GGUF нужно будет один раз выбрать и в Kanban.
+- Обновлена минимальная версия до Android 11 (`minSdk=30`) из-за AiKit.
+  Модель не включена в APK. Для свободных запросов без GGUF ассистент попросит
+  импортировать модель. Нет доступа к другим программам или автоматической
+  фоновой генерации.
+
+### Проверка на телефоне
+
+Проверить статус GitHub Actions и скачать подписанный `kanban-debug-apk`.
+**Не удаляйте старую установку и не очищайте её данные.**
+Откройте Comrade, проверьте список задач без модели, затем создание тестовой
+задачи с подтверждением. Сравните доску после возвращения в Kanban.
+После этого импортируйте GGUF 1–2B и проверьте запрос свободным языком.

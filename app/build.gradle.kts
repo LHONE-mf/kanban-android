@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION", "DEPRECATION_ERROR")
+
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 
 val debugKeystore = System.getenv("KANBAN_DEBUG_KEYSTORE_PATH")
@@ -12,15 +14,17 @@ val hasReleaseSigning = listOf(
 
 android {
     namespace = "com.kanban.offline"
-    compileSdk = 35
+    compileSdk {
+        version = release(37) { minorApiLevel = 0 }
+    }
 
     defaultConfig {
         applicationId = "com.kanban.offline"
-        minSdk = 29
+        minSdk = 30
         targetSdk = 35
         // A higher code is required for Android to accept an in-place update.
         versionCode = System.getenv("KANBAN_VERSION_CODE")?.toIntOrNull() ?: 1
-        versionName = "0.2.0"
+        versionName = "0.3.0"
     }
 
     signingConfigs {
@@ -61,9 +65,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+    packaging { jniLibs { useLegacyPackaging = true } }
 }
 
 dependencies {
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("io.github.its-hazratbilal:android-ai-kit-chat:1.0.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.activity:activity-ktx:1.9.3")
 }

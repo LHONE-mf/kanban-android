@@ -138,3 +138,33 @@ const noModelFields = expression("comradeParseCreate('Добавь задачу 
 assert.equal(noModelFields.deadline, '2026-11-23');
 assert.equal(noModelFields.title, 'подготовить отчёт');
 console.log('Comrade structured input: labelled dates and board names passed.');
+
+
+// The exact user screenshot: a short-year deadline and a board between clauses.
+const screenshotShortYear = expression("comradeBasic('Добавь задачу обработать результаты разряда на 8С от СИМБЫ. Текучка, срок 19.11.26')");
+assert.equal(screenshotShortYear.action, 'create');
+assert.equal(screenshotShortYear.deadline, '2026-11-19');
+assert.equal(screenshotShortYear.board, 'Текучка');
+assert.equal(screenshotShortYear.title, 'обработать результаты разряда на 8С от СИМБЫ');
+
+const twoDigitYearEnd = expression("comradeBasic('Добавь задачу проверить результаты, срок 19.11.26, Текучка')");
+assert.equal(twoDigitYearEnd.deadline, '2026-11-19');
+assert.equal(twoDigitYearEnd.title, 'проверить результаты');
+assert.equal(twoDigitYearEnd.board, 'Текучка');
+
+const prepositionShortYear = expression("comradeBasic('Добавь задачу передать отчёт до 21.11.26')");
+assert.equal(prepositionShortYear.title, 'передать отчёт');
+assert.equal(prepositionShortYear.deadline, '2026-11-21');
+
+const slashShortYear = expression("comradeBasic('Создай задачу провести аудит к 21/11/26')");
+assert.equal(slashShortYear.title, 'провести аудит');
+assert.equal(slashShortYear.deadline, '2026-11-21');
+
+const invalidShortYear = expression("comradeBasic('Добавь задачу проверка, срок 31.02.26, Текучка')");
+assert.equal(invalidShortYear.action, 'answer');
+assert.match(invalidShortYear.text, /дат[ауе]|срок/i);
+
+const explicitShortYearPast = expression("comradeBasic('Добавь задачу найти журнал, срок 17.11.25')");
+assert.equal(explicitShortYearPast.deadline, '2025-11-17');
+
+console.log('Comrade short-year deadlines and board clauses: six regression cases passed.');

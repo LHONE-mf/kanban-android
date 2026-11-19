@@ -471,8 +471,10 @@ function comradeSchedule(raw) {
   };
   consume(/(?:^|[\s,])(?:(?:до|к|на|в|дата|датой|срок(?:ом)?|дедлайн)\s*[:=]?\s+)?(\d{4}-\d{2}-\d{2})(?=$|[\s,.;!?])/i,
     m=>isValidISODate(m[1])?m[1]:null);
-  consume(/(?:^|[\s,])(?:(?:до|к|на|в|дата|датой|срок(?:ом)?|дедлайн)\s*[:=]?\s+)?(\d{1,2})[./](\d{1,2})(?:[./](\d{4}))?(?=$|[\s,;!?])/i,
-    m=>{const day=+m[1],month=+m[2];let year=m[3]?+m[3]:now.getFullYear();
+  // Accept 19.11.26, 19.11.2026 and 19.11. A two-digit explicit year
+  // maps to 20xx; only a missing year may roll forward to next year.
+  consume(/(?:^|[\s,])(?:(?:до|к|на|в|дата|датой|срок(?:ом)?|дедлайн)\s*[:=]?\s+)?(\d{1,2})[./](\d{1,2})(?:[./](\d{4}|\d{2}))?(?=$|[\s,;.!?])/i,
+    m=>{const day=+m[1],month=+m[2];let year=m[3]?(m[3].length===2?2000+Number(m[3]):Number(m[3])):now.getFullYear();
       let val=comradeISO(year,month,day);
       if(!m[3]&&val&&val<todayISO())val=comradeISO(++year,month,day);
       return val;});
@@ -501,14 +503,14 @@ function comradeParseCreate(input) {
   const match=String(input||'').trim().match(/^(?:добавь|создай|запиши|поставь|запланируй|add|create)\s+(?:мне\s+)?(?:задачу|напоминание)?\s*[:\-]?\s*(.+)$/i);
   if(!match)return null;
   let title=match[1];const board=comradeMentionedBoard(input);
-  // The name of an existing board may be supplied as a comma-separated
-  // final clause: "... , дата 19.11.2026, текучка".
+  // A board can appear in the middle or end, separated by a comma or
+  // a full stop: "от СИМБЫ. Текучка, срок 19.11.26".
+  // Do not remove a board word embedded in the actual task title.
   if(board) {
-    const parts=title.split(/\s*,\s*/);
-    if(parts.length>1 && parts[parts.length-1].trim().toLocaleLowerCase('ru')===
-      board.name.toLocaleLowerCase('ru')) {
-      parts.pop();title=parts.join(', ');
-    }
+    const clauses=title.split(/\s*[,;]\s*|\.\s+(?=[А-ЯЁа-яё])/u);
+    const kept=clauses.filter(part=>part.trim().toLocaleLowerCase('ru')!==
+      board.name.toLocaleLowerCase('ru'));
+    if(kept.length!==clauses.length)title=kept.join(', ');
   }
   if(board) {
     const escaped=board.name.replace(/[-/\\^$*+?.()|[\]{}]/g,'\\$&');
@@ -582,9 +584,11 @@ async function comradeSend() {
   const box = comradeEl('comradeInput');
   const question = box.value.trim().slice(0,800);
   if (!question) return;
-  box.value='';
-  comradeLog(question,true);
   const direct = comradeBasic(question);
+  // Preserve a malformed command for editing instead of making the user
+  // retype it after a format error.
+  if(direct?.action!=='answer')box.value='';
+  comradeLog(question,true);
   if (direct) {
     comradeBusySet(true);
     try { await comradeApply(direct, question); }

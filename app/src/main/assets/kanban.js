@@ -3128,7 +3128,7 @@ function comradeSchedule(raw) {
       w.startsWith('втор')?2:w.startsWith('сред')?3:w.startsWith('четв')?4:
       w.startsWith('пятниц')?5:w.startsWith('суббот')?6:0;
       return dayOffset((desired-now.getDay()+7)%7||7);});
-  if(!deadline&&!error&&/(?:^|[\s,])(?:к|до|на|в)\s+(?:концу|началу|следующ[а-яё]+\s+недел)/i.test(title))
+  if(!deadline&&!error&&/(?:^|[\s,])(?:к|до|на|в)\s+(?:(?:конц[ау]|начал[ау])\s+(?:недел[иью]|месяц[ауе]?|год[ауе]?)|следующ[а-яё]+\s+недел[июе])/i.test(title))
     error='Уточни конкретную дату срока (ГГГГ-ММ-ДД).';
   return {title,deadline,error};
 }

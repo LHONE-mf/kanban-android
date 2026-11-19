@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
 
                 override fun onPageFinished(view: WebView, url: String) {
                     if (::japaneseButton.isInitialized) {
-                        japaneseButton.text = if (url.endsWith("/japanese.html")) "← Канбан" else "日本語 · Учить"
+                        japaneseButton.text = if (url.endsWith("/japanese.html")) "← Comrade" else "日本語 · Учить"
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }

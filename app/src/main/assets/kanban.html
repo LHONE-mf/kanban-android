@@ -312,7 +312,10 @@
         Выбрать локальную GGUF
       </button>
       <span id="comradeModelName">Модель не выбрана</span>
+      <button id="comradeAudit" type="button" class="btn btn-ghost btn-small"
+              title="История подтверждённых операций">Журнал</button>
     </div>
+    <div class="comrade-subtitle" style="padding:4px 12px">Для быстрых команд: GGUF 0.8–2B, например Qwen3-1.7B Q4_K_M. Модель загружается по запросу и освобождает память после 90 секунд простоя.</div>
     <div id="comradeLog" class="comrade-log" role="log" aria-live="polite">
       <div class="comrade-line comrade-response">Привет! Я могу показать задачи, создать их и отметить выполненными. Простые команды не запускают нейросеть. Для свободных запросов выбери небольшую GGUF (0.8–2B).</div>
     </div>

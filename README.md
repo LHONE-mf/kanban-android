@@ -107,3 +107,37 @@ Trigger **Actions → Android APK → Run workflow**. After all four secrets exi
 Откройте Comrade, проверьте список задач без модели, затем создание тестовой
 задачи с подтверждением. Сравните доску после возвращения в Kanban.
 После этого импортируйте GGUF 1–2B и проверьте запрос свободным языком.
+
+## Comrade AI task manager (v0.4.0)
+
+Kanban is now branded **Comrade** without changing `applicationId=com.kanban.offline`,
+the existing stable signing certificate, IndexedDB origin, or the Japanese-learning
+data stored in app preferences. **Install as an update; never uninstall the original
+app or clear app data.**
+
+Press **★ AI** in the main toolbar. Short phrases are handled without loading any
+neural network. For other phrases, select a local GGUF file, preferably a small
+instruction-tuned **0.8–2B Q4** model; this APK does not download or bundle models.
+Current AiKit 1.0.0 compatibility varies by GGUF architecture; the lightweight
+Qwen3-1.7B is a starting candidate, not a measured performance guarantee.
+The model only turns free language into a restricted action plan: it cannot run
+JavaScript, query IndexedDB directly or delete tasks.
+
+Available actions: list open/today/overdue tasks, search by words, create task,
+mark complete, move between columns, update deadline/priority/title/description,
+create a subtask. Mutations require an explicit user instruction and a separate
+**Confirm** click. The model sees a bounded selection of relevant task titles
+and board names (maximum 12 tasks). Any unrecognised or ambiguous operation
+is refused or clarified; no automatic deletion or bulk database changes.
+A local **Журнал** button shows up to 50 successful confirmed changes.
+
+Native engine is initialised only when an LLM command is needed. It is unloaded
+when chat closes, the Android app backgrounds, or after 90 seconds idle.
+Model selection is persisted privately and switching GGUF does not change the
+Kanban database. The old separate Comrade app's model files and SQLite
+are **not automatically migrated** into Kanban/Comrade.
+
+Privacy: no internet permission added, no server calls, no background agent.
+No guarantee of accurate parsing for every human instruction; check the
+confirmation before approving any write. PWA/web version supports direct
+rule-based commands without native LLM.

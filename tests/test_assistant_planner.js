@@ -47,4 +47,23 @@ assert.equal(plan3.task,'подготовить отчёт');
 
 const plan4 = expression("comradeBasic('Как организовать работу команды?')");
 assert.equal(plan4,null);
-console.log('Comrade command parser: 4 checks passed.');
+const sub = expression("comradeBasic('Создай подзадачу проверить упаковку к задаче провести аудит')");
+assert.equal(sub.action, 'subtask');
+assert.equal(sub.task, 'провести аудит');
+assert.equal(sub.title, 'проверить упаковку');
+
+const change = expression("comradeBasic('Поставь приоритет задачи подготовить отчёт на высокий')");
+assert.equal(change.action, 'update');
+assert.equal(change.task, 'подготовить отчёт');
+assert.equal(change.priority, 'high');
+
+const rated = expression("comradeBasic('Добавь задачу проверить электроды завтра высокий приоритет')");
+assert.equal(rated.action, 'create');
+assert.equal(rated.priority, 'high');
+assert.equal(rated.deadline, '2026-11-20');
+
+const found = expression("comradeBasic('Найди задачу электроды')");
+assert.equal(found.action, 'search');
+assert.equal(found.query, 'электроды');
+
+console.log('Comrade command parser: 8 checks passed.');

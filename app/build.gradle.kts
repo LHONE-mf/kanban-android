@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         applicationId = "com.kanban.offline"
-        minSdk = 29
+        minSdk = 30
         targetSdk = 35
         // A higher code is required for Android to accept an in-place update.
         versionCode = System.getenv("KANBAN_VERSION_CODE")?.toIntOrNull() ?: 1

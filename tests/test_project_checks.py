@@ -137,6 +137,22 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn('value.optString("purpose")', self.main)
         self.assertIn(".comrade-draft-field", self.css)
 
+    def test_daily_plan_is_cross_board_and_does_not_mutate_tasks(self):
+        source = (ROOT / "app/src/main/js-src/daily-plan.js").read_text(encoding="utf-8")
+        assistant = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
+        android = (ROOT / "app/src/main/js-src/android-extras.js").read_text(encoding="utf-8")
+        html = (ROOT / "app/src/main/assets/kanban.html").read_text(encoding="utf-8")
+        self.assertIn("function comradeDayCandidates(", source)
+        self.assertIn("function comradeDayDraft(", source)
+        self.assertIn("async function comradePersistDay(", source)
+        self.assertIn("dbPutSettingsBulk([[COMRADE_DAY_KEY", source)
+        self.assertNotIn("dbPutTask(", source)
+        self.assertNotIn("dbPutTasks(", source)
+        self.assertIn("comradeOpenDailyPlan({fresh:true,allowBusy:true})", assistant)
+        self.assertIn("comradeOpenDailyPlan();", android)
+        self.assertIn('id="comradePlanBtn"', html)
+        self.assertIn(".comrade-day-row", self.css)
+
     def test_comrade_bounded_actions_do_not_clear_database(self):
         code = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
         for symbol in ("comradeCreateTask(", "comradeChangeTask(", "comradeList(", "comradeConfirm("):

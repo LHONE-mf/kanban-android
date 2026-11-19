@@ -82,7 +82,7 @@
   <select id="deadlineFilter" class="select" aria-label="Фильтр по сроку">
     <option value="">Любой срок</option>
     <option value="overdue">Просроченные</option>
-     <option value="attention">🔥 Мой день (просрочено + сегодня)</option>
+     <option value="attention">⚠ Просрочено и сегодня (эта доска)</option>
     <option value="today">Сегодня</option>
     <option value="week">Ближайшие 7 дней</option>
     <option value="none">Без срока</option>
@@ -312,6 +312,8 @@
         Выбрать локальную GGUF
       </button>
       <span id="comradeModelName">Модель не выбрана</span>
+      <button id="comradePlanBtn" type="button" class="btn btn-ghost btn-small"
+              title="План на сегодня по всем доскам">Мой день</button>
       <button id="comradeAudit" type="button" class="btn btn-ghost btn-small"
               title="История подтверждённых операций">Журнал</button>
     </div>

@@ -235,7 +235,8 @@ async function init() {
   loadUIState();
   updateBoardSelect();
 
-  $('#myDayBtn').onclick = () => { filterDeadline = filterDeadline === 'attention' ? '' : 'attention'; $('#deadlineFilter').value = filterDeadline; saveUIState(); switchView('kanban'); renderBoard(); };
+  // Open the cross-board plan without changing board filters or task fields.
+  $('#myDayBtn').onclick = () => { void comradeOpenDailyPlan(); };
   $('#sortSelect').value = sortMode;
   $('#deadlineFilter').value = filterDeadline;
   $('#priorityFilter').value = filterPriority;

@@ -2771,6 +2771,7 @@ let comradeRequestId = 0;
 let comradeQuestion = '';
 let comradeCancelConfirm = null;
 let comradeRewriteResolve = null;
+let comradeDayAdviceResolve = null;
 const comradeEl = id => document.getElementById(id);
 
 function comradeLog(message, user = false) {
@@ -3189,6 +3190,8 @@ async function comradeApply(plan, request) {
     const canonical=comradeParseCreate(request);
     if(canonical?.action==='answer'){comradeLog(canonical.text);return;}
     await comradeCreateTask(canonical||plan);
+  } else if (plan.action === 'plan_day') {
+    await comradeOpenDailyPlan({fresh:true,allowBusy:true});
   } else if (plan.action === 'list') {
     comradeList(['today','overdue'].includes(plan.filter) ? plan.filter : 'all',
       typeof plan.board === 'string' ? plan.board : '');
@@ -3303,6 +3306,11 @@ function comradeParseCreate(input) {
 }
 function comradeBasic(text) {
   const query = text.trim();
+  // Daily planning is deterministic and reads all boards, not only the current one.
+  if (/^(?:составь|сформируй|спланируй|подготовь|сделай|покажи|открой|обнови)\s+(?:мне\s+)?(?:план(?:\s+на\s+сегодня|\s+дня|\s+задач)?|мой\s+день)(?:\s|$)/i.test(query) ||
+      /^(?:что|какие)\s+(?:мне\s+)?(?:дела|задачи)\b.*\bсегодня\b/i.test(query)) {
+    return {action:'plan_day'};
+  }
   const search = query.match(/^(?:найди|отыщи|поиск|search)\s+(?:задач[уи]?\s+)?(.+)$/i);
   if (search) return {action:'search',query:search[1]};
   if (/^(покажи|список|какие|что.*(?:задач|сделать)|list|show)/i.test(query)) {
@@ -3381,6 +3389,19 @@ window.kanbanAssistantReceive = async function(payload) {
   }
   if (data.type!=='result' || data.requestId!==comradeRequestId) return;
   // Alternative title generation is a different workflow from task commands.
+  if(comradeDayAdviceResolve){
+    const complete=comradeDayAdviceResolve;comradeDayAdviceResolve=null;
+    if(data.error){comradeLog('Совет AI недоступен: '+data.error);complete(null);return;}
+    const raw=String(data.text||'').replace(/<think>[\s\S]*?<\/think>/g,'').trim();
+    let suggestion=raw;
+    try {
+      const json=raw.match(/\{[\s\S]*\}/);
+      const parsed=JSON.parse(json?json[0]:raw);
+      suggestion=typeof parsed.text==='string'?parsed.text:raw;
+    } catch(_) {}
+    complete(suggestion.slice(0,1100)||null);
+    return;
+  }
   if(comradeRewriteResolve){
     const complete=comradeRewriteResolve;comradeRewriteResolve=null;
     if(data.error){comradeLog('Модель: '+data.error);complete(null);return;}
@@ -3423,6 +3444,9 @@ function comradeBind() {
     if (comradeRewriteResolve) {
       const complete=comradeRewriteResolve;comradeRewriteResolve=null;complete(null);
     }
+    if (comradeDayAdviceResolve) {
+      const complete=comradeDayAdviceResolve;comradeDayAdviceResolve=null;complete(null);
+    }
     panel.hidden=true;
     comradeRequestId++;
     comradeBusySet(false);
@@ -3434,11 +3458,222 @@ function comradeBind() {
   comradeEl('comradeSend').onclick=()=>{void comradeSend();};
   const auditBtn = comradeEl('comradeAudit');
   if (auditBtn) auditBtn.onclick=comradeShowAudit;
+  const planBtn=comradeEl('comradePlanBtn');
+  if(planBtn) planBtn.onclick=()=>{void comradeOpenDailyPlan();};
   comradeEl('comradeInput').onkeydown=e=>{
     if (e.key==='Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault(); void comradeSend();
     }
   };
+}
+
+// Daily plan is an ordered, dated selection of existing task IDs.
+// It never moves cards, changes task priorities, or rewrites deadlines.
+const COMRADE_DAY_KEY = 'comrade_day_plan_v1';
+
+function comradeDayCandidates(today = todayISO()) {
+  const boards = new Map(state.boards.map(board => [board.id, board]));
+  return comradeTasks().flatMap(task => {
+    if (task.parentId) return []; // Avoid listing the same work twice via parent and child.
+    const board = boards.get(task.boardId);
+    if (!board) return [];
+    const index = board.columns.findIndex(c => c.id === task.columnId);
+    if (index < 0 || board.columns[index].isDone) return [];
+    const priorityValue = PRIORITY_ORDER[task.priority] || 0;
+    const inProgress = index > 0;
+    let rank = 0, reason = '';
+    if (task.deadline && task.deadline < today) {
+      rank = 500; reason = 'Просрочено';
+    } else if (task.deadline === today) {
+      rank = 400; reason = 'Срок сегодня';
+    } else if (inProgress) {
+      rank = 300; reason = 'В работе';
+    } else if (!task.deadline && task.priority === 'high') {
+      rank = 250; reason = 'Важная без срока';
+    } else if (task.deadline && task.priority === 'high') {
+      const target = new Date(today + 'T12:00:00');
+      target.setDate(target.getDate() + 1);
+      const tomorrow = [
+        target.getFullYear(),
+        String(target.getMonth()+1).padStart(2,'0'),
+        String(target.getDate()).padStart(2,'0')
+      ].join('-');
+      if (task.deadline === tomorrow) { rank = 200; reason = 'Высокий приоритет · завтра'; }
+    }
+    if (!rank) return [];
+    return [{
+      id: task.id, title: task.title, board: board.name, boardId: board.id,
+      priority: task.priority || 'none', deadline: task.deadline || '',
+      reason, score: rank + priorityValue * 10
+    }];
+  }).sort((a,b) =>
+    b.score - a.score ||
+    (a.deadline || '9999-12-31').localeCompare(b.deadline || '9999-12-31') ||
+    a.title.localeCompare(b.title,'ru') || a.id.localeCompare(b.id)
+  ).slice(0,60);
+}
+
+function comradeDayDraft(candidates, saved, today = todayISO(), fresh = false) {
+  const valid = new Map(candidates.map(item => [item.id,item]));
+  const savedIds = !fresh && saved?.date === today && Array.isArray(saved.ids)
+    ? [...new Set(saved.ids.filter(id => typeof id === 'string'))] : [];
+  const rows = [
+    ...savedIds.filter(id => valid.has(id)).map(id => valid.get(id)),
+    ...candidates.filter(item => !savedIds.includes(item.id))
+  ];
+  const availableSaved = savedIds.filter(id => valid.has(id));
+  const selected = availableSaved.length && !fresh
+    ? availableSaved : rows.slice(0,6).map(item => item.id);
+  return {rows, selected, fromSaved:saved?.date===today && availableSaved.length>0 && !fresh};
+}
+
+// Commit only an ordered list of existing task IDs into the separate settings store.
+async function comradePersistDay(ids, date = todayISO()) {
+  if (date !== todayISO()) throw new Error('Начался новый день; обнови план.');
+  const eligible = new Set(comradeDayCandidates(date).map(task => task.id));
+  const validIds = [...new Set(ids)].filter(id => eligible.has(id));
+  if (!validIds.length) throw new Error('Нет выбранных незавершённых задач.');
+  await dbPutSettingsBulk([[COMRADE_DAY_KEY, {
+    date, ids:validIds, updatedAt:Date.now()
+  }]]);
+  return validIds;
+}
+
+async function comradeOpenDailyPlan({fresh = false, allowBusy = false} = {}) {
+  if (comradeBusy && !allowBusy) {
+    comradeLog('Дождись завершения текущей команды.'); return;
+  }
+  const panel = comradeEl('comradePanel');
+  panel.hidden = false;
+  const today = todayISO();
+  let saved;
+  try {
+    const settings = await dbGetSettings();
+    saved = settings[COMRADE_DAY_KEY];
+  } catch(e) {
+    comradeLog('Не удалось прочитать план: ' + (e.message || e)); return;
+  }
+  if (panel.hidden) return;
+  const candidates = comradeDayCandidates(today);
+  if (!candidates.length) {
+    comradeLog('На ' + today + ' нет незавершённых просроченных, сегодняшних ' +
+      'или высокоприоритетных задач. Проверил все ' + state.boards.length + ' доски.');
+    return;
+  }
+  const draft = comradeDayDraft(candidates,saved,today,fresh);
+  const rows = draft.rows.slice();
+  const selected = new Set(draft.selected);
+  const entry = document.createElement('section');
+  entry.className = 'comrade-line comrade-response comrade-day';
+  const title = document.createElement('strong');
+  title.textContent = (draft.fromSaved?'Сохранённый план':'Предложенный план') +
+    ' на ' + today;
+  const note = document.createElement('p');
+  note.className = 'comrade-day-note';
+  note.textContent = 'Все ' + state.boards.length + ' доски · ' + candidates.length +
+    ' подходящих задач. Сначала просроченные, затем сегодняшние, ' +
+    'в работе и важные без срока. Укажи порядок и выбери нужные.';
+  const list = document.createElement('div');
+  list.className = 'comrade-day-list';
+  const footer = document.createElement('div');
+  footer.className = 'comrade-confirm';
+  const control = (text,klass='btn btn-secondary btn-small')=>{
+    const button=document.createElement('button');
+    button.type='button';button.className=klass;button.textContent=text;
+    footer.appendChild(button);return button;
+  };
+  const save=control('Сохранить в «Мой день»','btn btn-small');
+  const rebuild=control('Новый вариант');
+  const advise=control('Совет AI (по желанию)');
+  const close=control('Закрыть');
+  entry.append(title,note,list,footer);
+  comradeEl('comradeLog').appendChild(entry);
+  entry.scrollIntoView({block:'nearest'});
+  function redraw() {
+    list.replaceChildren();
+    rows.forEach((item,index)=>{
+      const row=document.createElement('div');row.className='comrade-day-row';
+      const label=document.createElement('label');label.className='comrade-day-description';
+      const check=document.createElement('input');check.type='checkbox';
+      check.checked=selected.has(item.id);
+      check.setAttribute('aria-label','Включить в план: '+item.title);
+      check.onchange=()=>{if(check.checked)selected.add(item.id);else selected.delete(item.id);redraw();};
+      const details=document.createElement('span');
+      const name=document.createElement('strong');name.textContent=item.title;
+      const meta=document.createElement('small');
+      const priority={high:'высокий',medium:'средний',low:'низкий',none:'нет'}[item.priority]||'нет';
+      meta.textContent=item.board+' · '+item.reason+' · приоритет: '+priority+
+        (item.deadline?' · до '+item.deadline:'');
+      details.append(name,meta);
+      label.append(check,details);
+      const arrows=document.createElement('div');arrows.className='comrade-day-arrows';
+      const makeArrow=(symbol,move,disabled)=>{
+        const button=document.createElement('button');
+        button.type='button';button.className='btn btn-ghost btn-small';
+        button.textContent=symbol;button.disabled=disabled;
+        button.setAttribute('aria-label',(move<0?'Переместить выше: ':'Переместить ниже: ')+item.title);
+        button.onclick=()=>{
+          const other=index+move;
+          [rows[index],rows[other]]=[rows[other],rows[index]];
+          redraw();
+        };
+        arrows.appendChild(button);
+      };
+      makeArrow('↑',-1,index===0);
+      makeArrow('↓',1,index===rows.length-1);
+      row.append(label,arrows);
+      list.appendChild(row);
+    });
+    save.textContent='Сохранить в «Мой день» ('+selected.size+')';
+    save.disabled=!selected.size;
+  }
+  redraw();
+  save.onclick=async()=>{
+    if(comradeBusy)return;
+    const ids=rows.filter(item=>selected.has(item.id)).map(item=>item.id);
+    save.disabled=true;
+    try {
+      const persisted=await comradePersistDay(ids,today);
+      title.textContent='Сохранённый план на '+today;
+      comradeLog('Сохранено '+persisted.length+' задач в «Мой день» по всем доскам. '+
+        'Их сроки, статусы, приоритеты и доски не изменены.');
+    } catch(e){comradeLog('Ошибка сохранения плана: '+(e.message||e));}
+    finally{redraw();}
+  };
+  rebuild.onclick=()=>{entry.remove();void comradeOpenDailyPlan({fresh:true});};
+  close.onclick=()=>entry.remove();
+  advise.onclick=async()=>{
+    const active=rows.filter(item=>selected.has(item.id)).slice(0,10);
+    if(!active.length){comradeLog('Выбери хотя бы одну задачу.');return;}
+    advise.disabled=true;
+    try {
+      const answer=await comradeRequestDayAdvice(active,today);
+      if(answer && !panel.hidden) comradeLog('Совет AI (без изменений задач):\n'+answer);
+    } finally {advise.disabled=false;}
+  };
+}
+
+function comradeRequestDayAdvice(tasks, date) {
+  if (comradeBusy)return Promise.resolve(null);
+  const context=JSON.stringify({
+    date,tasks:tasks.slice(0,10).map(item=>({
+      title:item.title.slice(0,120),board:item.board.slice(0,80),
+      deadline:item.deadline,priority:item.priority,reason:item.reason
+    }))
+  }).slice(0,4400);
+  return new Promise(resolve=>{
+    const id=++comradeRequestId;
+    comradeBusySet(true);
+    const complete=text=>{comradeBusySet(false);resolve(text);};
+    comradeDayAdviceResolve=complete;
+    if(!comradeNative('infer',{requestId:id,purpose:'day_advice',
+      text:'Предложи краткий реалистичный порядок работы на сегодня и один совет по фокусу.',
+      context})) {
+      comradeDayAdviceResolve=null;
+      comradeLog('AI доступен только в Android APK. План можно сохранить без модели.');
+      complete(null);
+    }
+  });
 }
 // ============================================================
 // POMODORO
@@ -3677,7 +3912,8 @@ async function init() {
   loadUIState();
   updateBoardSelect();
 
-  $('#myDayBtn').onclick = () => { filterDeadline = filterDeadline === 'attention' ? '' : 'attention'; $('#deadlineFilter').value = filterDeadline; saveUIState(); switchView('kanban'); renderBoard(); };
+  // Open the cross-board plan without changing board filters or task fields.
+  $('#myDayBtn').onclick = () => { void comradeOpenDailyPlan(); };
   $('#sortSelect').value = sortMode;
   $('#deadlineFilter').value = filterDeadline;
   $('#priorityFilter').value = filterPriority;

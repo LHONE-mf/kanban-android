@@ -5,6 +5,7 @@ let comradeRequestId = 0;
 let comradeQuestion = '';
 let comradeCancelConfirm = null;
 let comradeRewriteResolve = null;
+let comradeDayAdviceResolve = null;
 const comradeEl = id => document.getElementById(id);
 
 function comradeLog(message, user = false) {
@@ -423,6 +424,8 @@ async function comradeApply(plan, request) {
     const canonical=comradeParseCreate(request);
     if(canonical?.action==='answer'){comradeLog(canonical.text);return;}
     await comradeCreateTask(canonical||plan);
+  } else if (plan.action === 'plan_day') {
+    await comradeOpenDailyPlan({fresh:true,allowBusy:true});
   } else if (plan.action === 'list') {
     comradeList(['today','overdue'].includes(plan.filter) ? plan.filter : 'all',
       typeof plan.board === 'string' ? plan.board : '');
@@ -537,6 +540,11 @@ function comradeParseCreate(input) {
 }
 function comradeBasic(text) {
   const query = text.trim();
+  // Daily planning is deterministic and reads all boards, not only the current one.
+  if (/^(?:составь|сформируй|спланируй|подготовь|сделай|покажи|открой|обнови)\s+(?:мне\s+)?(?:план(?:\s+на\s+сегодня|\s+дня|\s+задач)?|мой\s+день)(?:\s|$)/i.test(query) ||
+      /^(?:что|какие)\s+(?:мне\s+)?(?:дела|задачи)\b.*\bсегодня\b/i.test(query)) {
+    return {action:'plan_day'};
+  }
   const search = query.match(/^(?:найди|отыщи|поиск|search)\s+(?:задач[уи]?\s+)?(.+)$/i);
   if (search) return {action:'search',query:search[1]};
   if (/^(покажи|список|какие|что.*(?:задач|сделать)|list|show)/i.test(query)) {
@@ -615,6 +623,19 @@ window.kanbanAssistantReceive = async function(payload) {
   }
   if (data.type!=='result' || data.requestId!==comradeRequestId) return;
   // Alternative title generation is a different workflow from task commands.
+  if(comradeDayAdviceResolve){
+    const complete=comradeDayAdviceResolve;comradeDayAdviceResolve=null;
+    if(data.error){comradeLog('Совет AI недоступен: '+data.error);complete(null);return;}
+    const raw=String(data.text||'').replace(/<think>[\s\S]*?<\/think>/g,'').trim();
+    let suggestion=raw;
+    try {
+      const json=raw.match(/\{[\s\S]*\}/);
+      const parsed=JSON.parse(json?json[0]:raw);
+      suggestion=typeof parsed.text==='string'?parsed.text:raw;
+    } catch(_) {}
+    complete(suggestion.slice(0,1100)||null);
+    return;
+  }
   if(comradeRewriteResolve){
     const complete=comradeRewriteResolve;comradeRewriteResolve=null;
     if(data.error){comradeLog('Модель: '+data.error);complete(null);return;}
@@ -657,6 +678,9 @@ function comradeBind() {
     if (comradeRewriteResolve) {
       const complete=comradeRewriteResolve;comradeRewriteResolve=null;complete(null);
     }
+    if (comradeDayAdviceResolve) {
+      const complete=comradeDayAdviceResolve;comradeDayAdviceResolve=null;complete(null);
+    }
     panel.hidden=true;
     comradeRequestId++;
     comradeBusySet(false);
@@ -668,6 +692,8 @@ function comradeBind() {
   comradeEl('comradeSend').onclick=()=>{void comradeSend();};
   const auditBtn = comradeEl('comradeAudit');
   if (auditBtn) auditBtn.onclick=comradeShowAudit;
+  const planBtn=comradeEl('comradePlanBtn');
+  if(planBtn) planBtn.onclick=()=>{void comradeOpenDailyPlan();};
   comradeEl('comradeInput').onkeydown=e=>{
     if (e.key==='Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault(); void comradeSend();

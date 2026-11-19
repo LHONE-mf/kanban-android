@@ -833,3 +833,32 @@ button { font-family: inherit; }
   .comrade-log { min-height:0; }
   .comrade-hint { font-size:10px; }
 }
+
+/* Dated, cross-board daily plan. Scrolling stays inside Comrade's chat. */
+.comrade-day {
+  box-sizing:border-box; width:100%; max-width:100%;
+  flex:0 0 auto; border:1px solid var(--border-strong);
+}
+.comrade-day-note { font-size:12px; color:var(--text-muted); line-height:1.4;
+  margin:7px 0 10px; }
+.comrade-day-list { display:flex; flex-direction:column; gap:7px; }
+.comrade-day-row { display:flex; align-items:center; justify-content:space-between;
+  gap:6px; padding:7px; border:1px solid var(--border); border-radius:9px;
+  background:var(--surface); min-width:0; }
+.comrade-day-description { flex:1; min-width:0; display:flex; align-items:flex-start;
+  gap:8px; cursor:pointer; }
+.comrade-day-description input { width:18px; height:18px; flex-shrink:0;
+  margin:2px 0 0; accent-color:var(--accent); }
+.comrade-day-description span { min-width:0; overflow-wrap:anywhere; }
+.comrade-day-description strong { display:block; font-size:13px; font-weight:600; }
+.comrade-day-description small { display:block; font-size:11px; color:var(--text-muted);
+  margin-top:3px; line-height:1.35; }
+.comrade-day-arrows { display:flex; flex:0 0 auto; gap:2px; }
+.comrade-day-arrows button { width:27px; min-height:32px; padding:2px;
+  font-size:17px; touch-action:manipulation; }
+.comrade-day .comrade-confirm { gap:6px; }
+.comrade-day .comrade-confirm button { min-height:36px; font-size:12px; }
+@media(max-width:600px) {
+  .comrade-day-row { padding:7px 5px; gap:4px; }
+  .comrade-day-arrows button { width:26px; }
+}

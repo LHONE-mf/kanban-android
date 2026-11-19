@@ -168,3 +168,15 @@ const explicitShortYearPast = expression("comradeBasic('Добавь задач�
 assert.equal(explicitShortYearPast.deadline, '2025-11-17');
 
 console.log('Comrade short-year deadlines and board clauses: six regression cases passed.');
+
+
+// Natural language requests for the day plan bypass the slow local model.
+const allDay = expression("comradeBasic('Составь план на сегодня по всем доскам')");
+assert.equal(allDay.action,'plan_day');
+const showDay = expression("comradeBasic('Покажи мой день')");
+assert.equal(showDay.action,'plan_day');
+const openDay = expression("comradeBasic('Открой план на сегодня')");
+assert.equal(openDay.action,'plan_day');
+const listToday = expression("comradeBasic('Покажи задачи на сегодня')");
+assert.equal(listToday.action,'list');
+console.log('Comrade daily plan intent: 4 checks passed.');

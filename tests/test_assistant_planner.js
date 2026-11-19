@@ -13,6 +13,8 @@ const sandbox = {
        columns:[{id:'col_todo',title:'To Do',isDone:false},
                 {id:'col_done',title:'Done',isDone:true}]},
       {id:'board_lab',name:'Лаборатория',
+       columns:[{id:'col_todo',title:'To Do',isDone:false}]},
+      {id:'board_daily',name:'Текучка',
        columns:[{id:'col_todo',title:'To Do',isDone:false}]}
     ],
     _tasksByBoard: { board_prod: [], board_lab: [] }
@@ -115,3 +117,24 @@ assert.equal(noDate.priority,'none');
 
 console.log('Comrade date and priority regression: 8 checks passed.');
 
+
+// Screenshot regression: date and board are separate structured task fields.
+const discharge = expression("comradeBasic('Добавь задачу обработать результаты разряда на 8С образцов из СИМБЫ, дата 19.11.2026, текучка')");
+assert.equal(discharge.action, 'create');
+assert.equal(discharge.title, 'обработать результаты разряда на 8С образцов из СИМБЫ');
+assert.equal(discharge.deadline, '2026-11-19');
+assert.equal(discharge.board, 'Текучка');
+assert.equal(discharge.priority, 'none');
+
+const explicitBoard = expression("comradeBasic('Создай задачу проверить электрохимию, на доску Текучка, дата: 21.11.2026')");
+assert.equal(explicitBoard.title, 'проверить электрохимию');
+assert.equal(explicitBoard.board, 'Текучка');
+assert.equal(explicitBoard.deadline, '2026-11-21');
+
+const invalidLabelDate = expression("comradeBasic('Добавь задачу проверить данные, дата 31.02.2026, текучка')");
+assert.equal(invalidLabelDate.action, 'answer');
+
+const noModelFields = expression("comradeParseCreate('Добавь задачу подготовить отчёт, дата 23.11.2026, Текучка')");
+assert.equal(noModelFields.deadline, '2026-11-23');
+assert.equal(noModelFields.title, 'подготовить отчёт');
+console.log('Comrade structured input: labelled dates and board names passed.');

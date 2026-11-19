@@ -125,6 +125,18 @@ class UiRegressionTests(unittest.TestCase):
         self.assertIn("if (miniExpanded && !bannerDismissedThisSession", self.main)
         self.assertIn('contentDescription = "Показать или скрыть японское задание"', self.main)
 
+    def test_rejected_comrade_proposals_are_editable_and_can_retry_with_llm(self):
+        assistant = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
+        engine = (ROOT / "app/src/main/java/com/kanban/offline/KanbanAssistantEngine.kt").read_text(encoding="utf-8")
+        self.assertIn("comradeReviewCreate(draft)", assistant)
+        self.assertIn("comradeAIRewrite(draft)", assistant)
+        self.assertIn("comradeRewriteResolve", assistant)
+        self.assertIn("Другой вариант", assistant)
+        self.assertIn("purpose:'rewrite_title'", assistant)
+        self.assertIn('if (purpose == "rewrite_title")', engine)
+        self.assertIn('value.optString("purpose")', self.main)
+        self.assertIn(".comrade-draft-field", self.css)
+
     def test_comrade_bounded_actions_do_not_clear_database(self):
         code = (ROOT / "app/src/main/js-src/assistant.js").read_text(encoding="utf-8")
         for symbol in ("comradeCreateTask(", "comradeChangeTask(", "comradeList(", "comradeConfirm("):

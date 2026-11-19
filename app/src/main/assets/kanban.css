@@ -772,6 +772,21 @@ button { font-family: inherit; }
 .comrade-response { background:var(--surface-2); align-self:flex-start; }
 .comrade-user { background:var(--surface-3); align-self:flex-end; }
 .comrade-confirm { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+.comrade-draft { width:min(100%,480px); max-width:100%; }
+.comrade-draft-field { display:flex; flex-direction:column; gap:4px; margin-top:9px;
+  color:var(--text-muted); font-size:12px; }
+.comrade-draft-field textarea, .comrade-draft-field input, .comrade-draft-field select {
+  box-sizing:border-box; width:100%; min-width:0; max-width:100%; padding:9px;
+  border:1px solid var(--border-strong); border-radius:8px;
+  background:var(--bg); color:var(--text); font:inherit; font-size:14px;
+}
+.comrade-draft-field textarea { min-height:56px; resize:vertical; }
+.comrade-draft-hint { font-size:11px; color:var(--text-muted); padding-top:6px; }
+@media(max-width:600px) {
+  .comrade-draft-field textarea, .comrade-draft-field input, .comrade-draft-field select {
+    font-size:16px; /* Avoid Android WebView zooming on field focus. */
+  }
+}
 .comrade-wait { padding:8px 12px; font-size:12px; color:var(--text-muted); }
 .comrade-form { display:flex; align-items:flex-end; gap:8px; padding:10px 12px;
   border-top:1px solid var(--border); }

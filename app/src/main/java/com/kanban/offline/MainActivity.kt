@@ -267,7 +267,8 @@ class MainActivity : ComponentActivity() {
                         "infer" -> comradeAssistant.infer(
                             value.optInt("requestId", -1),
                             value.optString("text"),
-                            value.optString("context")
+                            value.optString("context"),
+                            value.optString("purpose")
                         )
                     }
                 }

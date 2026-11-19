@@ -31,6 +31,8 @@ jobs:
         run: python3 tools/build_kanban_js.py --check
       - name: Check JavaScript syntax
         run: node --check app/src/main/assets/kanban.js
+      - name: Test Comrade command parser
+        run: node tests/test_assistant_planner.js
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore

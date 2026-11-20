@@ -1,0 +1,64 @@
+name: Comrade safe branch prune (one-time)
+on:
+  push:
+    branches: [main]
+jobs:
+  prune:
+    if: github.event.head_commit.message == 'comrade-safe-branch-prune-20261120'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Delete only unchanged ancestor branches with no open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "push"
+          CURRENT_MAIN=$(gh api "repos/$REPOSITORY/branches/main" --jq '.commit.sha')
+          test "$CURRENT_MAIN" = "$GITHUB_SHA"
+          OPEN_PRS=$(gh api "repos/$REPOSITORY/pulls?state=open&per_page=100" --jq 'length')
+          test "$OPEN_PRS" = "0"
+          deleted=0
+          skipped=0
+          while read -r branch expected; do
+            [[ -n "$branch" ]] || continue
+            [[ "$branch" != "main" && "$branch" != "ui-testing" ]] || exit 1
+            current=$(gh api "repos/$REPOSITORY/git/ref/heads/$branch" --jq '.object.sha') || { echo "SKIP unavailable $branch"; skipped=$((skipped + 1)); continue; }
+            if [[ "$current" != "$expected" ]]; then
+              echo "SKIP changed $branch"
+              skipped=$((skipped + 1))
+              continue
+            fi
+            behind=$(gh api "repos/$REPOSITORY/compare/$branch...main" --jq '.behind_by') || { echo "SKIP compare failure $branch"; skipped=$((skipped + 1)); continue; }
+            if [[ "$behind" != "0" ]]; then
+              echo "SKIP unmerged commits $branch behind_by=$behind"
+              skipped=$((skipped + 1))
+              continue
+            fi
+            if gh api --method DELETE "repos/$REPOSITORY/git/refs/heads/$branch"; then
+              echo "DELETED $branch $current"
+              deleted=$((deleted + 1))
+            else
+              echo "FAILED to delete $branch"
+              skipped=$((skipped + 1))
+            fi
+          done <<'BRANCH_LIST'
+          feat/comrade-c01-c05-stabilization e7aac0017bb50ed531771a7f883d92c3545de566
+          feat/comrade-integration-media-mobile 3b42c0e60d8fe71dbbdf2954871b9533616efd1f
+          feat/comrade-step02-mobile-header acde1c92a4591d2f630acebd49f68b25467fd1bf
+          feat/comrade-step03-header-adaptive c7cbb4a69a0d7e88d416996199cb9afbd7ca5483
+          feat/comrade-step04-navigation-regression 703374d48f19dcfb10f86d559afce00a4fdd7728
+          feat/comrade-step05-column-scrolling eddf679b54f6bead2b022bb20c4412ec2231775b
+          feat/comrade-step06-card-drag-gestures c05ea27bc0bde4368a4faf1b75ea6fdc7fb1ac40
+          feat/comrade-step07-keyboard-tabs bb0ba5c7258d738febe21adfea83e13c6008bdc6
+          fix/comrade-backup-integrity-polish 62578eb78df61aab5fe94a18b183974116ab005b
+          fix/comrade-original-icon-android-back-audit 35d73f9257027758e82d3ce0682f995b19ff0a05
+          fix/comrade-readable-task-cards 25138799cd78a40742b10706b686e8e041622465
+          BRANCH_LIST
+          echo "Prune result: deleted=$deleted skipped=$skipped"
+          test "$deleted" -gt 0

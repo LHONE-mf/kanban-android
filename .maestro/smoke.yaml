@@ -1,13 +1,12 @@
 appId: com.kanban.offline
 ---
-- launchApp:
-    clearState: true
-- assertVisible: "Чат по Bluetooth"
-- takeScreenshot: ui-screenshots/kanban-initial
+# Non-destructive Comrade navigation smoke: do not clear existing device data.
+- launchApp
+- assertVisible: "Comrade"
+- takeScreenshot: ui-screenshots/comrade-kanban
 - tapOn: "日本語 · Учить"
-- assertVisible: "← Канбан"
-- takeScreenshot: ui-screenshots/japanese-learning
-- tapOn: "← Канбан"
-- assertVisible: "Чат по Bluetooth"
-- tapOn: "Чат по Bluetooth"
-- takeScreenshot: ui-screenshots/bluetooth-chat
+- assertVisible: "← Comrade"
+- takeScreenshot: ui-screenshots/comrade-japanese
+- tapOn: "← Comrade"
+- assertVisible: "Comrade"
+- takeScreenshot: ui-screenshots/comrade-return

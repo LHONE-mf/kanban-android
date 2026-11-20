@@ -33,3 +33,33 @@ local page to handle visible dialogs. In the task editor it invokes the same
 atomic Save as the Save button; validation or storage failure leaves the
 editor open, preventing accidental exit. Japanese lessons Back returns to
 Kanban. No change to installed data, package ID, or signing identity.
+
+## v0.4.10 data safety and UI polish
+
+- Export v5 fails instead of silently omitting an unreadable/missing task attachment.
+- JSON backups include saved `comrade_day_plan_v1` and the five known Japanese
+  learning `localStorage` keys; import validates these fields and supports older backups.
+- Saving a task prepares audio metadata before inserting blobs into IndexedDB.
+- CSV export remains available from board Settings, not in the crowded main header.
+- This does not yet include native Android `japanese_daily` SharedPreferences in backups.
+  Do not uninstall the app or clear storage to migrate. Test upgrades on-device.
+
+## v0.4.11 C-01–C-05 candidate (NOT yet released)
+
+- Based on the PR #8 → #9 → #10 integration chain; preserves all offline tasks,
+  attachments, saved day plans, and existing Japanese learning progress.
+- Kanban task cards grow to fit titles/content and scroll vertically inside columns.
+- Editing a task and moving its descendants saves in **one** IndexedDB transaction.
+  Failed storage writes keep the editor and previous tree unchanged.
+- Attachment action rows wrap, with accessible 44px Open/Edit/Remove targets.
+- Full JSON backup **v6** adds the native Android Japanese mini-quiz progress from
+  `japanese_daily` (six fields) alongside the existing WebView Japanese keys.
+  Older v5 archives remain importable without overwriting native progress.
+- A v5/v6 archive missing a task or referenced attachment is rejected before
+  replacing the existing IndexedDB state. The Android WebView backup bridge must
+  be available before native mini-quiz progress can be exported.
+- CI checks JavaScript, Kotlin, signing, task editor, touch targets and backups.
+
+These changes remain **in a review branch**. Physical Android touch/restore tests
+are still required before any merge into `main` or stable APK release.
+See `docs/COMRADE_C01_C05_ACCEPTANCE.md` for non-destructive acceptance steps.

@@ -177,8 +177,9 @@ function renderFiles() {
   const all = [...tempFiles.map(f => ({ f, old: true })), ...newFiles.map(f => ({ f, old: false }))].filter(it => !isAudio(it.f));
   all.forEach((it, i) => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px';
-    row.innerHTML = `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${escapeHtml(it.f.name)}${it.f.size ? ' · ' + fmtSize(it.f.size) : ''}${it.old ? '' : ' (новый)'}</span>${it.old ? '<button type="button" class="media-remove" data-open="1">Открыть</button><button type="button" class="media-remove" data-edit="1">Изменить</button>' : ''}<button type="button" class="media-remove" data-rm="1" aria-label="Убрать файл">×</button>`;
+    row.className = 'media-file-row';
+    const filename = escapeHtml(it.f.name);
+    row.innerHTML = `<span class="media-file-name">📎 ${filename}${it.f.size ? ' · ' + fmtSize(it.f.size) : ''}${it.old ? '' : ' (новый)'}</span><div class="media-file-actions">${it.old ? '<button type="button" class="media-remove" data-open="1">Открыть</button><button type="button" class="media-remove" data-edit="1">Изменить</button>' : ''}<button type="button" class="media-remove" data-rm="1" aria-label="Убрать файл ${filename}">×</button></div>`;
     row.querySelector('[data-rm]').onclick = () => { if (it.old) tempFiles = tempFiles.filter(x => x !== it.f); else newFiles = newFiles.filter(x => x !== it.f); renderFiles(); };
     const op = row.querySelector('[data-open]');
     if (op) op.onclick = () => openFile(it.f, $('#taskTitle').value);
@@ -194,9 +195,10 @@ async function storeFile(file) {
     try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) { blob = file; }
   }
   if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
+  // Decode audio before storing: a decoder error must not create orphaned media.
+  const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   const id = 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
-  const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   return { id, name: file._name || file.name || 'Файл', type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
@@ -295,18 +297,26 @@ async function _saveTask() {
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  try { await dbPutTask(candidate); }
+  // Save the task and descendants atomically; never swallow child update failures.
+  const descendants = existing
+    ? subtree(existing.id).filter(t => t.columnId !== columnId).map(t => applyColumnChange(t, columnId))
+    : [];
+  try { await dbPutTasks([candidate, ...descendants]); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
   const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
   if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
+  for (const child of descendants) {
+    const childIdx = state.tasks.findIndex(t => t.id === child.id);
+    if (childIdx !== -1) state.tasks[childIdx] = child;
+  }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
-  await syncKids(candidate).catch(() => {});
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
 }
 
 function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
     const ok = await confirmDialog('Закрыть без сохранения?', 'Введённые изменения будут потеряны.');
     if (!ok) return;

@@ -42,7 +42,7 @@ assert.equal(scenario(['taskModal','confirmModal']).calls.save, 0);
 const day = scenario(['dayPlanPanel']);
 assert.equal(day.handled,true); assert.equal(day.dom.dayPlanPanel.hidden,true);
 assert.equal(scenario([]).handled,false, 'exit only when no overlay');
-assert.ok(read('app/src/main/js-src/tasks.js').includes('await dbPutTask(candidate)'));
+assert.ok(read('app/src/main/js-src/tasks.js').includes('await dbPutTasks([candidate, ...descendants])'));
 const originals = {
   'app/src/main/res/drawable-nodpi/ic_launcher_foreground.png':'af46ebfbae9c0f901fa095758ba9921f6c15075b',
   'app/src/main/res/mipmap-mdpi/ic_launcher.png':'71702b8560838d320ec0a40b7a30cfeb290336ad',

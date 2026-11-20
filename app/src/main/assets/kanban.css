@@ -782,9 +782,9 @@ button { font-family: inherit; }
   background:var(--surface-2); white-space:pre-wrap; overflow-wrap:anywhere;
   font-size:13px; line-height:1.5; }
 
-/* Keep the mobile header to one row. The existing actions live in a
-   reachable popover; the scrollable search toolbar stays independent. */
-@media (max-width: 720px) {
+/* Keep the phone header compact across landscape widths. Only the header
+   uses 960px; Kanban columns and toolbars retain the existing 720px layout. */
+@media (max-width: 960px) {
   .header {
     position:relative; z-index:30;
     display:flex; flex-direction:row; align-items:center; flex-wrap:nowrap;
@@ -792,7 +792,10 @@ button { font-family: inherit; }
     padding:calc(6px + var(--safe-top)) calc(10px + var(--safe-right)) 4px calc(10px + var(--safe-left));
   }
   .header-left { flex:1 1 auto; flex-wrap:nowrap; min-width:0; }
-  .board-select { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
+  .board-select {
+    flex:1 1 auto; width:auto; min-width:0; max-width:none;
+    white-space:nowrap; text-overflow:ellipsis; overflow:hidden;
+  }
   .header-menu-toggle {
     display:inline-flex; flex:0 0 44px; width:44px; min-width:44px;
     height:44px; min-height:44px; font-size:22px;
@@ -822,6 +825,8 @@ button { font-family: inherit; }
     color:var(--danger); border-top:1px solid var(--border);
     border-radius:0; margin-top:6px;
   }
+}
+@media (max-width: 720px) {
   .view-tab { padding:5px 10px 9px; }
   .toolbar {
     display:flex; flex-wrap:nowrap; min-width:0; gap:8px;

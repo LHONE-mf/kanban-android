@@ -2,7 +2,7 @@
 
 The original Kanban application remains: boards, cards, priorities, deadlines,
 attachments, calendar, mind map, Pomodoro timer, import/export and Japanese lessons.
-AI chat and GGUF inference were removed in v0.4.8 by request.
+Comrade is a standalone offline task manager.
 
 ## 🔥 Мой день
 The standalone day planner lists unfinished tasks from all boards, sorts by

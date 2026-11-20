@@ -57,6 +57,8 @@ jobs:
         run: node tests/test_responsive_header.js
       - name: Test mobile navigation and dialog keyboard priority
         run: node tests/test_mobile_navigation_regression.js
+      - name: Test board-scoped horizontal and vertical column scrolling
+        run: node tests/test_column_scroll_state.js
       - name: Verify backup completeness, daily plan, and Japanese progress
         run: node tests/test_backup_integrity.js
       - name: Verify native Japanese progress backup and restoration bridge

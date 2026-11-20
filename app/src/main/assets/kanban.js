@@ -1523,6 +1523,7 @@ function switchView(view) {
     const active = tab.dataset.view === view;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
   });
   $('#kanbanToolbar').style.display = view === 'kanban' ? '' : 'none';
   $('#board').hidden = view !== 'kanban';
@@ -3087,6 +3088,25 @@ function toggleHeaderMenu() {
   actions.querySelector('button')?.focus();
 }
 
+// Keyboard-accessible tablist: Arrow keys move/activate tabs; Home/End jump.
+function bindViewTabs() {
+  const tabs = $$('.view-tab');
+  tabs.forEach((tab, index) => {
+    tab.onclick = () => switchView(tab.dataset.view);
+    tab.onkeydown = e => {
+      let next = index;
+      if (e.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      else return;
+      e.preventDefault();
+      switchView(tabs[next].dataset.view);
+      tabs[next].focus();
+    };
+  });
+}
+
 function bindEvents() {
   $('#headerMenuBtn').onclick = toggleHeaderMenu;
   document.addEventListener('click', (e) => {
@@ -3123,7 +3143,7 @@ function bindEvents() {
     await deleteBoard(state.activeBoardId);
   };
 
-  $$('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
+  bindViewTabs();
 
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {

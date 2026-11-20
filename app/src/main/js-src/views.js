@@ -709,6 +709,7 @@ function switchView(view) {
     const active = tab.dataset.view === view;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
   });
   $('#kanbanToolbar').style.display = view === 'kanban' ? '' : 'none';
   $('#board').hidden = view !== 'kanban';

@@ -259,12 +259,9 @@ function bindEvents() {
   };
 
   $('#taskFile').onchange = (e) => {
-    for (const f of e.target.files) {
-      if (f.size > MAX_VIDEO_SIZE) { showToast(`«${f.name}» больше 50 МБ`); continue; }
-      newFiles.push(f);
-      if (isAudio(f)) prepAudio(f).then(renderFiles);
-    }
-    e.target.value = ''; renderFiles();
+    const selection = Array.from(e.target.files || []);
+    e.target.value = ''; // Permit selecting the same file again after a cancelled edit.
+    stageSelectedFiles(selection);
   };
 
   $('#addColumnBtn').onclick = addColumnConfig;
@@ -290,7 +287,17 @@ function bindEvents() {
       else closeModal(id);
     });
   });
-  $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+  const viewer = $('#lightbox');
+  viewer.addEventListener('click', e => { if (e.target === viewer) closeLightbox(); });
+  $('#lightboxClose').onclick = closeLightbox;
+  $('#lightboxPrev').onclick = () => changeLightboxItem(-1);
+  $('#lightboxNext').onclick = () => changeLightboxItem(1);
+  $('#lightboxZoomIn').onclick = () => updateLightboxZoom(lightboxGallery.zoom * 1.5);
+  $('#lightboxZoomOut').onclick = () => updateLightboxZoom(lightboxGallery.zoom / 1.5);
+  viewer.addEventListener('pointerdown', lightboxPointerDown);
+  viewer.addEventListener('pointermove', lightboxPointerMove);
+  viewer.addEventListener('pointerup', lightboxPointerUp);
+  viewer.addEventListener('pointercancel', lightboxPointerUp);
 
   document.addEventListener('keydown', async (e) => {
     if (e.key === 'Escape') {
@@ -347,6 +354,29 @@ function comradeHandleAndroidBack() {
   return false;
 }
 window.comradeHandleAndroidBack = comradeHandleAndroidBack;
+
+// Keep selections from several Android picker visits until the task is saved.
+// The actual media blobs are committed only by saveTaskFromModal().
+function stageSelectedFiles(files) {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return 0; }
+  let accepted = 0, rejected = 0;
+  for (const file of files || []) {
+    if (!file || !Number.isFinite(file.size) || file.size < 0 || file.size > MAX_VIDEO_SIZE) {
+      rejected++;
+      continue;
+    }
+    newFiles.push(file);
+    accepted++;
+    if (isAudio(file)) {
+      void prepAudio(file).then(() => {
+        if ($('#taskModal').classList.contains('open')) renderFiles();
+      }).catch(() => {}); // Decoder may reject; the save path reports persistent errors.
+    }
+  }
+  renderFiles();
+  if (rejected) showToast(`${rejected} файл(ов) пропущено: лимит 50 МБ на файл`);
+  return accepted;
+}
 
 // ============================================================
 // QUICK ADD

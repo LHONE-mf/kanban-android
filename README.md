@@ -63,3 +63,18 @@ Kanban. No change to installed data, package ID, or signing identity.
 These changes remain **in a review branch**. Physical Android touch/restore tests
 are still required before any merge into `main` or stable APK release.
 See `docs/COMRADE_C01_C05_ACCEPTANCE.md` for non-destructive acceptance steps.
+
+## C-06–C-09 media improvements (review candidate, not released)
+
+- Multiple file picker visits accumulate attachments, including Android ClipData multi-select.
+- Adaptive JPEG compression targets ~1–2 MiB where feasible; WebP encoding preserves
+  transparency for compatible PNG/HEIC/WebP images. Tiny files are not recompressed.
+- Task-image gallery includes an explicit close button, swipe navigation, pinch zoom
+  and accessible zoom controls.
+- Non-image documents use a chunked Android FileProvider ACTION_VIEW handoff with
+  read-only URI permission; no direct access to IndexedDB is granted.
+- Existing attachments and offline data remain unchanged. See
+  `docs/COMRADE_C06_C09_ACCEPTANCE.md` for non-destructive phone checks.
+
+No stable release or merge into main is implied; physical Android verification
+remains required.

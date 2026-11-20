@@ -9,7 +9,7 @@ const html = read('app/src/main/assets/kanban.html');
 const js = read('app/src/main/js-src/interactions.js');
 const kotlin = read('app/src/main/java/com/kanban/offline/MainActivity.kt');
 
-const first = css.indexOf('/* Keep the mobile header to one row.');
+const first = css.indexOf('/* Keep the phone header compact across landscape widths.');
 const last = css.indexOf('/* Checkboxes and manual ordering', first);
 assert.ok(first >= 0 && last > first);
 const responsive = css.slice(first, last);

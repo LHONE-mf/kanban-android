@@ -282,6 +282,7 @@ function bindEvents() {
     if (e.key === 'Escape') {
       if ($('#lightbox').classList.contains('open')) { closeLightbox(); return; }
       if ($('#confirmModal').classList.contains('open')) { $('#confirmCancel').click(); return; }
+      if ($('#textPromptModal').classList.contains('open')) { $('#textPromptCancel').click(); return; }
       if ($('#taskModal').classList.contains('open')) { await tryCloseTaskModal(); return; }
       if ($('#settingsModal').classList.contains('open')) { closeModal('settingsModal'); return; }
       if ($('#shortcutsModal').classList.contains('open')) { closeModal('shortcutsModal'); return; }
@@ -300,6 +301,8 @@ function bindEvents() {
     }
     if ($('#shortcutsModal').classList.contains('open')) { if (e.key === '?') closeModal('shortcutsModal'); return; }
     if ($('#settingsModal').classList.contains('open') || $('#confirmModal').classList.contains('open') || $('#lightbox').classList.contains('open')) return;
+    // An open menu owns keyboard focus; do not trigger global task/view shortcuts.
+    if ($('#headerActions').classList.contains('is-open')) return;
     if (isInput || e.ctrlKey || e.metaKey || e.altKey) return;
 
     if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') { e.preventDefault(); openTaskModal(null, state.columns[0]?.id); }

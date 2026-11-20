@@ -2105,6 +2105,8 @@ async function showLightboxItem() {
   $('#lightboxNext').disabled = lightboxGallery.index === lightboxGallery.files.length - 1;
   $('#lightboxZoomIn').hidden = !image;
   $('#lightboxZoomOut').hidden = !image;
+  $('#lightboxZoomIn').disabled = !image;
+  $('#lightboxZoomOut').disabled = true;
   content.textContent = 'Загрузка…';
   lightbox.classList.add('open');
   try {

@@ -6,7 +6,7 @@ function setupDragAndDrop() {
   board.addEventListener('pointerdown', onPointerDown);
 }
 function onPointerDown(e) {
-  if (e.button !== 0) return;
+  if (drag || e.button !== 0) return;
   const card = e.target.closest('.task-card');
   if (!card) return;
   if (e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], button, input, .ap')) return;
@@ -64,13 +64,15 @@ async function onPointerUp(e) {
   clearTimeout(drag.timer);
   stopAutoScroll();
   if (wasActive) {
+    const dropList = getDropListAt(e.clientX, e.clientY);
+    if (dropList) updateDropTarget(e.clientX, e.clientY);
     lastDragEndTime = Date.now();
     card.classList.remove('dragging');
     document.body.style.userSelect = '';
     $('#board').classList.remove('is-dragging');
-    const list = card.parentElement;
+    const list = dropList && card.parentElement === dropList ? dropList : null;
     drag = null;
-    if (list && list.classList.contains('task-list')) {
+    if (list) {
       const newColId = list.dataset.columnId;
       const orderedIds = $$('.task-card', list).map(c => c.dataset.taskId);
       const toUpdate = [];
@@ -97,7 +99,15 @@ async function onPointerUp(e) {
     drag = null;
   }
 }
-function onPointerCancel() { cleanupDragWithoutRerender(); }
+function onPointerCancel(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  const wasActive = drag.active;
+  cleanupDragWithoutRerender();
+  if (wasActive) {
+    lastDragEndTime = Date.now();
+    renderBoard(); // restore DOM after a cancelled drag; storage was never changed
+  }
+}
 function cleanupDragListeners() {
   window.removeEventListener('pointermove', onPointerMove);
   window.removeEventListener('pointerup', onPointerUp);
@@ -114,13 +124,17 @@ function getAfterElement(container, y) {
   }
   return closest.element;
 }
+function getDropListAt(x, y) {
+  const rect = $('#board').getBoundingClientRect();
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  return el.closest('.task-list') || el.closest('.column')?.querySelector('.task-list') || null;
+}
 function updateDropTarget(x, y) {
   if (!drag || !drag.active) return;
   $$('.task-list.drag-over').forEach(el => el.classList.remove('drag-over'));
-  const el = document.elementFromPoint(x, y);
-  if (!el) return;
-  let list = el.closest('.task-list');
-  if (!list) { const col = el.closest('.column'); if (col) list = col.querySelector('.task-list'); }
+  const list = getDropListAt(x, y);
   if (!list) return;
   list.classList.add('drag-over');
   const after = getAfterElement(list, y);

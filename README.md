@@ -43,3 +43,23 @@ Kanban. No change to installed data, package ID, or signing identity.
 - CSV export remains available from board Settings, not in the crowded main header.
 - This does not yet include native Android `japanese_daily` SharedPreferences in backups.
   Do not uninstall the app or clear storage to migrate. Test upgrades on-device.
+
+## v0.4.11 C-01–C-05 candidate (NOT yet released)
+
+- Based on the PR #8 → #9 → #10 integration chain; preserves all offline tasks,
+  attachments, saved day plans, and existing Japanese learning progress.
+- Kanban task cards grow to fit titles/content and scroll vertically inside columns.
+- Editing a task and moving its descendants saves in **one** IndexedDB transaction.
+  Failed storage writes keep the editor and previous tree unchanged.
+- Attachment action rows wrap, with accessible 44px Open/Edit/Remove targets.
+- Full JSON backup **v6** adds the native Android Japanese mini-quiz progress from
+  `japanese_daily` (six fields) alongside the existing WebView Japanese keys.
+  Older v5 archives remain importable without overwriting native progress.
+- A v5/v6 archive missing a task or referenced attachment is rejected before
+  replacing the existing IndexedDB state. The Android WebView backup bridge must
+  be available before native mini-quiz progress can be exported.
+- CI checks JavaScript, Kotlin, signing, task editor, touch targets and backups.
+
+These changes remain **in a review branch**. Physical Android touch/restore tests
+are still required before any merge into `main` or stable APK release.
+See `docs/COMRADE_C01_C05_ACCEPTANCE.md` for non-destructive acceptance steps.

@@ -232,6 +232,43 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Preserve the native Japanese mini-quiz in the same full backup.
+        // Only the bundled Kanban main frame can read or restore these six fields.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanJapaneseProgress", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length > 4096) return@addWebMessageListener
+                runOnUiThread {
+                    val reply = JSONObject()
+                    try {
+                        val req = JSONObject(raw)
+                        reply.put("id", req.getString("id"))
+                        when (req.getString("type")) {
+                            "read" -> {
+                                reply.put("type", "read")
+                                reply.put("data", readMiniBackup())
+                            }
+                            "restore" -> {
+                                restoreMiniBackup(req.getJSONObject("data"))
+                                reply.put("type", "restored")
+                            }
+                            else -> throw IllegalArgumentException("Неизвестная команда")
+                        }
+                    } catch (error: Exception) {
+                        reply.put("type", "error")
+                        reply.put("message", error.message ?: "Ошибка прогресса японского")
+                    }
+                    webView.evaluateJavascript(
+                        "window.comradeJapaneseNativeResult && window.comradeJapaneseNativeResult(" +
+                            JSONObject.quote(reply.toString()) + ")", null
+                    )
+                }
+            }
+        }
+
         // WebMessageListener restricts the speech bridge to the bundled app origin.
         // Never expose a general-purpose JavaScript interface to remote websites.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -527,6 +564,54 @@ class MainActivity : ComponentActivity() {
             ) View.VISIBLE else View.GONE
     }
 
+
+    private fun readMiniBackup(): JSONObject {
+        val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
+        return JSONObject()
+            .put("question_count", prefs.getInt("question_count", 0))
+            .put("correct_count", prefs.getInt("correct_count", 0))
+            .put("current_question", prefs.getInt("current_question", 0))
+            .put("next_question", prefs.getInt("next_question", 0))
+            .put("katakana_unlocked", prefs.getBoolean("katakana_unlocked", false))
+            .put("review_queue", prefs.getString("review_queue", "") ?: "")
+    }
+
+    private fun restoreMiniBackup(value: JSONObject) {
+        val count = value.getInt("question_count")
+        val correct = value.getInt("correct_count")
+        val current = value.getInt("current_question")
+        val next = value.getInt("next_question")
+        val unlocked = value.getBoolean("katakana_unlocked")
+        val queueRaw = value.getString("review_queue")
+        require(count in 0..1000000 && correct in 0..count) { "Некорректные счётчики японского" }
+        require(current in allMiniQuestions.indices && next in allMiniQuestions.indices) {
+            "Некорректная позиция в японском"
+        }
+        require(queueRaw.length <= 1024) { "Слишком длинная очередь повторения" }
+        val queue = if (queueRaw.isEmpty()) emptyList() else
+            queueRaw.split(",").map { it.toIntOrNull() ?: -1 }
+        require(queue.size <= 150 && queue.all { it in allMiniQuestions.indices }) {
+            "Некорректная очередь повторения"
+        }
+        val saved = getSharedPreferences("japanese_daily", MODE_PRIVATE).edit()
+            .putInt("question_count", count)
+            .putInt("correct_count", correct)
+            .putInt("current_question", current)
+            .putInt("next_question", next)
+            .putBoolean("katakana_unlocked", unlocked)
+            .putString("review_queue", queueRaw)
+            .commit()
+        check(saved) { "Не удалось сохранить прогресс японского" }
+        miniQuestionNumber = count
+        miniCorrectCount = correct
+        dailyQuestionIndex = current
+        miniNextNewIndex = next
+        miniUnlockedKatakana = unlocked
+        miniReviewQueue.clear()
+        queue.forEach { miniReviewQueue.addLast(it) }
+        miniIsReview = false
+        renderMiniQuestion()
+    }
 
     private fun saveMiniState() {
         getSharedPreferences("japanese_daily", MODE_PRIVATE).edit()

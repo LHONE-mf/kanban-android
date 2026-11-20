@@ -912,8 +912,8 @@ function createTaskCard(task, column) {
     const cls = 'task-footer-item' + ((!column.isDone && diff < 0) ? ' overdue' : (!column.isDone && diff === 0 ? ' today' : ''));
     deadlineHtml = `<span class="${cls}">📅 ${escapeHtml(formatDate(task.deadline))}</span>`;
   }
-  // Priority and deadline belong at the top: the footer gets obscured on phones
-  // when the card contains a long title, a description, or a checklist.
+  // Title first: show what the task is before its priority and deadline.
+  // Full-height cards scroll within the column instead of clipping content.
   const priority = Object.prototype.hasOwnProperty.call(PRIORITY_LABELS, task.priority)
     ? task.priority : 'none';
   const priorityLabel = priority === 'none' ? 'Без приоритета' : PRIORITY_LABELS[priority];
@@ -922,8 +922,8 @@ function createTaskCard(task, column) {
   card.setAttribute('aria-label', `${task.title}. Приоритет: ${priorityLabel}`);
 
   card.innerHTML = `
-    <div class="task-card-meta">${priorityHtml}${deadlineHtml}</div>
     <div class="task-title">${escapeHtml(task.title)}</div>
+    <div class="task-card-meta">${priorityHtml}${deadlineHtml}</div>
     ${descHtml}${mediaHtml}${task.files.some(isAudio) ? '<div class="task-audio"></div>' : ''}${tagsHtml}${checklistHtml}
     <div class="task-footer">
       ${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
@@ -1709,8 +1709,9 @@ function renderFiles() {
   const all = [...tempFiles.map(f => ({ f, old: true })), ...newFiles.map(f => ({ f, old: false }))].filter(it => !isAudio(it.f));
   all.forEach((it, i) => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px';
-    row.innerHTML = `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${escapeHtml(it.f.name)}${it.f.size ? ' · ' + fmtSize(it.f.size) : ''}${it.old ? '' : ' (новый)'}</span>${it.old ? '<button type="button" class="media-remove" data-open="1">Открыть</button><button type="button" class="media-remove" data-edit="1">Изменить</button>' : ''}<button type="button" class="media-remove" data-rm="1" aria-label="Убрать файл">×</button>`;
+    row.className = 'media-file-row';
+    const filename = escapeHtml(it.f.name);
+    row.innerHTML = `<span class="media-file-name">📎 ${filename}${it.f.size ? ' · ' + fmtSize(it.f.size) : ''}${it.old ? '' : ' (новый)'}</span><div class="media-file-actions">${it.old ? '<button type="button" class="media-remove" data-open="1">Открыть</button><button type="button" class="media-remove" data-edit="1">Изменить</button>' : ''}<button type="button" class="media-remove" data-rm="1" aria-label="Убрать файл ${filename}">×</button></div>`;
     row.querySelector('[data-rm]').onclick = () => { if (it.old) tempFiles = tempFiles.filter(x => x !== it.f); else newFiles = newFiles.filter(x => x !== it.f); renderFiles(); };
     const op = row.querySelector('[data-open]');
     if (op) op.onclick = () => openFile(it.f, $('#taskTitle').value);
@@ -1828,18 +1829,26 @@ async function _saveTask() {
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
     completedAt: computeCompletedAt(existing ? existing.columnId : null, columnId, existing ? existing.completedAt : null)
   };
-  try { await dbPutTask(candidate); }
+  // Save the task and descendants atomically; never swallow child update failures.
+  const descendants = existing
+    ? subtree(existing.id).filter(t => t.columnId !== columnId).map(t => applyColumnChange(t, columnId))
+    : [];
+  try { await dbPutTasks([candidate, ...descendants]); }
   catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
 
   const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
   if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
+  for (const child of descendants) {
+    const childIdx = state.tasks.findIndex(t => t.id === child.id);
+    if (childIdx !== -1) state.tasks[childIdx] = child;
+  }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
-  await syncKids(candidate).catch(() => {});
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
 }
 
 function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
     const ok = await confirmDialog('Закрыть без сохранения?', 'Введённые изменения будут потеряны.');
     if (!ok) return;
@@ -2213,6 +2222,56 @@ function restoreJapaneseBackup(snapshot) {
     throw e;
   }
 }
+// Native Android mini-quiz progress is separate from WebView localStorage.
+let pendingNativeJapanese = null;
+window.comradeJapaneseNativeResult = raw => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const pending = pendingNativeJapanese;
+  if (!pending || event.id !== pending.id) return;
+  pendingNativeJapanese = null;
+  clearTimeout(pending.timer);
+  if (event.type === 'error') pending.reject(new Error(event.message || 'Ошибка прогресса японского'));
+  else if (event.type === 'read') pending.resolve(validateNativeJapaneseBackup(event.data));
+  else if (event.type === 'restored') pending.resolve(true);
+  else pending.reject(new Error('Неизвестный ответ Android'));
+};
+function validateNativeJapaneseBackup(value) {
+  if (value == null) return null; // older and browser-only archives
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Неверный нативный прогресс японского');
+  const keys = ['question_count','correct_count','current_question','next_question'];
+  if (keys.some(k => !Number.isInteger(value[k]) || value[k] < 0 || value[k] > 1000000)
+      || value.correct_count > value.question_count
+      || value.current_question >= 92 || value.next_question >= 92
+      || typeof value.katakana_unlocked !== 'boolean'
+      || typeof value.review_queue !== 'string' || value.review_queue.length > 1024)
+    throw new Error('Повреждён нативный прогресс японского');
+  const queue = value.review_queue === '' ? [] : value.review_queue.split(',');
+  if (queue.length > 150 || queue.some(n => !/^(0|[1-9][0-9]*)$/.test(n) || +n >= 92))
+    throw new Error('Повреждена очередь повторения японского');
+  return Object.fromEntries([...keys,'katakana_unlocked','review_queue'].map(k => [k,value[k]]));
+}
+function nativeJapaneseCommand(type, data = null) {
+  if (!window.KanbanJapaneseProgress?.postMessage) {
+    if (location.origin === 'https://appassets.androidplatform.net')
+      return Promise.reject(new Error('Резервирование японской мини-викторины недоступно в Android'));
+    return Promise.resolve(null); // browser: no native mini-quiz exists
+  }
+  if (pendingNativeJapanese) return Promise.reject(new Error('Дождитесь завершения операции с японским'));
+  return new Promise((resolve, reject) => {
+    const id = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => {
+      if (pendingNativeJapanese?.id !== id) return;
+      pendingNativeJapanese = null;
+      reject(new Error('Android не ответил на запрос прогресса японского'));
+    }, 8000);
+    pendingNativeJapanese = {id, timer, resolve, reject};
+    try { window.KanbanJapaneseProgress.postMessage(JSON.stringify({id,type,data})); }
+    catch (error) { clearTimeout(timer); pendingNativeJapanese = null; reject(error); }
+  });
+}
+
 // Android saves through SAF, not WebView blob downloads. Transfer at most 32 KiB
 // per message, waiting for native acknowledgment so media-heavy backups can be saved.
 let activeAndroidBackup = null;
@@ -2297,11 +2356,13 @@ async function exportData() {
   try {
     const allTasks = Object.values(state._tasksByBoard).flat();
     const settings = await dbGetSettings();
-    const parts = ['{"version":5,"app":"comrade","exportedAt":' + JSON.stringify(new Date().toISOString())
+    const nativeJapanese = await nativeJapaneseCommand('read');
+    const parts = ['{"version":6,"app":"comrade","exportedAt":' + JSON.stringify(new Date().toISOString())
       + ',"activeBoardId":' + JSON.stringify(state.activeBoardId) + ',"boards":' + JSON.stringify(state.boards)
       + ',"tasks":' + JSON.stringify(allTasks)
       + ',"dayPlan":' + JSON.stringify(settings.comrade_day_plan_v1 || null)
-      + ',"japanese":' + JSON.stringify(readJapaneseBackup()) + ',"media":{'];
+      + ',"japanese":' + JSON.stringify(readJapaneseBackup())
+      + ',"nativeJapanese":' + JSON.stringify(nativeJapanese) + ',"media":{'];
     const seen = new Set();
     let n = 0;
     for (const f of allTasks.flatMap(t => t.files)) {
@@ -2524,7 +2585,11 @@ async function buildImportPlan(data) {
     }
   }
   boards.forEach(b => normalizeTree(tasks.filter(t => t.boardId === b.id)));
+  // A modern full backup must never silently discard referenced files or tasks.
+  if (!Array.isArray(data) && Number(data.version) >= 5 && (brokenMedia || skippedTasks))
+    throw new Error('Архив неполный: повреждены задачи или вложения. Импорт отменён без изменений');
   const japanese = validateJapaneseBackup(!Array.isArray(data) ? data.japanese : null);
+  const nativeJapanese = validateNativeJapaneseBackup(!Array.isArray(data) ? data.nativeJapanese : null);
   let dayPlan = null;
   if (!Array.isArray(data) && data.dayPlan != null) {
     const saved = data.dayPlan;
@@ -2537,7 +2602,7 @@ async function buildImportPlan(data) {
       if (ids.length) dayPlan = { date: saved.date, ids, updatedAt: Number(saved.updatedAt) || Date.now() };
     } else warnings.push('«Мой день»: неверный формат, план пропущен.');
   }
-  return { boards, activeBoardId, tasks, media, japanese, dayPlan,
+  return { boards, activeBoardId, tasks, media, japanese, nativeJapanese, dayPlan,
     report: { skippedTasks, brokenMedia, warnings } };
 }
 
@@ -2553,7 +2618,8 @@ async function handleImport(file) {
 
   const totalWarn = plan.report.warnings.length;
   const message = `Текущие ${state.boards.length} досок и ${Object.values(state._tasksByBoard).reduce((s,a)=>s+a.length,0)} задач будут заменены на ${plan.boards.length} досок и ${plan.tasks.length} задач из файла.`
-    + (plan.japanese ? '\nСохранённый прогресс японского языка из архива заменит совпадающие настройки.' : '');
+    + (plan.japanese ? '\nСохранённый прогресс японского языка из архива заменит совпадающие настройки.' : '')
+    + (plan.nativeJapanese ? '\nНативная мини-викторина японского также будет восстановлена.' : '')
     + (totalWarn ? `\n\nПредупреждений: ${totalWarn}. См. консоль.` : '');
   if (totalWarn) console.warn('[import] warnings:', plan.report.warnings);
 
@@ -2566,6 +2632,11 @@ async function handleImport(file) {
   let japaneseError = null;
   try { restoreJapaneseBackup(plan.japanese); }
   catch (e) { japaneseError = e; console.error('Japanese progress restore failed:', e); }
+  let nativeJapaneseError = null;
+  if (plan.nativeJapanese) {
+    try { await nativeJapaneseCommand('restore', plan.nativeJapanese); }
+    catch (e) { nativeJapaneseError = e; console.error('Native Japanese progress restore failed:', e); }
+  }
   undoStack.length = 0; for (const t of pendingMediaDeletes.values()) clearTimeout(t); pendingMediaDeletes.clear(); apStop();
   rebucket(plan.tasks, plan.boards, plan.activeBoardId);
   applyActiveBoard();
@@ -2575,7 +2646,8 @@ async function handleImport(file) {
 
   const suffix = totalWarn ? ` (${totalWarn} предупр.)` : '';
   showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`
-    + (japaneseError ? '. Внимание: прогресс японского языка не восстановлен.' : ''),
+    + (japaneseError ? '. Внимание: веб-прогресс японского языка не восстановлен.' : '')
+    + (nativeJapaneseError ? '. Внимание: мини-викторина японского не восстановлена.' : ''),
     null, null, 5500);
 }
 

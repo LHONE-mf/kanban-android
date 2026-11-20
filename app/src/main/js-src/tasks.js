@@ -252,16 +252,96 @@ window.kanbanExternalEditResult = async function(payload) {
     showToast('Не удалось обновить вложение: ' + error.message);
   }
 };
+// Only 32 KiB of a saved attachment crosses the Android WebView bridge at a
+// time. Android grants read-only access to the chosen external viewer.
+let activeFileOpen = null;
+function fileOpenPost(event) {
+  window.KanbanFileOpen.postMessage(JSON.stringify(event));
+}
+function fileOpenFail(transfer, reason, abort = false) {
+  if (activeFileOpen !== transfer) return;
+  activeFileOpen = null;
+  clearTimeout(transfer.timer);
+  if (abort) { try { fileOpenPost({type:'abort',id:transfer.id}); } catch (_) {} }
+  transfer.reject(reason instanceof Error ? reason : new Error(String(reason)));
+}
+function fileOpenTimeout(transfer) {
+  clearTimeout(transfer.timer);
+  transfer.timer = setTimeout(() =>
+    fileOpenFail(transfer, new Error('Android не ответил при открытии файла'), true), 15000);
+}
+async function fileOpenNextChunk(transfer) {
+  if (activeFileOpen !== transfer) return;
+  try {
+    if (transfer.offset >= transfer.blob.size) {
+      fileOpenPost({type:'finish',id:transfer.id});
+      fileOpenTimeout(transfer);
+      return;
+    }
+    const bytes = new Uint8Array(await transfer.blob.slice(
+      transfer.offset, transfer.offset + 32 * 1024).arrayBuffer());
+    if (activeFileOpen !== transfer) return;
+    transfer.pending = bytes.length;
+    fileOpenPost({type:'chunk',id:transfer.id,index:transfer.index,
+      data:btoa(String.fromCharCode(...bytes))});
+    fileOpenTimeout(transfer);
+  } catch (error) { fileOpenFail(transfer, error, true); }
+}
+window.kanbanFileOpenNativeResult = raw => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const transfer = activeFileOpen;
+  if (!transfer || event.id !== transfer.id) return;
+  if (event.type === 'ready') void fileOpenNextChunk(transfer);
+  else if (event.type === 'ack') {
+    if (event.index !== transfer.index + 1 || transfer.pending <= 0) {
+      fileOpenFail(transfer, new Error('Сбой передачи вложения'), true);
+      return;
+    }
+    transfer.offset += transfer.pending;
+    transfer.pending = 0; transfer.index++;
+    void fileOpenNextChunk(transfer);
+  } else if (event.type === 'opened') {
+    clearTimeout(transfer.timer);
+    activeFileOpen = null;
+    transfer.resolve();
+  } else if (event.type === 'error' || event.type === 'cancelled') {
+    fileOpenFail(transfer, new Error(event.message || 'Не удалось открыть файл'));
+  }
+};
+function openFileViaAndroid(blob, file) {
+  if (activeFileOpen) return Promise.reject(new Error('Другой файл ещё открывается'));
+  if (blob.size > MAX_VIDEO_SIZE) return Promise.reject(new Error('Файл превышает 50 МБ'));
+  return new Promise((resolve, reject) => {
+    const id = 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    const transfer = {id,blob,offset:0,index:0,pending:0,timer:null,resolve,reject};
+    activeFileOpen = transfer;
+    fileOpenTimeout(transfer);
+    try {
+      fileOpenPost({type:'start',id,name:file.name || 'file',
+        mime:file.type || 'application/octet-stream',size:blob.size});
+    } catch (error) { fileOpenFail(transfer,error); }
+  });
+}
 async function openFile(f, title) {
   if (/^(image|video)\//.test(f.type)) {
-    // Allow swiping among the saved attachments of the currently edited task.
     const galleryFiles = tempFiles.some(file => file.id === f.id) ? tempFiles : [f];
     return openLightbox({ title, files: galleryFiles }, f);
   }
   const m = await mediaGet(f.id).catch(() => null);
-  if (!m) { showToast('Файл не найден'); return; }
-  const url = createTrackedURL(m.full), a = document.createElement('a');
-  a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+  if (!m?.full) { showToast('Файл не найден'); return; }
+  if (window.KanbanFileOpen?.postMessage) {
+    try { await openFileViaAndroid(m.full, f); }
+    catch (error) { showToast('Не удалось открыть файл: ' + error.message); }
+    return;
+  }
+  if (location.origin === 'https://appassets.androidplatform.net') {
+    showToast('Открытие вложений недоступно в этой версии Android WebView');
+    return;
+  }
+  const url = createTrackedURL(m.full), link = document.createElement('a');
+  link.href = url; link.download = f.name; document.body.appendChild(link);
+  link.click(); link.remove();
   setTimeout(() => revokeTrackedURL(url), 4000);
 }
 

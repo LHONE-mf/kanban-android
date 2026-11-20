@@ -8,7 +8,7 @@ function renderBoard() {
   const sameBoard = board.dataset.boardId === state.activeBoardId;
   const scrolls = {};
   if (sameBoard) {
-    $('.task-list', board).forEach(el => { scrolls[el.dataset.columnId] = el.scrollTop; });
+    $$('.task-list', board).forEach(el => { scrolls[el.dataset.columnId] = el.scrollTop; });
   }
   const boardScroll = sameBoard ? board.scrollLeft : 0;
   board.innerHTML = '';

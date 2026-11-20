@@ -2728,6 +2728,20 @@ function bindEvents() {
   window.addEventListener('offline', () => showToast('Нет сети'));
 }
 
+
+function comradeHandleAndroidBack() {
+  if ($('#lightbox').classList.contains('open')) { closeLightbox(); return true; }
+  if ($('#confirmModal').classList.contains('open')) { $('#confirmCancel').click(); return true; }
+  if ($('#textPromptModal').classList.contains('open')) { $('#textPromptCancel').click(); return true; }
+  if ($('#taskModal').classList.contains('open')) { void saveTaskFromModal(); return true; }
+  if ($('#settingsModal').classList.contains('open')) { closeModal('settingsModal'); return true; }
+  if ($('#shortcutsModal').classList.contains('open')) { closeModal('shortcutsModal'); return true; }
+  if (!$('#dayPlanPanel').hidden) { $('#dayPlanPanel').hidden = true; return true; }
+  if (!$('#pomo').hidden) { $('#pomo').hidden = true; return true; }
+  return false;
+}
+window.comradeHandleAndroidBack = comradeHandleAndroidBack;
+
 // ============================================================
 // QUICK ADD
 // ============================================================

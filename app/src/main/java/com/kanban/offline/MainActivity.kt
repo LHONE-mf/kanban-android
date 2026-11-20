@@ -353,16 +353,30 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastBackGestureAt <= 2000L) {
-                    finish()
-                } else {
-                    lastBackGestureAt = now
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        "Проведите назад ещё раз, чтобы выйти",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+                if (webView.url?.substringBefore('?')?.endsWith("/japanese.html") == true) {
+                    lastBackGestureAt = 0L
+                    webView.loadUrl("$appOrigin/assets/kanban.html")
+                    return
+                }
+                // Let the trusted local WebView autosave edits or close its topmost overlay.
+                webView.evaluateJavascript(
+                    "(typeof window.comradeHandleAndroidBack === 'function' && window.comradeHandleAndroidBack())"
+                ) { handled ->
+                    if (handled == "true") {
+                        lastBackGestureAt = 0L
+                    } else {
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastBackGestureAt <= 2000L) {
+                            finish()
+                        } else {
+                            lastBackGestureAt = now
+                            android.widget.Toast.makeText(
+                                this@MainActivity,
+                                "Проведите назад ещё раз, чтобы выйти",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 }
             }
         })

@@ -65,7 +65,8 @@ async function attempt(value) {
   assert.equal(ok.downloads,1);
   assert.equal(ok.created.length,1);
   const archive = JSON.parse(await ok.created[0].text());
-  assert.equal(archive.version,5);
+  assert.equal(archive.version,6);
+  assert.equal(archive.nativeJapanese,null,'browser-only backup has no Android mini-quiz');
   assert.equal(archive.tasks.length,1);
   assert.ok(archive.media.f1);
   assert.equal(archive.dayPlan.ids[0],'t1');
@@ -79,6 +80,18 @@ async function attempt(value) {
   assert.equal(plan.dayPlan.ids.length,1);
   assert.equal(plan.dayPlan.ids[0],'t1');
   assert.equal(plan.japanese['kanban-japanese-script-v1'],'katakana');
+  assert.equal(plan.nativeJapanese,null,'older backups never overwrite native progress');
+  const native = {question_count:16,correct_count:12,current_question:4,next_question:5,
+    katakana_unlocked:false,review_queue:'2,3,8'};
+  assert.equal(context.validateNativeJapaneseBackup(native).correct_count,12);
+  assert.throws(()=>context.validateNativeJapaneseBackup({...native,correct_count:999}));
+  assert.throws(()=>context.validateNativeJapaneseBackup({...native,review_queue:'-1'}));
+  assert.throws(()=>context.validateNativeJapaneseBackup({...native,current_question:999}));
+  const nativePlan = await context.buildImportPlan({...importData,version:6,
+    nativeJapanese:native});
+  assert.equal(nativePlan.nativeJapanese.review_queue,'2,3,8');
+  await assert.rejects(context.buildImportPlan({...importData,version:6,
+    tasks:[task],media:{}}),/Архив неполный/,'modern full backups may not drop attachments');
   const old = await context.buildImportPlan({version:4,boards:context.state.boards,
     tasks:[{...task,files:[]}],activeBoardId:'b',media:{}});
   assert.equal(old.dayPlan,null);

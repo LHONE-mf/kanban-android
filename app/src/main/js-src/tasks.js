@@ -253,7 +253,11 @@ window.kanbanExternalEditResult = async function(payload) {
   }
 };
 async function openFile(f, title) {
-  if (/^(image|video)\//.test(f.type)) return openLightbox({ title, files: [f] }, f);
+  if (/^(image|video)\//.test(f.type)) {
+    // Allow swiping among the saved attachments of the currently edited task.
+    const galleryFiles = tempFiles.some(file => file.id === f.id) ? tempFiles : [f];
+    return openLightbox({ title, files: galleryFiles }, f);
+  }
   const m = await mediaGet(f.id).catch(() => null);
   if (!m) { showToast('Файл не найден'); return; }
   const url = createTrackedURL(m.full), a = document.createElement('a');

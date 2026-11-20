@@ -351,6 +351,7 @@ async function openFile(f, title) {
 let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
+  if (switchingBoard) { showToast('Дождитесь переключения доски'); return; }
   savingTask = true;
   try { await _saveTask(); } finally { savingTask = false; }
 }

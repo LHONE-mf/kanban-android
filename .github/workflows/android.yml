@@ -47,6 +47,8 @@ jobs:
         run: node tests/test_daily_plan.js
       - name: Verify atomic editor save and failure handling
         run: node tests/test_task_editor_atomic.js
+      - name: Protect unsaved task edits on board switching
+        run: node tests/test_board_switch_guard.js
       - name: Check mobile attachment controls
         run: node tests/test_attachment_layout.js
       - name: Test Android Back and exact original Comrade icons

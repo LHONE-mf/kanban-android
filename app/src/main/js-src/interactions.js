@@ -240,7 +240,17 @@ function bindEvents() {
       else closeModal(id);
     });
   });
-  $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+  const viewer = $('#lightbox');
+  viewer.addEventListener('click', e => { if (e.target === viewer) closeLightbox(); });
+  $('#lightboxClose').onclick = closeLightbox;
+  $('#lightboxPrev').onclick = () => changeLightboxItem(-1);
+  $('#lightboxNext').onclick = () => changeLightboxItem(1);
+  $('#lightboxZoomIn').onclick = () => updateLightboxZoom(lightboxGallery.zoom * 1.5);
+  $('#lightboxZoomOut').onclick = () => updateLightboxZoom(lightboxGallery.zoom / 1.5);
+  viewer.addEventListener('pointerdown', lightboxPointerDown);
+  viewer.addEventListener('pointermove', lightboxPointerMove);
+  viewer.addEventListener('pointerup', lightboxPointerUp);
+  viewer.addEventListener('pointercancel', lightboxPointerUp);
 
   document.addEventListener('keydown', async (e) => {
     if (e.key === 'Escape') {

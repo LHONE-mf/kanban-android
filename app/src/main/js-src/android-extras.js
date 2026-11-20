@@ -10,7 +10,7 @@ function pomoRender() {
   $('#pomoTime').textContent = mmss(left);
   $('#pomoMode').textContent = (pomo.mode === 'focus' ? 'Фокус' : 'Перерыв') + ' · 🍅 сегодня: ' + pomo.sessions;
   $('#pomoToggle').textContent = pomo.running ? '⏸' : '▶';
-  document.title = pomo.running ? mmss(left) + ' · Канбан' : 'Канбан';
+  document.title = pomo.running ? mmss(left) + ' · Comrade' : 'Comrade';
   return left;
 }
 function pomoBeep() {
@@ -95,7 +95,7 @@ async function apLoad(ui) {
   // WebM из MediaRecorder приходит без длительности — «лечим», чтобы работала перемотка
   if (a.duration === Infinity) await new Promise(res => { a.addEventListener('timeupdate', function h() { a.removeEventListener('timeupdate', h); a.currentTime = 0; res(); }); a.currentTime = 1e7; setTimeout(res, 1500); });
   if ('mediaSession' in navigator) try {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: String(ui.name || 'Аудио').replace(/\.[a-z0-9]+$/i, ''), artist: 'Канбан' });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: String(ui.name || 'Аудио').replace(/\.[a-z0-9]+$/i, ''), artist: 'Comrade' });
     navigator.mediaSession.setActionHandler('play', () => a.play());
     navigator.mediaSession.setActionHandler('pause', () => a.pause());
   } catch (_) {}

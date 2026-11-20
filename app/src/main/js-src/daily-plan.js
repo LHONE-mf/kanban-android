@@ -1,7 +1,7 @@
 
 // Daily plan is an ordered, dated selection of existing task IDs.
 // It never moves cards, changes task priorities, or rewrites deadlines.
-// Preserve previous daily-plan records across the assistant's removal.
+// Preserve existing daily-plan records across application upgrades.
 const COMRADE_DAY_KEY = 'comrade_day_plan_v1';
 const dayPlanEl = id => document.getElementById(id);
 const dayPlanTasks = () => Object.values(state._tasksByBoard).flat();

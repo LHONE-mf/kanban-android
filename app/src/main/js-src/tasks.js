@@ -241,7 +241,7 @@ window.kanbanExternalEditResult = async function(payload) {
     tempFiles.filter(f => f.id === data.id).forEach(f => { f.size = blob.size; });
     renderFiles();
     notifyOtherTabs();
-    showToast('Изменения файла сохранены в Канбан');
+    showToast('Изменения файла сохранены в Comrade');
   } catch (error) {
     showToast('Не удалось обновить вложение: ' + error.message);
   }

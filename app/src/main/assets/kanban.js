@@ -1772,7 +1772,7 @@ window.kanbanExternalEditResult = async function(payload) {
     tempFiles.filter(f => f.id === data.id).forEach(f => { f.size = blob.size; });
     renderFiles();
     notifyOtherTabs();
-    showToast('Изменения файла сохранены в Канбан');
+    showToast('Изменения файла сохранены в Comrade');
   } catch (error) {
     showToast('Не удалось обновить вложение: ' + error.message);
   }
@@ -2781,7 +2781,7 @@ async function quickAddTask(text) {
 
 // Daily plan is an ordered, dated selection of existing task IDs.
 // It never moves cards, changes task priorities, or rewrites deadlines.
-// Preserve previous daily-plan records across the assistant's removal.
+// Preserve existing daily-plan records across application upgrades.
 const COMRADE_DAY_KEY = 'comrade_day_plan_v1';
 const dayPlanEl = id => document.getElementById(id);
 const dayPlanTasks = () => Object.values(state._tasksByBoard).flat();
@@ -2982,7 +2982,7 @@ function pomoRender() {
   $('#pomoTime').textContent = mmss(left);
   $('#pomoMode').textContent = (pomo.mode === 'focus' ? 'Фокус' : 'Перерыв') + ' · 🍅 сегодня: ' + pomo.sessions;
   $('#pomoToggle').textContent = pomo.running ? '⏸' : '▶';
-  document.title = pomo.running ? mmss(left) + ' · Канбан' : 'Канбан';
+  document.title = pomo.running ? mmss(left) + ' · Comrade' : 'Comrade';
   return left;
 }
 function pomoBeep() {
@@ -3067,7 +3067,7 @@ async function apLoad(ui) {
   // WebM из MediaRecorder приходит без длительности — «лечим», чтобы работала перемотка
   if (a.duration === Infinity) await new Promise(res => { a.addEventListener('timeupdate', function h() { a.removeEventListener('timeupdate', h); a.currentTime = 0; res(); }); a.currentTime = 1e7; setTimeout(res, 1500); });
   if ('mediaSession' in navigator) try {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: String(ui.name || 'Аудио').replace(/\.[a-z0-9]+$/i, ''), artist: 'Канбан' });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: String(ui.name || 'Аудио').replace(/\.[a-z0-9]+$/i, ''), artist: 'Comrade' });
     navigator.mediaSession.setActionHandler('play', () => a.play());
     navigator.mediaSession.setActionHandler('pause', () => a.pause());
   } catch (_) {}

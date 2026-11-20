@@ -46,15 +46,18 @@
   <div class="header-left">
     <span class="logo">Comrade</span>
     <select id="boardSelect" class="select board-select" aria-label="Выбор доски"></select>
-    <button class="btn btn-ghost btn-icon" id="addBoardBtn" title="Новая доска" aria-label="Новая доска">+</button>
   </div>
-  <div class="actions header-actions">
-    <button class="btn btn-ghost btn-icon" id="focusBtn" title="Таймер фокуса (Pomodoro)" aria-label="Таймер фокуса">🍅</button>
-    <button class="btn btn-ghost btn-icon" id="themeBtn" aria-label="Переключить тему" aria-pressed="false">◐</button>
-    <button class="btn btn-ghost" id="exportBtn" title="Полный бэкап: доски, структура, карта, файлы">Экспорт</button>
-    <button class="btn btn-ghost" id="importBtn">Импорт</button>
-    <button class="btn btn-ghost btn-icon" id="settingsBtn" aria-label="Настройки доски">⚙</button>
-    <button class="btn btn-danger btn-small" id="clearBtn">Очистить</button>
+  <button type="button" class="btn btn-ghost btn-icon header-menu-toggle" id="headerMenuBtn"
+          aria-label="Открыть меню" aria-controls="headerActions" aria-expanded="false"
+          title="Дополнительные действия">⋮</button>
+  <div class="actions header-actions" id="headerActions" aria-label="Дополнительные действия">
+    <button class="btn btn-ghost btn-icon" id="addBoardBtn" title="Новая доска" aria-label="Новая доска" data-menu-label="Новая доска">+</button>
+    <button class="btn btn-ghost btn-icon" id="focusBtn" title="Таймер фокуса (Pomodoro)" aria-label="Таймер фокуса" data-menu-label="Таймер фокуса">🍅</button>
+    <button class="btn btn-ghost btn-icon" id="themeBtn" aria-label="Переключить тему" aria-pressed="false" data-menu-label="Тема оформления">◐</button>
+    <button class="btn btn-ghost" id="exportBtn" title="Полный бэкап: доски, структура, карта, файлы">Экспорт данных</button>
+    <button class="btn btn-ghost" id="importBtn">Импорт данных</button>
+    <button class="btn btn-ghost btn-icon" id="settingsBtn" aria-label="Настройки доски" data-menu-label="Настройки доски">⚙</button>
+    <button class="btn btn-danger btn-small" id="clearBtn">Очистить доску</button>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
   </div>
 </header>
@@ -263,7 +266,17 @@
   </div>
 </div>
 
-<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр файла"><div id="lightboxContent"></div></div>
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр файла">
+  <button type="button" id="lightboxClose" class="lightbox-close" aria-label="Закрыть просмотр">×</button>
+  <div class="lightbox-stage" id="lightboxContent"></div>
+  <div class="lightbox-controls">
+    <button type="button" id="lightboxPrev" aria-label="Предыдущий файл">‹</button>
+    <span id="lightboxPosition" aria-live="polite">1 / 1</span>
+    <button type="button" id="lightboxNext" aria-label="Следующий файл">›</button>
+    <button type="button" id="lightboxZoomOut" aria-label="Уменьшить изображение">−</button>
+    <button type="button" id="lightboxZoomIn" aria-label="Увеличить изображение">+</button>
+  </div>
+</div>
 
 <div class="modal" id="shortcutsModal" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
   <div class="modal-content modal-small">

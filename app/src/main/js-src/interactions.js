@@ -6,7 +6,7 @@ function setupDragAndDrop() {
   board.addEventListener('pointerdown', onPointerDown);
 }
 function onPointerDown(e) {
-  if (e.button !== 0) return;
+  if (drag || e.button !== 0) return;
   const card = e.target.closest('.task-card');
   if (!card) return;
   if (e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], button, input, .ap')) return;
@@ -64,13 +64,15 @@ async function onPointerUp(e) {
   clearTimeout(drag.timer);
   stopAutoScroll();
   if (wasActive) {
+    const dropList = getDropListAt(e.clientX, e.clientY);
+    if (dropList) updateDropTarget(e.clientX, e.clientY);
     lastDragEndTime = Date.now();
     card.classList.remove('dragging');
     document.body.style.userSelect = '';
     $('#board').classList.remove('is-dragging');
-    const list = card.parentElement;
+    const list = dropList && card.parentElement === dropList ? dropList : null;
     drag = null;
-    if (list && list.classList.contains('task-list')) {
+    if (list) {
       const newColId = list.dataset.columnId;
       const orderedIds = $$('.task-card', list).map(c => c.dataset.taskId);
       const toUpdate = [];
@@ -97,7 +99,15 @@ async function onPointerUp(e) {
     drag = null;
   }
 }
-function onPointerCancel() { cleanupDragWithoutRerender(); }
+function onPointerCancel(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  const wasActive = drag.active;
+  cleanupDragWithoutRerender();
+  if (wasActive) {
+    lastDragEndTime = Date.now();
+    renderBoard(); // restore DOM after a cancelled drag; storage was never changed
+  }
+}
 function cleanupDragListeners() {
   window.removeEventListener('pointermove', onPointerMove);
   window.removeEventListener('pointerup', onPointerUp);
@@ -114,13 +124,17 @@ function getAfterElement(container, y) {
   }
   return closest.element;
 }
+function getDropListAt(x, y) {
+  const rect = $('#board').getBoundingClientRect();
+  if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  return el.closest('.task-list') || el.closest('.column')?.querySelector('.task-list') || null;
+}
 function updateDropTarget(x, y) {
   if (!drag || !drag.active) return;
   $$('.task-list.drag-over').forEach(el => el.classList.remove('drag-over'));
-  const el = document.elementFromPoint(x, y);
-  if (!el) return;
-  let list = el.closest('.task-list');
-  if (!list) { const col = el.closest('.column'); if (col) list = col.querySelector('.task-list'); }
+  const list = getDropListAt(x, y);
   if (!list) return;
   list.classList.add('drag-over');
   const after = getAfterElement(list, y);
@@ -163,7 +177,40 @@ function stopAutoScroll() { if (autoScrollInterval) { clearInterval(autoScrollIn
 // ============================================================
 // EVENT BINDINGS
 // ============================================================
+function closeHeaderMenu(restoreFocus = false) {
+  const actions = $('#headerActions');
+  if (!actions.classList.contains('is-open')) return false;
+  actions.classList.remove('is-open');
+  const trigger = $('#headerMenuBtn');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-label', 'Открыть меню');
+  if (restoreFocus) trigger.focus();
+  return true;
+}
+function toggleHeaderMenu() {
+  const actions = $('#headerActions');
+  if (actions.classList.contains('is-open')) { closeHeaderMenu(true); return; }
+  actions.classList.add('is-open');
+  const trigger = $('#headerMenuBtn');
+  trigger.setAttribute('aria-expanded', 'true');
+  trigger.setAttribute('aria-label', 'Закрыть меню');
+  actions.querySelector('button')?.focus();
+}
+
 function bindEvents() {
+  $('#headerMenuBtn').onclick = toggleHeaderMenu;
+  document.addEventListener('click', (e) => {
+    const actions = $('#headerActions');
+    if (!actions.classList.contains('is-open')) return;
+    if (e.target.closest('#headerMenuBtn')) return;
+    if (!actions.contains(e.target) || e.target.closest('button')) closeHeaderMenu();
+  });
+  document.addEventListener('focusin', (e) => {
+    const actions = $('#headerActions');
+    if (actions.classList.contains('is-open') &&
+        !actions.contains(e.target) && e.target !== $('#headerMenuBtn')) closeHeaderMenu();
+  });
+  window.addEventListener('resize', () => { if (window.innerWidth > 960) closeHeaderMenu(); });
   $('#themeBtn').onclick = toggleTheme;
   $('#exportBtn').onclick = exportData;
   $('#exportCsvBtn').onclick = exportCsv;
@@ -212,12 +259,9 @@ function bindEvents() {
   };
 
   $('#taskFile').onchange = (e) => {
-    for (const f of e.target.files) {
-      if (f.size > MAX_VIDEO_SIZE) { showToast(`«${f.name}» больше 50 МБ`); continue; }
-      newFiles.push(f);
-      if (isAudio(f)) prepAudio(f).then(renderFiles);
-    }
-    e.target.value = ''; renderFiles();
+    const selection = Array.from(e.target.files || []);
+    e.target.value = ''; // Permit selecting the same file again after a cancelled edit.
+    stageSelectedFiles(selection);
   };
 
   $('#addColumnBtn').onclick = addColumnConfig;
@@ -243,15 +287,27 @@ function bindEvents() {
       else closeModal(id);
     });
   });
-  $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+  const viewer = $('#lightbox');
+  viewer.addEventListener('click', e => { if (e.target === viewer) closeLightbox(); });
+  $('#lightboxClose').onclick = closeLightbox;
+  $('#lightboxPrev').onclick = () => changeLightboxItem(-1);
+  $('#lightboxNext').onclick = () => changeLightboxItem(1);
+  $('#lightboxZoomIn').onclick = () => updateLightboxZoom(lightboxGallery.zoom * 1.5);
+  $('#lightboxZoomOut').onclick = () => updateLightboxZoom(lightboxGallery.zoom / 1.5);
+  viewer.addEventListener('pointerdown', lightboxPointerDown);
+  viewer.addEventListener('pointermove', lightboxPointerMove);
+  viewer.addEventListener('pointerup', lightboxPointerUp);
+  viewer.addEventListener('pointercancel', lightboxPointerUp);
 
   document.addEventListener('keydown', async (e) => {
     if (e.key === 'Escape') {
       if ($('#lightbox').classList.contains('open')) { closeLightbox(); return; }
       if ($('#confirmModal').classList.contains('open')) { $('#confirmCancel').click(); return; }
+      if ($('#textPromptModal').classList.contains('open')) { $('#textPromptCancel').click(); return; }
       if ($('#taskModal').classList.contains('open')) { await tryCloseTaskModal(); return; }
       if ($('#settingsModal').classList.contains('open')) { closeModal('settingsModal'); return; }
       if ($('#shortcutsModal').classList.contains('open')) { closeModal('shortcutsModal'); return; }
+      if (closeHeaderMenu(true)) { e.preventDefault(); return; }
       if (document.activeElement === $('#searchInput')) {
         $('#searchInput').value = ''; searchQuery = '';
         document.activeElement.blur();
@@ -266,6 +322,8 @@ function bindEvents() {
     }
     if ($('#shortcutsModal').classList.contains('open')) { if (e.key === '?') closeModal('shortcutsModal'); return; }
     if ($('#settingsModal').classList.contains('open') || $('#confirmModal').classList.contains('open') || $('#lightbox').classList.contains('open')) return;
+    // An open menu owns keyboard focus; do not trigger global task/view shortcuts.
+    if ($('#headerActions').classList.contains('is-open')) return;
     if (isInput || e.ctrlKey || e.metaKey || e.altKey) return;
 
     if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') { e.preventDefault(); openTaskModal(null, state.columns[0]?.id); }
@@ -290,11 +348,35 @@ function comradeHandleAndroidBack() {
   if ($('#taskModal').classList.contains('open')) { void saveTaskFromModal(); return true; }
   if ($('#settingsModal').classList.contains('open')) { closeModal('settingsModal'); return true; }
   if ($('#shortcutsModal').classList.contains('open')) { closeModal('shortcutsModal'); return true; }
+  if (closeHeaderMenu(true)) return true;
   if (!$('#dayPlanPanel').hidden) { $('#dayPlanPanel').hidden = true; return true; }
   if (!$('#pomo').hidden) { $('#pomo').hidden = true; return true; }
   return false;
 }
 window.comradeHandleAndroidBack = comradeHandleAndroidBack;
+
+// Keep selections from several Android picker visits until the task is saved.
+// The actual media blobs are committed only by saveTaskFromModal().
+function stageSelectedFiles(files) {
+  if (savingTask) { showToast('Дождитесь сохранения задачи'); return 0; }
+  let accepted = 0, rejected = 0;
+  for (const file of files || []) {
+    if (!file || !Number.isFinite(file.size) || file.size < 0 || file.size > MAX_VIDEO_SIZE) {
+      rejected++;
+      continue;
+    }
+    newFiles.push(file);
+    accepted++;
+    if (isAudio(file)) {
+      void prepAudio(file).then(() => {
+        if ($('#taskModal').classList.contains('open')) renderFiles();
+      }).catch(() => {}); // Decoder may reject; the save path reports persistent errors.
+    }
+  }
+  renderFiles();
+  if (rejected) showToast(`${rejected} файл(ов) пропущено: лимит 50 МБ на файл`);
+  return accepted;
+}
 
 // ============================================================
 // QUICK ADD

@@ -66,6 +66,7 @@ button { font-family: inherit; }
   gap: 16px; flex-shrink: 0; flex-wrap: wrap;
 }
 .header-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.header-menu-toggle { display: none; }
 .logo { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; flex-shrink: 0; }
 .board-select {
   max-width: 240px; min-width: 140px;
@@ -622,14 +623,39 @@ button { font-family: inherit; }
 .lightbox {
   position: fixed; inset: 0; background: rgba(0,0,0,0.94);
   z-index: 200; display: none; align-items: center; justify-content: center;
-  padding: 24px; cursor: zoom-out;
+  padding: calc(56px + var(--safe-top)) 12px calc(70px + var(--safe-bottom));
+  color: #fff; touch-action: none;
 }
 .lightbox.open { display: flex; }
-.lightbox img, .lightbox video {
-  max-width: 100%; max-height: 100%;
-  border-radius: var(--radius); cursor: default;
+.lightbox-stage {
+  width: 100%; height: 100%; min-height: 0; display: flex;
+  align-items: center; justify-content: center; overflow: hidden;
+  touch-action: none; text-align: center;
+}
+.lightbox-stage img, .lightbox-stage video {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+  border-radius: var(--radius); cursor: default; touch-action: none;
   box-shadow: 0 10px 50px rgba(0,0,0,0.5);
 }
+.lightbox-stage img { user-select: none; -webkit-user-select: none; }
+.lightbox-close, .lightbox-controls button {
+  min-width: 44px; min-height: 44px; border: 1px solid #555;
+  border-radius: var(--radius); background: #252525; color: #fff;
+  font-size: 24px; cursor: pointer; touch-action: manipulation;
+}
+.lightbox-close {
+  position: absolute; top: calc(8px + var(--safe-top));
+  right: calc(12px + var(--safe-right)); z-index: 2;
+}
+.lightbox-controls {
+  position: absolute; bottom: calc(12px + var(--safe-bottom));
+  left: 50%; transform: translateX(-50%); display: flex;
+  align-items: center; justify-content: center; gap: 8px;
+  max-width: calc(100vw - 24px);
+}
+.lightbox-controls span { font-size: 13px; min-width: 42px; text-align: center; white-space: nowrap; }
+.lightbox-controls button:disabled { opacity: 0.4; cursor: default; }
+.lightbox-controls button[hidden] { display: none; }
 .toast-container {
   position: fixed; bottom: calc(20px + var(--safe-bottom));
   left: 50%; transform: translateX(-50%); z-index: 300;
@@ -781,22 +807,55 @@ button { font-family: inherit; }
   background:var(--surface-2); white-space:pre-wrap; overflow-wrap:anywhere;
   font-size:13px; line-height:1.5; }
 
-/* Compact Android mobile workspace: tools must not consume the board viewport.
-   All controls remain reachable by horizontally scrolling their own toolbar. */
-@media (max-width: 720px) {
+/* Keep the phone header compact across landscape widths. Only the header
+   uses 960px; Kanban columns and toolbars retain the existing 720px layout. */
+@media (max-width: 960px) {
   .header {
-    display:flex; flex-direction:column; align-items:stretch; flex-wrap:nowrap;
-    gap:5px; padding:6px 10px 4px;
+    position:relative; z-index:30;
+    display:flex; flex-direction:row; align-items:center; flex-wrap:nowrap;
+    gap:8px;
+    padding:calc(6px + var(--safe-top)) calc(10px + var(--safe-right)) 4px calc(10px + var(--safe-left));
   }
-  .header-left { flex:0 0 auto; flex-wrap:nowrap; min-width:0; }
-  .board-select { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
+  .header-left { flex:1 1 auto; flex-wrap:nowrap; min-width:0; }
+  .board-select {
+    flex:1 1 auto; width:auto; min-width:0; max-width:none;
+    white-space:nowrap; text-overflow:ellipsis; overflow:hidden;
+  }
+  .header-menu-toggle {
+    display:inline-flex; flex:0 0 44px; width:44px; min-width:44px;
+    height:44px; min-height:44px; font-size:22px;
+  }
   .header-actions {
-    display:flex; width:100%; min-width:0; flex-wrap:nowrap;
-    overflow-x:auto; overflow-y:hidden; padding-bottom:2px;
-    overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;
-    scrollbar-width:thin;
+    display:none; position:absolute; top:calc(100% - 2px);
+    right:calc(10px + var(--safe-right));
+    width:min(290px, calc(100vw - 20px - var(--safe-left) - var(--safe-right)));
+    max-height:min(65dvh, 460px);
+    overflow-y:auto; overflow-x:hidden; padding:8px;
+    background:var(--surface); border:1px solid var(--border-strong);
+    border-radius:var(--radius-lg); box-shadow:var(--shadow-lg);
+    z-index:40; flex-direction:column; flex-wrap:nowrap;
+    align-items:stretch; gap:2px;
   }
-  .header-actions .btn { flex:0 0 auto; min-height:32px; }
+  .header-actions.is-open { display:flex; }
+  .header-actions .btn {
+    flex:0 0 auto; display:flex; justify-content:flex-start;
+    text-align:left; width:100%; height:auto; min-width:0; min-height:44px;
+    padding:10px 12px; font-size:14px;
+  }
+  /* design-system.css loads later and gives regular buttons a 38px height. */
+  .header-actions .btn:not(.btn-icon):not(.btn-small) {
+    min-height:44px; padding-inline:12px;
+  }
+  .header-actions .btn[data-menu-label]::after {
+    content:attr(data-menu-label); margin-left:8px; font-size:14px;
+  }
+  .header-actions .btn:focus-visible { outline-offset:-3px; }
+  .header-actions #clearBtn {
+    color:var(--danger); border-top:1px solid var(--border);
+    border-radius:0; margin-top:6px;
+  }
+}
+@media (max-width: 720px) {
   .view-tab { padding:5px 10px 9px; }
   .toolbar {
     display:flex; flex-wrap:nowrap; min-width:0; gap:8px;

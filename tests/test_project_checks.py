@@ -60,9 +60,10 @@ class AndroidProjectTests(unittest.TestCase):
     def test_fileprovider_paths_are_restricted(self):
         paths = ET.parse(ROOT / "app/src/main/res/xml/editable_file_paths.xml").getroot()
         self.assertEqual(paths.tag, "paths")
-        self.assertEqual(len(paths), 1)
-        self.assertEqual(paths[0].tag, "cache-path")
-        self.assertEqual(paths[0].attrib.get("path"), "editable/")
+        self.assertEqual(len(paths), 2)
+        self.assertEqual([p.tag for p in paths], ["cache-path", "cache-path"])
+        self.assertEqual({p.attrib.get("path") for p in paths}, {"editable/", "viewed/"})
+        self.assertEqual({p.attrib.get("name") for p in paths}, {"editable", "viewed"})
 
 
 class UiRegressionTests(unittest.TestCase):

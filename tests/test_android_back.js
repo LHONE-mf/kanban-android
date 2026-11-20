@@ -15,7 +15,7 @@ assert.ok(kotlin.includes('lastBackGestureAt = 0L'));
 assert.ok(kotlin.includes('webView.loadUrl("$appOrigin/assets/kanban.html")'));
 const handler = source.slice(begin, end);
 function scenario(open = []) {
-  const calls = {save: 0,lightbox: 0,cancel: 0,closed: []};
+  const calls = {save: 0,lightbox: 0,cancel: 0,menu: 0,closed: []};
   const dom = {};
   for (const id of ['lightbox','confirmModal','textPromptModal','taskModal','settingsModal','shortcutsModal']) {
     dom[id] = {classList: {contains: cls => cls === 'open' && open.includes(id)}};
@@ -28,7 +28,8 @@ function scenario(open = []) {
     $: id => dom[id.slice(1)],
     saveTaskFromModal: () => {calls.save++; return Promise.resolve();},
     closeLightbox: () => {calls.lightbox++;},
-    closeModal: id => {calls.closed.push(id);}
+    closeModal: id => {calls.closed.push(id);},
+    closeHeaderMenu: () => { calls.menu++; return open.includes('headerMenu'); }
   };
   vm.runInNewContext(handler + '\nthis.back = comradeHandleAndroidBack;', sandbox);
   return {handled: sandbox.back(), calls, dom};
@@ -39,6 +40,10 @@ assert.equal(scenario(['taskModal','lightbox']).calls.save, 0, 'topmost lightbox
 assert.equal(scenario(['taskModal','lightbox']).calls.lightbox, 1);
 assert.equal(scenario(['taskModal','confirmModal']).calls.cancel, 1);
 assert.equal(scenario(['taskModal','confirmModal']).calls.save, 0);
+assert.equal(scenario(['headerMenu']).handled, true, 'Back closes an open menu');
+assert.equal(scenario(['headerMenu']).calls.menu, 1);
+assert.equal(scenario(['taskModal','headerMenu']).calls.menu, 0,
+  'dialog is dismissed before menu and must not lose edits');
 const day = scenario(['dayPlanPanel']);
 assert.equal(day.handled,true); assert.equal(day.dom.dayPlanPanel.hidden,true);
 assert.equal(scenario([]).handled,false, 'exit only when no overlay');

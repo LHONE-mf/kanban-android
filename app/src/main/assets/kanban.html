@@ -263,7 +263,17 @@
   </div>
 </div>
 
-<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр файла"><div id="lightboxContent"></div></div>
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр файла">
+  <button type="button" id="lightboxClose" class="lightbox-close" aria-label="Закрыть просмотр">×</button>
+  <div class="lightbox-stage" id="lightboxContent"></div>
+  <div class="lightbox-controls">
+    <button type="button" id="lightboxPrev" aria-label="Предыдущий файл">‹</button>
+    <span id="lightboxPosition" aria-live="polite">1 / 1</span>
+    <button type="button" id="lightboxNext" aria-label="Следующий файл">›</button>
+    <button type="button" id="lightboxZoomOut" aria-label="Уменьшить изображение">−</button>
+    <button type="button" id="lightboxZoomIn" aria-label="Увеличить изображение">+</button>
+  </div>
+</div>
 
 <div class="modal" id="shortcutsModal" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
   <div class="modal-content modal-small">

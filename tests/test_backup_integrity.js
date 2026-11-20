@@ -23,7 +23,7 @@ const created = [];
 let downloads = 0;
 let lookup = async()=>null;
 const context = {
-  Date, JSON, Blob, Map, Set, console:{error() {}},
+  Date, JSON, Blob, Map, Set, window:{}, location:{origin:'https://browser.example'}, console:{error() {}},
   state:{activeBoardId:'b', boards:[{id:'b',name:'Board',columns:[{id:'todo'}]}],
     _tasksByBoard:{b:[task]}},
   dbGetSettings:async()=>({comrade_day_plan_v1:day}),

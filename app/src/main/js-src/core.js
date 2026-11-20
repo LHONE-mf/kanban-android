@@ -362,6 +362,7 @@ async function dbReplaceAll(plan) {
       plan.tasks.forEach(t => ts.put(t));
       ss.put({ key: 'boards', value: plan.boards });
       ss.put({ key: 'activeBoardId', value: plan.activeBoardId });
+      if (plan.dayPlan) ss.put({ key: 'comrade_day_plan_v1', value: plan.dayPlan });
       for (const [id, m] of Object.entries(plan.media)) {
         ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
       }

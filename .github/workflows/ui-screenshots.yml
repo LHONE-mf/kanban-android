@@ -17,10 +17,10 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
-      - name: Install Android SDK 35
+          gradle-version: '9.3.1'
+      - name: Install Android SDK 37
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
       - name: Restore stable development signing key
         run: |
           base64 --decode .github/keys/kanban-debug.keystore.b64 > .github/keys/kanban-debug.keystore

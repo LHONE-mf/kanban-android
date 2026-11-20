@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
     private var japaneseSpeech: TextToSpeech? = null
     private var japaneseVoiceReady = false
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
+    private lateinit var backupSaver: KanbanBackupSaver
     private var pendingMicRequest: PermissionRequest? = null
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
@@ -111,6 +112,12 @@ class MainActivity : ComponentActivity() {
         } else null
         pendingFiles?.onReceiveValue(files)
         pendingFiles = null
+    }
+
+    private val backupDocumentPicker = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (::backupSaver.isInitialized) backupSaver.onDestinationPicked(uri)
     }
 
     private val microphonePermission = registerForActivityResult(
@@ -198,6 +205,66 @@ class MainActivity : ComponentActivity() {
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }
+                }
+            }
+        }
+
+        // Allow backup chunks only from the trusted local Comrade page.
+        backupSaver = KanbanBackupSaver(
+            this,
+            { filename -> backupDocumentPicker.launch(filename) },
+            { event ->
+                webView.evaluateJavascript(
+                    "window.kanbanBackupNativeResult && window.kanbanBackupNativeResult(" +
+                        JSONObject.quote(event.toString()) + ")", null
+                )
+            }
+        )
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanBackup", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length <= 48_000) {
+                    runOnUiThread { backupSaver.handle(raw) }
+                }
+            }
+        }
+
+        // Preserve the native Japanese mini-quiz in the same full backup.
+        // Only the bundled Kanban main frame can read or restore these six fields.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanJapaneseProgress", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length > 4096) return@addWebMessageListener
+                runOnUiThread {
+                    val reply = JSONObject()
+                    try {
+                        val req = JSONObject(raw)
+                        reply.put("id", req.getString("id"))
+                        when (req.getString("type")) {
+                            "read" -> {
+                                reply.put("type", "read")
+                                reply.put("data", readMiniBackup())
+                            }
+                            "restore" -> {
+                                restoreMiniBackup(req.getJSONObject("data"))
+                                reply.put("type", "restored")
+                            }
+                            else -> throw IllegalArgumentException("Неизвестная команда")
+                        }
+                    } catch (error: Exception) {
+                        reply.put("type", "error")
+                        reply.put("message", error.message ?: "Ошибка прогресса японского")
+                    }
+                    webView.evaluateJavascript(
+                        "window.comradeJapaneseNativeResult && window.comradeJapaneseNativeResult(" +
+                            JSONObject.quote(reply.toString()) + ")", null
+                    )
                 }
             }
         }
@@ -353,16 +420,30 @@ class MainActivity : ComponentActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastBackGestureAt <= 2000L) {
-                    finish()
-                } else {
-                    lastBackGestureAt = now
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        "Проведите назад ещё раз, чтобы выйти",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
+                if (webView.url?.substringBefore('?')?.endsWith("/japanese.html") == true) {
+                    lastBackGestureAt = 0L
+                    webView.loadUrl("$appOrigin/assets/kanban.html")
+                    return
+                }
+                // Let the trusted local WebView autosave edits or close its topmost overlay.
+                webView.evaluateJavascript(
+                    "(typeof window.comradeHandleAndroidBack === 'function' && window.comradeHandleAndroidBack())"
+                ) { handled ->
+                    if (handled == "true") {
+                        lastBackGestureAt = 0L
+                    } else {
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (now - lastBackGestureAt <= 2000L) {
+                            finish()
+                        } else {
+                            lastBackGestureAt = now
+                            android.widget.Toast.makeText(
+                                this@MainActivity,
+                                "Проведите назад ещё раз, чтобы выйти",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
                 }
             }
         })
@@ -483,6 +564,54 @@ class MainActivity : ComponentActivity() {
             ) View.VISIBLE else View.GONE
     }
 
+
+    private fun readMiniBackup(): JSONObject {
+        val prefs = getSharedPreferences("japanese_daily", MODE_PRIVATE)
+        return JSONObject()
+            .put("question_count", prefs.getInt("question_count", 0))
+            .put("correct_count", prefs.getInt("correct_count", 0))
+            .put("current_question", prefs.getInt("current_question", 0))
+            .put("next_question", prefs.getInt("next_question", 0))
+            .put("katakana_unlocked", prefs.getBoolean("katakana_unlocked", false))
+            .put("review_queue", prefs.getString("review_queue", "") ?: "")
+    }
+
+    private fun restoreMiniBackup(value: JSONObject) {
+        val count = value.getInt("question_count")
+        val correct = value.getInt("correct_count")
+        val current = value.getInt("current_question")
+        val next = value.getInt("next_question")
+        val unlocked = value.getBoolean("katakana_unlocked")
+        val queueRaw = value.getString("review_queue")
+        require(count in 0..1000000 && correct in 0..count) { "Некорректные счётчики японского" }
+        require(current in allMiniQuestions.indices && next in allMiniQuestions.indices) {
+            "Некорректная позиция в японском"
+        }
+        require(queueRaw.length <= 1024) { "Слишком длинная очередь повторения" }
+        val queue = if (queueRaw.isEmpty()) emptyList() else
+            queueRaw.split(",").map { it.toIntOrNull() ?: -1 }
+        require(queue.size <= 150 && queue.all { it in allMiniQuestions.indices }) {
+            "Некорректная очередь повторения"
+        }
+        val saved = getSharedPreferences("japanese_daily", MODE_PRIVATE).edit()
+            .putInt("question_count", count)
+            .putInt("correct_count", correct)
+            .putInt("current_question", current)
+            .putInt("next_question", next)
+            .putBoolean("katakana_unlocked", unlocked)
+            .putString("review_queue", queueRaw)
+            .commit()
+        check(saved) { "Не удалось сохранить прогресс японского" }
+        miniQuestionNumber = count
+        miniCorrectCount = correct
+        dailyQuestionIndex = current
+        miniNextNewIndex = next
+        miniUnlockedKatakana = unlocked
+        miniReviewQueue.clear()
+        queue.forEach { miniReviewQueue.addLast(it) }
+        miniIsReview = false
+        renderMiniQuestion()
+    }
 
     private fun saveMiniState() {
         getSharedPreferences("japanese_daily", MODE_PRIVATE).edit()
@@ -631,6 +760,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (::backupSaver.isInitialized) backupSaver.close()
         pendingMicRequest?.deny()
         pendingMicRequest = null
         pendingFiles?.onReceiveValue(null)

@@ -20,6 +20,7 @@ assert.ok(!bundle.includes('comradeAIRewrite'));
 assert.ok(!bundle.includes('comradeRequestDayAdvice'));
 assert.ok(!html.includes('comradeOpen') && !html.includes('comradePanel'));
 assert.ok(!html.includes('GGUF') && !html.includes('★ AI'));
+assert.ok(!html.includes('без нейросети'), 'remove assistant-era UI copy');
 assert.ok(html.includes('id="myDayBtn"') && html.includes('id="dayPlanPanel"'));
 assert.ok(day.includes("comrade_day_plan_v1"),'keep previously saved daily plans');
 assert.ok(day.includes('dbPutSettingsBulk'),'keep plan persistence');

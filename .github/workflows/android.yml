@@ -3,6 +3,12 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_apk:
+        description: 'Publish standalone Comrade APK to Releases (requires separate approval)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -39,6 +45,20 @@ jobs:
         run: node tests/test_task_priority_badges.js
       - name: Test all-board Comrade daily planning
         run: node tests/test_daily_plan.js
+      - name: Verify atomic editor save and failure handling
+        run: node tests/test_task_editor_atomic.js
+      - name: Check mobile attachment controls
+        run: node tests/test_attachment_layout.js
+      - name: Test Android Back and exact original Comrade icons
+        run: node tests/test_android_back.js
+      - name: Verify backup completeness, daily plan, and Japanese progress
+        run: node tests/test_backup_integrity.js
+      - name: Verify native Japanese progress backup and restoration bridge
+        run: node tests/test_native_japanese_transport.js
+      - name: Verify Android backup chunk-transfer protocol
+        run: node tests/test_backup_transport.js
+      - name: Verify audio attachment write ordering
+        run: node tests/test_audio_staging.js
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
@@ -70,7 +90,7 @@ jobs:
       # Actions artifacts are ZIP containers, which some Android file managers
       # cannot unpack. GitHub Releases publishes the original signed APK bytes.
       - name: Publish standalone Comrade APK (no ZIP)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_apk == true && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

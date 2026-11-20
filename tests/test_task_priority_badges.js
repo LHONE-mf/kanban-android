@@ -1,5 +1,5 @@
-// DOM-free regression: badges are generated at the TOP of all task cards,
-// including tasks without an assigned priority.
+// DOM-free regression: task titles appear first, badges stay visible, and
+// cards retain their full height inside a scrollable mobile column.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -44,8 +44,8 @@ for(const [priority,label] of [['high','Высокий'],['medium','Средни
   const markup=card.innerHTML;
   assert.ok(markup.includes('class="task-priority p-'+priority+'"'),priority);
   assert.ok(markup.includes(label),priority);
-  assert.ok(markup.indexOf('class="task-card-meta"')<
-    markup.indexOf('class="task-title"'),"priority visible before title");
+  assert.ok(markup.indexOf('class="task-title"')<
+    markup.indexOf('class="task-card-meta"'),"title is visible before metadata");
   assert.ok(markup.includes('📅 2026-11-20'),"deadline near priority");
   assert.ok(card['aria-label'].includes('Приоритет: '+label),"accessible");
   const footer=markup.split('class="task-footer"')[1];
@@ -56,4 +56,11 @@ const unknown=context.createTaskCard(
     deadline:''},
   {color:'#abc',isDone:false});
 assert.ok(unknown.innerHTML.includes('Без приоритета'));
-console.log('Priority badges: 4 priorities plus unset case passed.');
+const css = fs.readFileSync('app/src/main/assets/kanban.css', 'utf8');
+const cardCss = css.match(/^\.task-card\s*\{([^}]*)\}/m)?.[1] || '';
+const listCss = [...css.matchAll(/^\.task-list\s*\{([^}]*)\}/gm)].map(match => match[1]);
+const metaCss = css.match(/^\.task-card-meta\s*\{([^}]*)\}/m)?.[1] || '';
+assert.match(cardCss, /flex-shrink:\s*0\s*;/, 'task cards never shrink to fit viewport');
+assert.ok(listCss.some(rule => /overflow-y:\s*auto\s*;/.test(rule)), 'columns scroll vertically');
+assert.doesNotMatch(metaCss, /padding-right:/, 'badges use card width below the title');
+console.log('Readable task cards: title-first, 4 priorities, unset case, scrolling layout passed.');

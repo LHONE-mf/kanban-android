@@ -912,8 +912,8 @@ function createTaskCard(task, column) {
     const cls = 'task-footer-item' + ((!column.isDone && diff < 0) ? ' overdue' : (!column.isDone && diff === 0 ? ' today' : ''));
     deadlineHtml = `<span class="${cls}">📅 ${escapeHtml(formatDate(task.deadline))}</span>`;
   }
-  // Priority and deadline belong at the top: the footer gets obscured on phones
-  // when the card contains a long title, a description, or a checklist.
+  // Title first: show what the task is before its priority and deadline.
+  // Full-height cards scroll within the column instead of clipping content.
   const priority = Object.prototype.hasOwnProperty.call(PRIORITY_LABELS, task.priority)
     ? task.priority : 'none';
   const priorityLabel = priority === 'none' ? 'Без приоритета' : PRIORITY_LABELS[priority];
@@ -922,8 +922,8 @@ function createTaskCard(task, column) {
   card.setAttribute('aria-label', `${task.title}. Приоритет: ${priorityLabel}`);
 
   card.innerHTML = `
-    <div class="task-card-meta">${priorityHtml}${deadlineHtml}</div>
     <div class="task-title">${escapeHtml(task.title)}</div>
+    <div class="task-card-meta">${priorityHtml}${deadlineHtml}</div>
     ${descHtml}${mediaHtml}${task.files.some(isAudio) ? '<div class="task-audio"></div>' : ''}${tagsHtml}${checklistHtml}
     <div class="task-footer">
       ${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}

@@ -199,7 +199,7 @@ button { font-family: inherit; }
   cursor: grab; user-select: none; -webkit-user-select: none;
   border: 1px solid var(--border);
   transition: box-shadow 0.15s, border-color 0.15s;
-  touch-action: manipulation; overflow: hidden;
+  touch-action: manipulation; overflow: hidden; flex-shrink: 0;
 }
 .task-card::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
@@ -249,7 +249,7 @@ button { font-family: inherit; }
 .task-footer-item.today { color: var(--warning); font-weight: 500; }
 .task-card-meta {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-  min-height: 21px; margin-bottom: 6px; padding-right: 82px;
+  min-height: 21px; margin-top: 8px;
 }
 .task-card-meta .task-footer-item { white-space: nowrap; font-size: 11px; }
 .task-priority {

@@ -1974,8 +1974,10 @@ async function duplicateTask(taskId) {
   const sameCol = state.tasks.filter(t => t.columnId === src.columnId);
   const maxOrder = sameCol.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
   const files = [];
+  // Only newly generated copies are eligible for rollback, never source media.
+  const discardCopies = () => Promise.all(files.map(f => mediaDelete(f.id).catch(() => {})));
   try { for (const f of src.files) { const m = await mediaGet(f.id); if (!m) continue; const id = 'm_' + generateId(); await mediaPut(id, m.full, m.thumb, m.type); files.push({ ...f, id }); } }
-  catch (e) { files.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось скопировать файлы: ' + e.message); return; }
+  catch (e) { await discardCopies(); showToast('Не удалось скопировать файлы: ' + e.message); return; }
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',
     tags: [...src.tags], checklist: src.checklist.map(c => ({ id: 'cl_' + generateId(), text: c.text, checked: c.checked })),
@@ -1984,7 +1986,7 @@ async function duplicateTask(taskId) {
     boardId: src.boardId || state.activeBoardId
   };
   try { await dbPutTask(copy); }
-  catch (e) { showToast('Не удалось дублировать: ' + e.message); return; }
+  catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
   showToast('Задача продублирована');

@@ -75,6 +75,8 @@ jobs:
         run: node tests/test_multiple_attachments.js
       - name: Verify failed multi-file saves clean staged blobs
         run: node tests/test_attachment_rollback.js
+      - name: Verify duplicated attachment rollback on failed copies and database saves
+        run: node tests/test_duplicate_media_rollback.js
       - name: Verify adaptive photo compression
         run: node tests/test_photo_compression.js
       - name: Verify photo gallery and pinch gestures

@@ -59,6 +59,8 @@ jobs:
         run: node tests/test_backup_transport.js
       - name: Verify audio attachment write ordering
         run: node tests/test_audio_staging.js
+      - name: Verify Android multiple attachment selection
+        run: node tests/test_multiple_attachments.js
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore

@@ -23,3 +23,13 @@ An original model in Downloads/Documents is never touched.
 The JS bundle is built with `python3 tools/build_kanban_js.py`.
 Tests and the Android APK are produced by GitHub Actions using JDK 17,
 Gradle 9.3.1 and Android SDK 37. No physical-device validation is implied.
+
+## Comrade 0.4.9: original icon and Android Back
+
+The launcher and web icon reuse byte-for-byte the original PNG image files
+from `LHONE-mf/comrade-`, including the adaptive foreground and five screen
+densities. No new icon design is used. Android system Back first asks the
+local page to handle visible dialogs. In the task editor it invokes the same
+atomic Save as the Save button; validation or storage failure leaves the
+editor open, preventing accidental exit. Japanese lessons Back returns to
+Kanban. No change to installed data, package ID, or signing identity.

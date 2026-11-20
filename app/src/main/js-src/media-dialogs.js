@@ -1,27 +1,54 @@
 // ============================================================
 // IMAGE PROCESSING
 // ============================================================
-function compressImage(file, maxDim, quality) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > maxDim || height > maxDim) {
-        const ratio = Math.min(maxDim / width, maxDim / height);
-        width = Math.round(width * ratio); height = Math.round(height * ratio);
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('compress failed')), 'image/jpeg', quality);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('load failed')); };
-    img.src = url;
+async function compressImage(file, maxDim, quality) {
+  const targetSize = 2 * 1024 * 1024;
+  // Retain original small files, including PNG alpha and EXIF metadata.
+  if (file.size <= targetSize) return file;
+  const url = URL.createObjectURL(file);
+  let img;
+  try {
+    img = await new Promise((resolve, reject) => {
+      const picture = new Image();
+      picture.onload = () => resolve(picture);
+      picture.onerror = () => reject(new Error('Не удалось декодировать изображение'));
+      picture.src = url;
+    });
+  } finally { URL.revokeObjectURL(url); }
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas недоступен');
+  const outputType = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/webp';
+  const resize = bound => {
+    const scale = Math.min(1, bound / img.width, bound / img.height);
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (outputType === 'image/jpeg') {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  };
+  const encode = q => new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Не удалось сжать изображение')), outputType, q);
   });
+  resize(maxDim);
+  let best = await encode(quality);
+  // If WebView cannot encode WebP, never replace a transparent PNG by JPEG.
+  if (best.type !== outputType) return file;
+  if (best.size > targetSize) {
+    const lower = await encode(Math.min(quality, 0.68));
+    if (lower.type === outputType && lower.size < best.size) best = lower;
+  }
+  if (best.size > targetSize && Math.max(canvas.width, canvas.height) > 1200) {
+    resize(Math.min(maxDim, 1200));
+    const smaller = await encode(0.72);
+    if (smaller.type === outputType && smaller.size < best.size) best = smaller;
+  }
+  // Compression is optional, never grow the stored blob.
+  return best.size < file.size ? best : file;
 }
 function generateThumb(blob, maxDim, quality) {
   return new Promise((resolve, reject) => {

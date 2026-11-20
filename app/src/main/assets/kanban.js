@@ -2676,6 +2676,15 @@ function base64ToBlob(dataUrl) {
 }
 
 async function buildImportPlan(data) {
+  // Full v5/v6 backups must have both collections; otherwise an incomplete
+  // archive could silently replace a real board with an empty one.
+  if (!Array.isArray(data) && data && Object.prototype.hasOwnProperty.call(data, 'version')) {
+    const version = Number(data.version);
+    if (!Number.isInteger(version) || version < 1 || version > 6)
+      throw new Error('Неподдерживаемая версия архива');
+    if (version >= 5 && (!Array.isArray(data.boards) || !Array.isArray(data.tasks)))
+      throw new Error('Архив неполный: отсутствуют доски или задачи');
+  }
   const warnings = [];
   let rawBoards, rawTasks, mediaSrc, activeBoardId;
 
@@ -2839,8 +2848,16 @@ function restoreJapaneseImportSnapshot(previous) {
   if (firstError) throw firstError;
 }
 
+// Only one import may read, confirm, restore progress or replace data at a time.
+let importInProgress = false;
 async function handleImport(file) {
   if (!file) return;
+  if (importInProgress) { showToast('Импорт уже выполняется'); return; }
+  importInProgress = true;
+  try { await importSingleFile(file); }
+  finally { importInProgress = false; }
+}
+async function importSingleFile(file) {
   let data;
   try { data = JSON.parse(await file.text()); }
   catch (e) { alert('Неверный JSON: ' + e.message); return; }

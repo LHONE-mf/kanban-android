@@ -184,7 +184,7 @@ function toggleHeaderMenu() {
 }
 
 function bindViewTabs() {
-  const tabs = $('.view-tab');
+  const tabs = $$('.view-tab');
   tabs.forEach((tab, index) => {
     tab.onclick = () => switchView(tab.dataset.view);
     tab.onkeydown = e => {

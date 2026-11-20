@@ -70,8 +70,8 @@ const metaCss = css.match(/^\.task-card-meta\s*\{([^}]*)\}/m)?.[1] || '';
 assert.match(cardCss, /flex-shrink:\s*0\s*;/, 'task cards never shrink to fit viewport');
 assert.ok(listCss.some(rule => /overflow-y:\s*auto\s*;/.test(rule)), 'columns scroll vertically');
 assert.doesNotMatch(metaCss, /padding-right:/, 'badges use card width below the title');
-const titleCss = css.match(/^\\.task-title\\s*\\{([^}]*)\\}/m)?.[1] || '';
-assert.match(titleCss,/word-break:\\s*break-word/,'long titles can wrap onto new lines');
-assert.doesNotMatch(cardCss,/(?:^|;)\\s*(?:height|max-height):/,'card height is content-based');
+const titleCss = css.match(/^\.task-title\s*\{([^}]*)\}/m)?.[1] || '';
+assert.match(titleCss,/word-break:\s*break-word/,'long titles can wrap onto new lines');
+assert.doesNotMatch(cardCss,/(?:^|;)\s*(?:height|max-height):/,'card height is content-based');
 
 console.log('Readable task cards: title-first, 4 priorities, unset case, scrolling layout passed.');

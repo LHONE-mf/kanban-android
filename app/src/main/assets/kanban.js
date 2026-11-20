@@ -2869,7 +2869,7 @@ function bindEvents() {
     if (actions.classList.contains('is-open') &&
         !actions.contains(e.target) && e.target !== $('#headerMenuBtn')) closeHeaderMenu();
   });
-  window.addEventListener('resize', () => { if (window.innerWidth > 720) closeHeaderMenu(); });
+  window.addEventListener('resize', () => { if (window.innerWidth > 960) closeHeaderMenu(); });
   $('#themeBtn').onclick = toggleTheme;
   $('#exportBtn').onclick = exportData;
   $('#exportCsvBtn').onclick = exportCsv;

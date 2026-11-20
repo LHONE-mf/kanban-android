@@ -1518,6 +1518,7 @@ function switchView(view) {
     const active = tab.dataset.view === view;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
   });
   $('#kanbanToolbar').style.display = view === 'kanban' ? '' : 'none';
   $('#board').hidden = view !== 'kanban';
@@ -2856,6 +2857,24 @@ function toggleHeaderMenu() {
   actions.querySelector('button')?.focus();
 }
 
+function bindViewTabs() {
+  const tabs = $('.view-tab');
+  tabs.forEach((tab, index) => {
+    tab.onclick = () => switchView(tab.dataset.view);
+    tab.onkeydown = e => {
+      let next = index;
+      if (e.key === 'ArrowRight') next = (index + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      else return;
+      e.preventDefault();
+      switchView(tabs[next].dataset.view);
+      tabs[next].focus();
+    };
+  });
+}
+
 function bindEvents() {
   $('#headerMenuBtn').onclick = toggleHeaderMenu;
   document.addEventListener('click', (e) => {
@@ -2892,7 +2911,7 @@ function bindEvents() {
     await deleteBoard(state.activeBoardId);
   };
 
-  $$('.view-tab').forEach(tab => tab.onclick = () => switchView(tab.dataset.view));
+  bindViewTabs();
 
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
@@ -2973,6 +2992,7 @@ function bindEvents() {
     }
     if ($('#shortcutsModal').classList.contains('open')) { if (e.key === '?') closeModal('shortcutsModal'); return; }
     if ($('#settingsModal').classList.contains('open') || $('#confirmModal').classList.contains('open') || $('#lightbox').classList.contains('open')) return;
+    if ($('#headerActions').classList.contains('is-open')) return;
     if (isInput || e.ctrlKey || e.metaKey || e.altKey) return;
 
     if (e.key === 'n' || e.key === 'N' || e.key === 'т' || e.key === 'Т') { e.preventDefault(); openTaskModal(null, state.columns[0]?.id); }

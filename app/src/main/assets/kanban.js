@@ -130,22 +130,49 @@ function updateBoardSelect() {
   ).join('');
 }
 
-async function persistBoards() {
+async function persistBoards(activeBoardId = state.activeBoardId) {
   await dbPutSettingsBulk([
     ['boards', state.boards],
-    ['activeBoardId', state.activeBoardId]
+    ['activeBoardId', activeBoardId]
   ]);
 }
 
+let switchingBoard = false;
 async function switchBoard(id) {
-  if (!getBoard(id) || id === state.activeBoardId) return;
-  if ($('#taskModal').classList.contains('open')) closeModal('taskModal');
-  state.activeBoardId = id;
-  applyActiveBoard();
-  try { await persistBoards(); } catch (e) { showToast('Не сохранилось: ' + e.message); }
-  renderBoard();
-  saveUIState();
-  notifyOtherTabs();
+  const select = $('#boardSelect');
+  if (switchingBoard || !getBoard(id) || id === state.activeBoardId) {
+    if (select) select.value = state.activeBoardId;
+    return false;
+  }
+  switchingBoard = true;
+  try {
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    const modal = $('#taskModal');
+    if (modal.classList.contains('open') && isModalDirty()) {
+      const discard = await confirmDialog('Сменить доску без сохранения?', 'Несохранённые изменения задачи будут потеряны.');
+      if (!discard) return false;
+    }
+    // A save may have started while the confirmation dialog was open.
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    try { await persistBoards(id); }
+    catch (e) { showToast('Не сохранилось: ' + e.message); return false; }
+    if (modal.classList.contains('open')) closeModal('taskModal');
+    state.activeBoardId = id;
+    applyActiveBoard();
+    renderBoard();
+    saveUIState();
+    notifyOtherTabs();
+    return true;
+  } finally {
+    switchingBoard = false;
+    if (select) select.value = state.activeBoardId;
+  }
 }
 
 async function addBoard(name) {
@@ -1889,6 +1916,7 @@ async function openFile(f, title) {
 let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
+  if (switchingBoard) { showToast('Дождитесь переключения доски'); return; }
   savingTask = true;
   try { await _saveTask(); } finally { savingTask = false; }
 }

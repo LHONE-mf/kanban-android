@@ -37,6 +37,10 @@ assert.match(headerRules, /\.board-select\s*\{[^}]*text-overflow:\s*ellipsis/s);
 assert.match(headerRules, /\.board-select\s*\{[^}]*overflow:\s*hidden/s);
 assert.match(headerRules, /\.board-select\s*\{[^}]*white-space:\s*nowrap/s);
 assert.match(headerRules, /\.header-menu-toggle\s*\{[^}]*width:\s*44px/s);
+const design = read('app/src/main/assets/design-system.css');
+assert.match(design, /\.btn:not\(\.btn-icon\):not\(\.btn-small\)\s*\{[^}]*min-height:\s*var\(--ui-control-height\)/s);
+assert.match(headerRules, /\.header-actions\s+\.btn:not\(\.btn-icon\):not\(\.btn-small\)\s*\{[^}]*min-height:\s*44px/s,
+  'regular import/export actions must override later 38px design-system rule');
 assert.match(headerRules, /padding:\s*calc\(6px\s*\+\s*var\(--safe-top\)\)/);
 assert.match(headerRules, /right:\s*calc\(10px\s*\+\s*var\(--safe-right\)\)/);
 assert.match(headerRules, /max-height:\s*min\(65dvh,\s*460px\)/);

@@ -2976,12 +2976,24 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await dbPutTasks(toUpdate);
-        toUpdate.forEach(cand => {
+        // Save a moved parent and all descendants in one IndexedDB transaction.
+        const changes = new Map(toUpdate.map(t => [t.id, t]));
+        for (const parent of toUpdate) {
+          const previous = state.tasks.find(t => t.id === parent.id);
+          if (!previous || previous.columnId === parent.columnId) continue;
+          for (const child of subtree(parent.id)) {
+            const current = changes.get(child.id) || child;
+            if (current.columnId !== parent.columnId) {
+              changes.set(child.id, applyColumnChange(current, parent.columnId));
+            }
+          }
+        }
+        const updates = [...changes.values()];
+        await dbPutTasks(updates);
+        updates.forEach(cand => {
           const idx = state.tasks.findIndex(x => x.id === cand.id);
           if (idx !== -1) state.tasks[idx] = cand;
         });
-        for (const c of toUpdate) await syncKids(c);
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }

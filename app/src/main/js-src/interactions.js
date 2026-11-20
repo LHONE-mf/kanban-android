@@ -163,7 +163,40 @@ function stopAutoScroll() { if (autoScrollInterval) { clearInterval(autoScrollIn
 // ============================================================
 // EVENT BINDINGS
 // ============================================================
+function closeHeaderMenu(restoreFocus = false) {
+  const actions = $('#headerActions');
+  if (!actions.classList.contains('is-open')) return false;
+  actions.classList.remove('is-open');
+  const trigger = $('#headerMenuBtn');
+  trigger.setAttribute('aria-expanded', 'false');
+  trigger.setAttribute('aria-label', 'Открыть меню');
+  if (restoreFocus) trigger.focus();
+  return true;
+}
+function toggleHeaderMenu() {
+  const actions = $('#headerActions');
+  if (actions.classList.contains('is-open')) { closeHeaderMenu(true); return; }
+  actions.classList.add('is-open');
+  const trigger = $('#headerMenuBtn');
+  trigger.setAttribute('aria-expanded', 'true');
+  trigger.setAttribute('aria-label', 'Закрыть меню');
+  actions.querySelector('button')?.focus();
+}
+
 function bindEvents() {
+  $('#headerMenuBtn').onclick = toggleHeaderMenu;
+  document.addEventListener('click', (e) => {
+    const actions = $('#headerActions');
+    if (!actions.classList.contains('is-open')) return;
+    if (e.target.closest('#headerMenuBtn')) return;
+    if (!actions.contains(e.target) || e.target.closest('button')) closeHeaderMenu();
+  });
+  document.addEventListener('focusin', (e) => {
+    const actions = $('#headerActions');
+    if (actions.classList.contains('is-open') &&
+        !actions.contains(e.target) && e.target !== $('#headerMenuBtn')) closeHeaderMenu();
+  });
+  window.addEventListener('resize', () => { if (window.innerWidth > 720) closeHeaderMenu(); });
   $('#themeBtn').onclick = toggleTheme;
   $('#exportBtn').onclick = exportData;
   $('#exportCsvBtn').onclick = exportCsv;
@@ -252,6 +285,7 @@ function bindEvents() {
       if ($('#taskModal').classList.contains('open')) { await tryCloseTaskModal(); return; }
       if ($('#settingsModal').classList.contains('open')) { closeModal('settingsModal'); return; }
       if ($('#shortcutsModal').classList.contains('open')) { closeModal('shortcutsModal'); return; }
+      if (closeHeaderMenu(true)) { e.preventDefault(); return; }
       if (document.activeElement === $('#searchInput')) {
         $('#searchInput').value = ''; searchQuery = '';
         document.activeElement.blur();
@@ -290,6 +324,7 @@ function comradeHandleAndroidBack() {
   if ($('#taskModal').classList.contains('open')) { void saveTaskFromModal(); return true; }
   if ($('#settingsModal').classList.contains('open')) { closeModal('settingsModal'); return true; }
   if ($('#shortcutsModal').classList.contains('open')) { closeModal('shortcutsModal'); return true; }
+  if (closeHeaderMenu(true)) return true;
   if (!$('#dayPlanPanel').hidden) { $('#dayPlanPanel').hidden = true; return true; }
   if (!$('#pomo').hidden) { $('#pomo').hidden = true; return true; }
   return false;

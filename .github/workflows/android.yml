@@ -39,6 +39,10 @@ jobs:
         run: node tests/test_task_priority_badges.js
       - name: Test all-board Comrade daily planning
         run: node tests/test_daily_plan.js
+      - name: Verify atomic editor save and failure handling
+        run: node tests/test_task_editor_atomic.js
+      - name: Check mobile attachment controls
+        run: node tests/test_attachment_layout.js
       - name: Test Android Back and exact original Comrade icons
         run: node tests/test_android_back.js
       - name: Verify backup completeness, daily plan, and Japanese progress

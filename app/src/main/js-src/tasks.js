@@ -370,7 +370,10 @@ async function _saveTask() {
   if (rec.mr) await recStop();
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }
-  catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить файл: ' + (e.message || e)); return; }
+  catch (e) {
+    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    showToast('Не удалось сохранить файл: ' + (e.message || e)); return;
+  }
   const files = [...tempFiles, ...stored];
 
   const moved = !existing || existing.parentId !== parentId || existing.columnId !== columnId;
@@ -390,7 +393,10 @@ async function _saveTask() {
     ? subtree(existing.id).filter(t => t.columnId !== columnId).map(t => applyColumnChange(t, columnId))
     : [];
   try { await dbPutTasks([candidate, ...descendants]); }
-  catch (e) { stored.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return; }
+  catch (e) {
+    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return;
+  }
 
   const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
   if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);

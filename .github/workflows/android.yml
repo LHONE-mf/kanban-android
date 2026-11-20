@@ -112,10 +112,7 @@ jobs:
       # Actions artifacts are ZIP containers, which some Android file managers
       # cannot unpack. GitHub Releases publishes the original signed APK bytes.
       - name: Publish standalone Comrade APK (no ZIP)
-        if: >-
-          github.ref == 'refs/heads/main' &&
-          ((github.event_name == 'workflow_dispatch' && inputs.publish_apk == true) ||
-          (github.event_name == 'push' && github.event.head_commit.message == 'release-approved-comrade-pr19-2026-11-20-pass2'))
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_apk == true && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

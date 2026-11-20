@@ -61,6 +61,8 @@ jobs:
         run: node tests/test_audio_staging.js
       - name: Verify Android multiple attachment selection
         run: node tests/test_multiple_attachments.js
+      - name: Verify failed multi-file saves clean staged blobs
+        run: node tests/test_attachment_rollback.js
       - name: Verify adaptive photo compression
         run: node tests/test_photo_compression.js
       - name: Verify photo gallery and pinch gestures

@@ -3,6 +3,12 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_apk:
+        description: 'Publish standalone Comrade APK to Releases (requires separate approval)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -84,7 +90,7 @@ jobs:
       # Actions artifacts are ZIP containers, which some Android file managers
       # cannot unpack. GitHub Releases publishes the original signed APK bytes.
       - name: Publish standalone Comrade APK (no ZIP)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_apk == true && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

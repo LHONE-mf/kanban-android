@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
     private var japaneseVoiceReady = false
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private lateinit var backupSaver: KanbanBackupSaver
+    private lateinit var attachmentOpener: KanbanAttachmentOpener
     private var pendingMicRequest: PermissionRequest? = null
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
@@ -322,6 +323,37 @@ class MainActivity : ComponentActivity() {
                     message.data in listOf("dark", "light")) {
                     runOnUiThread { applyMiniTheme(message.data == "dark") }
                 }
+            }
+        }
+
+        // Expose attachments only as read-only, temporary FileProvider URIs.
+        attachmentOpener = KanbanAttachmentOpener(
+            this,
+            { file, mime, name ->
+                val uri = FileProvider.getUriForFile(
+                    this@MainActivity, "$packageName.editablefiles", file
+                )
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, mime)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    clipData = android.content.ClipData.newUri(contentResolver, name, uri)
+                }
+                startActivity(Intent.createChooser(intent, "Открыть вложение"))
+            },
+            { event ->
+                webView.evaluateJavascript(
+                    "window.kanbanFileOpenNativeResult && window.kanbanFileOpenNativeResult(" +
+                        JSONObject.quote(event.toString()) + ")", null
+                )
+            }
+        )
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanFileOpen", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length <= 48_000) runOnUiThread { attachmentOpener.handle(raw) }
             }
         }
 
@@ -778,6 +810,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (::backupSaver.isInitialized) backupSaver.close()
+        if (::attachmentOpener.isInitialized) attachmentOpener.close()
         pendingMicRequest?.deny()
         pendingMicRequest = null
         pendingFiles?.onReceiveValue(null)

@@ -74,40 +74,129 @@ function generateThumb(blob, maxDim, quality) {
 // ============================================================
 // LIGHTBOX
 // ============================================================
-async function openLightbox(task, f) {
-  f = f || (task.files || []).find(x => /^(image|video)\//.test(x.type));
-  if (!f) return;
+const lightboxGallery = {
+  files: [], title: '', index: 0, zoom: 1, panX: 0, panY: 0,
+  pointers: new Map(), gesture: null
+};
+
+async function openLightbox(task, selected) {
+  const files = (task.files || []).filter(f => /^(image|video)\//.test(f.type));
+  const file = selected || files[0];
+  if (!file) return;
+  lightboxGallery.files = files.some(f => f.id === file.id) ? files : [file];
+  lightboxGallery.index = Math.max(0, lightboxGallery.files.findIndex(f => f.id === file.id));
+  lightboxGallery.title = task.title || '';
+  await showLightboxItem();
+}
+
+async function showLightboxItem() {
   const token = ++lightboxToken;
-  const lightbox = $('#lightbox');
-  const content = $('#lightboxContent');
-  if (lightbox.dataset.url) { revokeTrackedURL(lightbox.dataset.url); delete lightbox.dataset.url; }
-  content.innerHTML = '<div style="color:#fff;font-size:13px">Загрузка…</div>';
+  const lightbox = $('#lightbox'), content = $('#lightboxContent');
+  const oldUrl = lightbox.dataset.url;
+  if (oldUrl) { revokeTrackedURL(oldUrl); delete lightbox.dataset.url; }
+  lightboxGallery.zoom = 1; lightboxGallery.panX = 0; lightboxGallery.panY = 0;
+  lightboxGallery.pointers.clear(); lightboxGallery.gesture = null;
+  const file = lightboxGallery.files[lightboxGallery.index];
+  const image = /^image\//.test(file.type);
+  $('#lightboxPosition').textContent = `${lightboxGallery.index + 1} / ${lightboxGallery.files.length}`;
+  $('#lightboxPrev').disabled = lightboxGallery.index === 0;
+  $('#lightboxNext').disabled = lightboxGallery.index === lightboxGallery.files.length - 1;
+  $('#lightboxZoomIn').hidden = !image;
+  $('#lightboxZoomOut').hidden = !image;
+  content.textContent = 'Загрузка…';
   lightbox.classList.add('open');
   try {
-    const media = await mediaGet(f.id);
+    const media = await mediaGet(file.id);
     if (token !== lightboxToken) return;
-    if (!media) { closeLightbox(); return; }
-    content.innerHTML = '';
+    if (!media?.full) throw new Error('Файл недоступен');
     const url = createTrackedURL(media.full);
-    if (media.type.startsWith('image/')) {
-      const img = document.createElement('img');
-      img.src = url; img.alt = task.title;
-      content.appendChild(img);
-    } else if (media.type.startsWith('video/')) {
-      const vid = document.createElement('video');
-      vid.src = url; vid.controls = true; vid.autoplay = true;
-      content.appendChild(vid);
-    }
+    const el = document.createElement(image ? 'img' : 'video');
+    if (image) { el.alt = lightboxGallery.title; el.draggable = false; }
+    else { el.controls = true; el.autoplay = true; }
+    el.src = url;
+    content.textContent = '';
+    content.appendChild(el);
     lightbox.dataset.url = url;
-  } catch (e) { closeLightbox(); }
+  } catch (_) {
+    if (token === lightboxToken) content.textContent = 'Не удалось открыть файл';
+  }
 }
+
+function changeLightboxItem(direction) {
+  const next = lightboxGallery.index + direction;
+  if (next < 0 || next >= lightboxGallery.files.length) return;
+  lightboxGallery.index = next;
+  void showLightboxItem();
+}
+
+function updateLightboxZoom(next) {
+  const img = $('#lightboxContent').querySelector('img');
+  if (!img) return;
+  lightboxGallery.zoom = Math.max(1, Math.min(5, next));
+  if (lightboxGallery.zoom === 1) lightboxGallery.panX = lightboxGallery.panY = 0;
+  const limitX = img.clientWidth * (lightboxGallery.zoom - 1) / 2;
+  const limitY = img.clientHeight * (lightboxGallery.zoom - 1) / 2;
+  lightboxGallery.panX = Math.max(-limitX, Math.min(limitX, lightboxGallery.panX));
+  lightboxGallery.panY = Math.max(-limitY, Math.min(limitY, lightboxGallery.panY));
+  img.style.transform = `translate(${lightboxGallery.panX}px, ${lightboxGallery.panY}px) scale(${lightboxGallery.zoom})`;
+  $('#lightboxZoomOut').disabled = lightboxGallery.zoom <= 1;
+  $('#lightboxZoomIn').disabled = lightboxGallery.zoom >= 5;
+}
+
+function lightboxPointerDown(e) {
+  if (!$('#lightbox').classList.contains('open') ||
+      e.target.closest('button, video') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  lightboxGallery.pointers.set(e.pointerId, {x:e.clientX,y:e.clientY});
+  $('#lightbox').setPointerCapture?.(e.pointerId);
+  const points = [...lightboxGallery.pointers.values()];
+  if (points.length === 1) {
+    lightboxGallery.gesture = {type:'single', x:e.clientX,y:e.clientY,
+      panX:lightboxGallery.panX,panY:lightboxGallery.panY};
+  } else if (points.length === 2) {
+    lightboxGallery.gesture = {type:'pinch',distance:Math.hypot(
+      points[0].x-points[1].x,points[0].y-points[1].y),zoom:lightboxGallery.zoom};
+  }
+}
+
+function lightboxPointerMove(e) {
+  if (!lightboxGallery.pointers.has(e.pointerId)) return;
+  lightboxGallery.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  const g = lightboxGallery.gesture, points = [...lightboxGallery.pointers.values()];
+  if (g?.type === 'pinch' && points.length === 2) {
+    const distance = Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);
+    if (g.distance > 0) updateLightboxZoom(g.zoom * distance / g.distance);
+  } else if (g?.type === 'single' && points.length === 1 && lightboxGallery.zoom > 1) {
+    lightboxGallery.panX = g.panX + e.clientX - g.x;
+    lightboxGallery.panY = g.panY + e.clientY - g.y;
+    updateLightboxZoom(lightboxGallery.zoom);
+  }
+}
+
+function lightboxPointerUp(e) {
+  if (!lightboxGallery.pointers.has(e.pointerId)) return;
+  const g = lightboxGallery.gesture;
+  const swipe = lightboxGallery.pointers.size === 1 && g?.type === 'single' &&
+    lightboxGallery.zoom === 1 && Math.abs(e.clientX-g.x) >= 65 &&
+    Math.abs(e.clientX-g.x) > Math.abs(e.clientY-g.y) * 1.3;
+  lightboxGallery.pointers.delete(e.pointerId);
+  if (!lightboxGallery.pointers.size) lightboxGallery.gesture = null;
+  else if (lightboxGallery.pointers.size === 1) {
+    const point = [...lightboxGallery.pointers.values()][0];
+    lightboxGallery.gesture = {type:'single',x:point.x,y:point.y,
+      panX:lightboxGallery.panX,panY:lightboxGallery.panY};
+  }
+  if (swipe) changeLightboxItem(e.clientX < g.x ? 1 : -1);
+}
+
 function closeLightbox() {
-  lightboxToken++;
+  ++lightboxToken;
   const lightbox = $('#lightbox');
   const url = lightbox.dataset.url;
   if (url) { revokeTrackedURL(url); delete lightbox.dataset.url; }
-  $('#lightboxContent').innerHTML = '';
+  $('#lightboxContent').textContent = '';
   lightbox.classList.remove('open');
+  lightboxGallery.files = []; lightboxGallery.pointers.clear();
+  lightboxGallery.gesture = null;
 }
 
 // ============================================================

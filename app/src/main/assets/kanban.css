@@ -66,6 +66,7 @@ button { font-family: inherit; }
   gap: 16px; flex-shrink: 0; flex-wrap: wrap;
 }
 .header-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.header-menu-toggle { display: none; }
 .logo { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; flex-shrink: 0; }
 .board-select {
   max-width: 240px; min-width: 140px;
@@ -781,22 +782,46 @@ button { font-family: inherit; }
   background:var(--surface-2); white-space:pre-wrap; overflow-wrap:anywhere;
   font-size:13px; line-height:1.5; }
 
-/* Compact Android mobile workspace: tools must not consume the board viewport.
-   All controls remain reachable by horizontally scrolling their own toolbar. */
+/* Keep the mobile header to one row. The existing actions live in a
+   reachable popover; the scrollable search toolbar stays independent. */
 @media (max-width: 720px) {
   .header {
-    display:flex; flex-direction:column; align-items:stretch; flex-wrap:nowrap;
-    gap:5px; padding:6px 10px 4px;
+    position:relative; z-index:30;
+    display:flex; flex-direction:row; align-items:center; flex-wrap:nowrap;
+    gap:8px;
+    padding:calc(6px + var(--safe-top)) calc(10px + var(--safe-right)) 4px calc(10px + var(--safe-left));
   }
-  .header-left { flex:0 0 auto; flex-wrap:nowrap; min-width:0; }
+  .header-left { flex:1 1 auto; flex-wrap:nowrap; min-width:0; }
   .board-select { flex:1 1 auto; width:auto; min-width:0; max-width:none; }
-  .header-actions {
-    display:flex; width:100%; min-width:0; flex-wrap:nowrap;
-    overflow-x:auto; overflow-y:hidden; padding-bottom:2px;
-    overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch;
-    scrollbar-width:thin;
+  .header-menu-toggle {
+    display:inline-flex; flex:0 0 44px; width:44px; min-width:44px;
+    height:44px; min-height:44px; font-size:22px;
   }
-  .header-actions .btn { flex:0 0 auto; min-height:32px; }
+  .header-actions {
+    display:none; position:absolute; top:calc(100% - 2px);
+    right:calc(10px + var(--safe-right));
+    width:min(290px, calc(100vw - 20px - var(--safe-left) - var(--safe-right)));
+    max-height:min(65dvh, 460px);
+    overflow-y:auto; overflow-x:hidden; padding:8px;
+    background:var(--surface); border:1px solid var(--border-strong);
+    border-radius:var(--radius-lg); box-shadow:var(--shadow-lg);
+    z-index:40; flex-direction:column; flex-wrap:nowrap;
+    align-items:stretch; gap:2px;
+  }
+  .header-actions.is-open { display:flex; }
+  .header-actions .btn {
+    flex:0 0 auto; display:flex; justify-content:flex-start;
+    text-align:left; width:100%; height:auto; min-width:0; min-height:44px;
+    padding:10px 12px; font-size:14px;
+  }
+  .header-actions .btn[data-menu-label]::after {
+    content:attr(data-menu-label); margin-left:8px; font-size:14px;
+  }
+  .header-actions .btn:focus-visible { outline-offset:-3px; }
+  .header-actions #clearBtn {
+    color:var(--danger); border-top:1px solid var(--border);
+    border-radius:0; margin-top:6px;
+  }
   .view-tab { padding:5px 10px 9px; }
   .toolbar {
     display:flex; flex-wrap:nowrap; min-width:0; gap:8px;

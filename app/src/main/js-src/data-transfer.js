@@ -425,6 +425,21 @@ async function buildImportPlan(data) {
     report: { skippedTasks, brokenMedia, warnings } };
 }
 
+// The WebView, IndexedDB and Android preferences are different stores.
+// Restore secondary progress before the atomic IndexedDB replacement and
+// compensate best-effort on failure, without discarding the existing boards.
+function restoreJapaneseImportSnapshot(previous) {
+  if (!previous) return;
+  let firstError = null;
+  for (const [key, value] of Object.entries(previous)) {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    } catch (e) { if (!firstError) firstError = e; }
+  }
+  if (firstError) throw firstError;
+}
+
 async function handleImport(file) {
   if (!file) return;
   let data;
@@ -445,17 +460,65 @@ async function handleImport(file) {
   const ok = await confirmDialog('Импорт данных', message);
   if (!ok) return;
 
-  try { await dbReplaceAll(plan); }
-  catch (e) { console.error(e); alert('Не удалось записать данные: ' + e.message + '\nСтарые данные сохранены.'); return; }
-
-  let japaneseError = null;
-  try { restoreJapaneseBackup(plan.japanese); }
-  catch (e) { japaneseError = e; console.error('Japanese progress restore failed:', e); }
-  let nativeJapaneseError = null;
-  if (plan.nativeJapanese) {
-    try { await nativeJapaneseCommand('restore', plan.nativeJapanese); }
-    catch (e) { nativeJapaneseError = e; console.error('Native Japanese progress restore failed:', e); }
+  // Read both snapshots before changing anything. Missing Android bridge or
+  // unreadable storage must abort before the destructive IndexedDB transaction.
+  let previousWeb = null;
+  let previousNative = null;
+  try {
+    if (plan.japanese) {
+      previousWeb = Object.fromEntries(Object.keys(plan.japanese)
+        .map(key => [key, localStorage.getItem(key)]));
+    }
+    if (plan.nativeJapanese) {
+      previousNative = await nativeJapaneseCommand('read');
+      if (!previousNative) throw new Error('Невозможно сохранить текущий нативный прогресс японского');
+    }
+  } catch (e) {
+    console.error('Import preflight failed:', e);
+    alert('Импорт отменён без изменений: ' + e.message);
+    return;
   }
+
+  let webAttempted = false;
+  let nativeAttempted = false;
+  try {
+    if (plan.japanese) {
+      webAttempted = true;
+      restoreJapaneseBackup(plan.japanese);
+    }
+    if (plan.nativeJapanese) {
+      nativeAttempted = true;
+      const restored = await nativeJapaneseCommand('restore', plan.nativeJapanese);
+      if (restored !== true) throw new Error('Android не подтвердил восстановление японского');
+    }
+    // Existing tasks/media/settings are replaced only after progress succeeds.
+    // IndexedDB provides one atomic transaction for all these records.
+    await dbReplaceAll(plan);
+  } catch (e) {
+    const rollbackErrors = [];
+    // Even a rejected Android restore might have applied before the reply failed.
+    if (nativeAttempted) {
+      try {
+        const reverted = await nativeJapaneseCommand('restore', previousNative);
+        if (reverted !== true) throw new Error('Android не подтвердил откат японского');
+      } catch (error) { rollbackErrors.push('нативный прогресс: ' + error.message); }
+    }
+    if (webAttempted) {
+      try { restoreJapaneseImportSnapshot(previousWeb); }
+      catch (error) { rollbackErrors.push('веб-прогресс: ' + error.message); }
+    }
+    console.error('Import failed before IndexedDB commit:', e);
+    if (rollbackErrors.length) {
+      console.error('Import rollback incomplete:', rollbackErrors);
+      alert('Импорт не завершён: ' + e.message
+        + '\nДоски и задачи не заменены, но откат японского прогресса завершился с ошибкой: '
+        + rollbackErrors.join('; ') + '. Проверьте прогресс перед повторным импортом.');
+    } else {
+      alert('Импорт отменён: ' + e.message + '\nСтарые доски и задачи сохранены.');
+    }
+    return;
+  }
+
   undoStack.length = 0; for (const t of pendingMediaDeletes.values()) clearTimeout(t); pendingMediaDeletes.clear(); apStop();
   rebucket(plan.tasks, plan.boards, plan.activeBoardId);
   applyActiveBoard();
@@ -464,9 +527,7 @@ async function handleImport(file) {
   saveUIState();
 
   const suffix = totalWarn ? ` (${totalWarn} предупр.)` : '';
-  showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`
-    + (japaneseError ? '. Внимание: веб-прогресс японского языка не восстановлен.' : '')
-    + (nativeJapaneseError ? '. Внимание: мини-викторина японского не восстановлена.' : ''),
+  showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`,
     null, null, 5500);
 }
 

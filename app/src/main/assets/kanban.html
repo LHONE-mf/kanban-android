@@ -52,7 +52,6 @@
     <button class="btn btn-ghost btn-icon" id="focusBtn" title="Таймер фокуса (Pomodoro)" aria-label="Таймер фокуса">🍅</button>
     <button class="btn btn-ghost btn-icon" id="themeBtn" aria-label="Переключить тему" aria-pressed="false">◐</button>
     <button class="btn btn-ghost" id="exportBtn" title="Полный бэкап: доски, структура, карта, файлы">Экспорт</button>
-    <button class="btn btn-ghost" id="exportCsvBtn" title="Экспорт в CSV">CSV</button>
     <button class="btn btn-ghost" id="importBtn">Импорт</button>
     <button class="btn btn-ghost btn-icon" id="settingsBtn" aria-label="Настройки доски">⚙</button>
     <button class="btn btn-danger btn-small" id="clearBtn">Очистить</button>
@@ -244,6 +243,7 @@
       </div>
     </div>
     <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="exportCsvBtn" title="CSV текущей доски">Экспорт CSV</button>
       <div class="spacer"></div>
       <button type="button" class="btn btn-secondary" data-close="settingsModal">Отмена</button>
       <button type="button" class="btn" id="saveSettingsBtn">Сохранить</button>

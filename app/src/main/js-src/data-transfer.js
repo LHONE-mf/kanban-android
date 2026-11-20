@@ -1,19 +1,62 @@
 // ============================================================
-// EXPORT JSON (v3 — multi-board)
+// EXPORT JSON (v5 — preserve saved day plan and Japanese web progress)
 // ============================================================
+const JAPANESE_BACKUP_KEYS = [
+  'kanban-japanese-hiragana-v1', 'kanban-japanese-quiz-progress-v1',
+  'kanban-japanese-script-v1', 'kanban-japanese-review-v1',
+  'kanban-japanese-active-tab-v1'
+];
+function readJapaneseBackup() {
+  const result = {};
+  for (const key of JAPANESE_BACKUP_KEYS) {
+    const value = localStorage.getItem(key);
+    if (value !== null) result[key] = value;
+  }
+  return result;
+}
+function validateJapaneseBackup(raw) {
+  if (raw == null) return null;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    throw new Error('Неверный формат прогресса японского языка');
+  const clean = {};
+  for (const key of JAPANESE_BACKUP_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
+    if (typeof raw[key] !== 'string' || raw[key].length > 100000)
+      throw new Error('Некорректные данные японского языка: ' + key);
+    clean[key] = raw[key];
+  }
+  return clean;
+}
+function restoreJapaneseBackup(snapshot) {
+  if (!snapshot) return;
+  const previous = new Map();
+  for (const key of Object.keys(snapshot)) previous.set(key, localStorage.getItem(key));
+  try {
+    for (const [key, value] of Object.entries(snapshot)) localStorage.setItem(key, value);
+  } catch (e) {
+    for (const [key, value] of previous) {
+      try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
+      catch (_) {}
+    }
+    throw e;
+  }
+}
 async function exportData() {
   try {
     const allTasks = Object.values(state._tasksByBoard).flat();
-    const parts = ['{"version":4,"app":"kanban-mindmap","exportedAt":' + JSON.stringify(new Date().toISOString())
+    const settings = await dbGetSettings();
+    const parts = ['{"version":5,"app":"comrade","exportedAt":' + JSON.stringify(new Date().toISOString())
       + ',"activeBoardId":' + JSON.stringify(state.activeBoardId) + ',"boards":' + JSON.stringify(state.boards)
-      + ',"tasks":' + JSON.stringify(allTasks) + ',"media":{'];
+      + ',"tasks":' + JSON.stringify(allTasks)
+      + ',"dayPlan":' + JSON.stringify(settings.comrade_day_plan_v1 || null)
+      + ',"japanese":' + JSON.stringify(readJapaneseBackup()) + ',"media":{'];
     const seen = new Set();
-    let n = 0, missing = 0;
+    let n = 0;
     for (const f of allTasks.flatMap(t => t.files)) {
       if (seen.has(f.id)) continue;
       seen.add(f.id);
-      const m = await mediaGet(f.id).catch(() => null);
-      if (!m) { missing++; continue; }
+      const m = await mediaGet(f.id);
+      if (!m?.full) throw new Error('Не найдено вложение «' + f.name + '». Экспорт отменён');
       parts.push((n++ ? ',' : '') + JSON.stringify(f.id) + ':{"type":' + JSON.stringify(m.type || f.type)
         + ',"thumb":' + JSON.stringify(m.thumb || null) + ',"data":"' + await blobToBase64(m.full) + '"}');
     }
@@ -23,7 +66,7 @@ async function exportData() {
     a.href = url; a.download = `kanban-backup-${todayISO()}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast(`Бэкап: ${state.boards.length} досок, ${allTasks.length} узлов, ${n} файлов` + (missing ? `. Файлов не найдено: ${missing}` : ''));
+    showToast(`Бэкап: ${state.boards.length} досок, ${allTasks.length} задач, ${n} вложений`);
   } catch (e) {
     console.error(e);
     showToast('Ошибка экспорта: ' + (e.message || ''));
@@ -219,7 +262,21 @@ async function buildImportPlan(data) {
     }
   }
   boards.forEach(b => normalizeTree(tasks.filter(t => t.boardId === b.id)));
-  return { boards, activeBoardId, tasks, media, report: { skippedTasks, brokenMedia, warnings } };
+  const japanese = validateJapaneseBackup(!Array.isArray(data) ? data.japanese : null);
+  let dayPlan = null;
+  if (!Array.isArray(data) && data.dayPlan != null) {
+    const saved = data.dayPlan;
+    if (saved && typeof saved === 'object' && typeof saved.date === 'string'
+        && /^\d{4}-\d{2}-\d{2}$/.test(saved.date)
+        && isValidISODate(saved.date) && Array.isArray(saved.ids)) {
+      const validIds = new Set(tasks.map(t => t.id));
+      const ids = [...new Set(saved.ids.filter(id => typeof id === 'string' && validIds.has(id)))];
+      if (ids.length !== saved.ids.length) warnings.push('«Мой день»: недоступные задачи исключены.');
+      if (ids.length) dayPlan = { date: saved.date, ids, updatedAt: Number(saved.updatedAt) || Date.now() };
+    } else warnings.push('«Мой день»: неверный формат, план пропущен.');
+  }
+  return { boards, activeBoardId, tasks, media, japanese, dayPlan,
+    report: { skippedTasks, brokenMedia, warnings } };
 }
 
 async function handleImport(file) {
@@ -234,6 +291,7 @@ async function handleImport(file) {
 
   const totalWarn = plan.report.warnings.length;
   const message = `Текущие ${state.boards.length} досок и ${Object.values(state._tasksByBoard).reduce((s,a)=>s+a.length,0)} задач будут заменены на ${plan.boards.length} досок и ${plan.tasks.length} задач из файла.`
+    + (plan.japanese ? '\nСохранённый прогресс японского языка из архива заменит совпадающие настройки.' : '');
     + (totalWarn ? `\n\nПредупреждений: ${totalWarn}. См. консоль.` : '');
   if (totalWarn) console.warn('[import] warnings:', plan.report.warnings);
 
@@ -243,6 +301,9 @@ async function handleImport(file) {
   try { await dbReplaceAll(plan); }
   catch (e) { console.error(e); alert('Не удалось записать данные: ' + e.message + '\nСтарые данные сохранены.'); return; }
 
+  let japaneseError = null;
+  try { restoreJapaneseBackup(plan.japanese); }
+  catch (e) { japaneseError = e; console.error('Japanese progress restore failed:', e); }
   undoStack.length = 0; for (const t of pendingMediaDeletes.values()) clearTimeout(t); pendingMediaDeletes.clear(); apStop();
   rebucket(plan.tasks, plan.boards, plan.activeBoardId);
   applyActiveBoard();
@@ -251,7 +312,9 @@ async function handleImport(file) {
   saveUIState();
 
   const suffix = totalWarn ? ` (${totalWarn} предупр.)` : '';
-  showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`, null, null, 4000);
+  showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`
+    + (japaneseError ? '. Внимание: прогресс японского языка не восстановлен.' : ''),
+    null, null, 5500);
 }
 
 // ============================================================

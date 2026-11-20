@@ -33,3 +33,13 @@ local page to handle visible dialogs. In the task editor it invokes the same
 atomic Save as the Save button; validation or storage failure leaves the
 editor open, preventing accidental exit. Japanese lessons Back returns to
 Kanban. No change to installed data, package ID, or signing identity.
+
+## v0.4.10 data safety and UI polish
+
+- Export v5 fails instead of silently omitting an unreadable/missing task attachment.
+- JSON backups include saved `comrade_day_plan_v1` and the five known Japanese
+  learning `localStorage` keys; import validates these fields and supports older backups.
+- Saving a task prepares audio metadata before inserting blobs into IndexedDB.
+- CSV export remains available from board Settings, not in the crowded main header.
+- This does not yet include native Android `japanese_daily` SharedPreferences in backups.
+  Do not uninstall the app or clear storage to migrate. Test upgrades on-device.

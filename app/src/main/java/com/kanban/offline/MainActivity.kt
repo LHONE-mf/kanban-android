@@ -108,7 +108,19 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         val files = if (result.resultCode == RESULT_OK) {
-            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+            // Some Android file pickers put multiple choices in ClipData while
+            // WebView's default parser returns only the single data URI.
+            val picked = LinkedHashSet<Uri>()
+            result.data?.clipData?.let { clip ->
+                for (index in 0 until clip.itemCount) {
+                    clip.getItemAt(index).uri?.let { picked.add(it) }
+                }
+            }
+            result.data?.data?.let { picked.add(it) }
+            WebChromeClient.FileChooserParams.parseResult(
+                result.resultCode, result.data
+            )?.forEach { picked.add(it) }
+            picked.takeIf { it.isNotEmpty() }?.toTypedArray()
         } else null
         pendingFiles?.onReceiveValue(files)
         pendingFiles = null
@@ -161,7 +173,12 @@ class MainActivity : ComponentActivity() {
                     pendingFiles?.onReceiveValue(null)
                     pendingFiles = filePathCallback
                     return try {
-                        filePicker.launch(fileChooserParams.createIntent())
+                        val intent = fileChooserParams.createIntent()
+                        if (fileChooserParams.mode ==
+                            WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
+                        filePicker.launch(intent)
                         true
                     } catch (_: Exception) {
                         pendingFiles?.onReceiveValue(null)

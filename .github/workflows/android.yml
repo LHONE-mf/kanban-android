@@ -67,6 +67,8 @@ jobs:
         run: node tests/test_backup_integrity.js
       - name: Verify import preserves boards and Japanese progress on failures
         run: node tests/test_import_japanese_consistency.js
+      - name: Verify atomic media import on storage errors and quota
+        run: node tests/test_import_media_transaction.js
       - name: Verify legacy imports and concurrent import lock
         run: node tests/test_import_compatibility_guard.js
       - name: Verify native Japanese progress backup and restoration bridge

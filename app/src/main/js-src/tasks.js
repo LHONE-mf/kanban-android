@@ -199,7 +199,11 @@ async function storeFile(file) {
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   const id = 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
-  return { id, name: file._name || file.name || 'Файл', type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
+  const originalName = file._name || file.name || 'Файл';
+  // An encoded WebP must not retain a misleading .png/.heic extension.
+  const name = blob !== file && type === 'image/webp' && !/\.webp$/i.test(originalName)
+    ? originalName.replace(/\.[^./]+$/, '') + '.webp' : originalName;
+  return { id, name, type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
   if (!window.KanbanFileEdit?.postMessage) {

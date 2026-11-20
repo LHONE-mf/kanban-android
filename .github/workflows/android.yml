@@ -65,6 +65,8 @@ jobs:
         run: node tests/test_photo_compression.js
       - name: Verify photo gallery and pinch gestures
         run: node tests/test_lightbox_gallery.js
+      - name: Verify Android document opening and bridge safety
+        run: node tests/test_native_file_open.js
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore

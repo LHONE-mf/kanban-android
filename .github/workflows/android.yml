@@ -43,6 +43,8 @@ jobs:
         run: node tests/test_android_back.js
       - name: Verify backup completeness, daily plan, and Japanese progress
         run: node tests/test_backup_integrity.js
+      - name: Verify Android backup chunk-transfer protocol
+        run: node tests/test_backup_transport.js
       - name: Verify audio attachment write ordering
         run: node tests/test_audio_staging.js
       - name: Compile Kotlin before APK packaging

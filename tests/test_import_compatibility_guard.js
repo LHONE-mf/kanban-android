@@ -23,6 +23,8 @@ function fixture({failWrite=false,delayConfirm=false}={}) {
   let renders=0,resolveConfirm;
   const ctx={
     state,console:{warn(){},error(){}},JSON,Map,Set,Blob,Uint8Array,Date,Object,
+    savingTask:false,switchingBoard:false,
+    $:selector=>selector==='#taskModal'?{classList:{contains:()=>false}}:null,
     MAX_VIDEO_SIZE:50*1048576,
     DEFAULT_COLUMNS:()=>[{id:'todo',title:'Todo'}],
     generateId:()=> 'generated-1',

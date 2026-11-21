@@ -1609,6 +1609,7 @@ function captureModalSnapshot() {
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
+  if (importInProgress) { showToast('Дождитесь завершения импорта'); return; }
   lastFocusBeforeModal = document.activeElement;
   editingTaskId = taskId;
   editingPriority = 'none';
@@ -1920,6 +1921,7 @@ async function openFile(f, title) {
 let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
+  if (importInProgress) { showToast('Дождитесь завершения импорта'); return; }
   if (switchingBoard) { showToast('Дождитесь переключения доски'); return; }
   savingTask = true;
   try { await _saveTask(); } finally { savingTask = false; }
@@ -2884,9 +2886,16 @@ function restoreJapaneseImportSnapshot(previous) {
 
 // Only one import may read, confirm, restore progress or replace data at a time.
 let importInProgress = false;
+function taskEditorBlocksImport() {
+  return savingTask || switchingBoard || $('#taskModal').classList.contains('open');
+}
 async function handleImport(file) {
   if (!file) return;
   if (importInProgress) { showToast('Импорт уже выполняется'); return; }
+  if (taskEditorBlocksImport()) {
+    showToast('Закройте редактор задачи и завершите сохранение перед импортом');
+    return;
+  }
   importInProgress = true;
   try { await importSingleFile(file); }
   finally { importInProgress = false; }
@@ -2909,6 +2918,11 @@ async function importSingleFile(file) {
 
   const ok = await confirmDialog('Импорт данных', message);
   if (!ok) return;
+  // The editor may have opened while the archive was being read or validated.
+  if (taskEditorBlocksImport()) {
+    showToast('Импорт отменён: завершите редактирование задачи');
+    return;
+  }
 
   // Read both snapshots before changing anything. Missing Android bridge or
   // unreadable storage must abort before the destructive IndexedDB transaction.

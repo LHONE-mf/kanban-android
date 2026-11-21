@@ -19,6 +19,10 @@ On launch the app removes only the obsolete private cached GGUF at
 `filesDir/kanban_comrade/active.gguf` and its model filename preference.
 An original model in Downloads/Documents is never touched.
 
+For the non-destructive update acceptance scenario, see
+[Android upgrade checklist](docs/COMRADE_P8_ANDROID_UPGRADE_CHECKLIST.md).
+An Android device must still pass this checklist before release.
+
 ## Development
 The JS bundle is built with `python3 tools/build_kanban_js.py`.
 Tests and the Android APK are produced by GitHub Actions using JDK 17,

@@ -37,6 +37,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
+      - name: Protect Android in-place update data contract
+        run: node tests/test_android_upgrade_contract.js
       - name: Check JavaScript syntax
         run: node --check app/src/main/assets/kanban.js
       - name: Verify removal of the AI experiment

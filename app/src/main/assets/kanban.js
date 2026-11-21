@@ -130,22 +130,49 @@ function updateBoardSelect() {
   ).join('');
 }
 
-async function persistBoards() {
+async function persistBoards(activeBoardId = state.activeBoardId) {
   await dbPutSettingsBulk([
     ['boards', state.boards],
-    ['activeBoardId', state.activeBoardId]
+    ['activeBoardId', activeBoardId]
   ]);
 }
 
+let switchingBoard = false;
 async function switchBoard(id) {
-  if (!getBoard(id) || id === state.activeBoardId) return;
-  if ($('#taskModal').classList.contains('open')) closeModal('taskModal');
-  state.activeBoardId = id;
-  applyActiveBoard();
-  try { await persistBoards(); } catch (e) { showToast('Не сохранилось: ' + e.message); }
-  renderBoard();
-  saveUIState();
-  notifyOtherTabs();
+  const select = $('#boardSelect');
+  if (switchingBoard || !getBoard(id) || id === state.activeBoardId) {
+    if (select) select.value = state.activeBoardId;
+    return false;
+  }
+  switchingBoard = true;
+  try {
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    const modal = $('#taskModal');
+    if (modal.classList.contains('open') && isModalDirty()) {
+      const discard = await confirmDialog('Сменить доску без сохранения?', 'Несохранённые изменения задачи будут потеряны.');
+      if (!discard) return false;
+    }
+    // A save may have started while the confirmation dialog was open.
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    try { await persistBoards(id); }
+    catch (e) { showToast('Не сохранилось: ' + e.message); return false; }
+    if (modal.classList.contains('open')) closeModal('taskModal');
+    state.activeBoardId = id;
+    applyActiveBoard();
+    renderBoard();
+    saveUIState();
+    notifyOtherTabs();
+    return true;
+  } finally {
+    switchingBoard = false;
+    if (select) select.value = state.activeBoardId;
+  }
 }
 
 async function addBoard(name) {
@@ -1893,6 +1920,7 @@ async function openFile(f, title) {
 let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
+  if (switchingBoard) { showToast('Дождитесь переключения доски'); return; }
   savingTask = true;
   try { await _saveTask(); } finally { savingTask = false; }
 }
@@ -1978,8 +2006,10 @@ async function duplicateTask(taskId) {
   const sameCol = state.tasks.filter(t => t.columnId === src.columnId);
   const maxOrder = sameCol.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
   const files = [];
+  // Only newly generated copies are eligible for rollback, never source media.
+  const discardCopies = () => Promise.all(files.map(f => mediaDelete(f.id).catch(() => {})));
   try { for (const f of src.files) { const m = await mediaGet(f.id); if (!m) continue; const id = 'm_' + generateId(); await mediaPut(id, m.full, m.thumb, m.type); files.push({ ...f, id }); } }
-  catch (e) { files.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось скопировать файлы: ' + e.message); return; }
+  catch (e) { await discardCopies(); showToast('Не удалось скопировать файлы: ' + e.message); return; }
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',
     tags: [...src.tags], checklist: src.checklist.map(c => ({ id: 'cl_' + generateId(), text: c.text, checked: c.checked })),
@@ -1988,7 +2018,7 @@ async function duplicateTask(taskId) {
     boardId: src.boardId || state.activeBoardId
   };
   try { await dbPutTask(copy); }
-  catch (e) { showToast('Не удалось дублировать: ' + e.message); return; }
+  catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
   showToast('Задача продублирована');
@@ -3058,12 +3088,24 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await dbPutTasks(toUpdate);
-        toUpdate.forEach(cand => {
+        // Save a moved parent and all descendants in one IndexedDB transaction.
+        const changes = new Map(toUpdate.map(t => [t.id, t]));
+        for (const parent of toUpdate) {
+          const previous = state.tasks.find(t => t.id === parent.id);
+          if (!previous || previous.columnId === parent.columnId) continue;
+          for (const child of subtree(parent.id)) {
+            const current = changes.get(child.id) || child;
+            if (current.columnId !== parent.columnId) {
+              changes.set(child.id, applyColumnChange(current, parent.columnId));
+            }
+          }
+        }
+        const updates = [...changes.values()];
+        await dbPutTasks(updates);
+        updates.forEach(cand => {
           const idx = state.tasks.findIndex(x => x.id === cand.id);
           if (idx !== -1) state.tasks[idx] = cand;
         });
-        for (const c of toUpdate) await syncKids(c);
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }

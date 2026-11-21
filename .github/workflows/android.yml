@@ -47,6 +47,8 @@ jobs:
         run: node tests/test_daily_plan.js
       - name: Verify atomic editor save and failure handling
         run: node tests/test_task_editor_atomic.js
+      - name: Protect unsaved task edits on board switching
+        run: node tests/test_board_switch_guard.js
       - name: Check mobile attachment controls
         run: node tests/test_attachment_layout.js
       - name: Test Android Back and exact original Comrade icons
@@ -81,6 +83,8 @@ jobs:
         run: node tests/test_multiple_attachments.js
       - name: Verify failed multi-file saves clean staged blobs
         run: node tests/test_attachment_rollback.js
+      - name: Verify duplicated attachment rollback on failed copies and database saves
+        run: node tests/test_duplicate_media_rollback.js
       - name: Verify adaptive photo compression
         run: node tests/test_photo_compression.js
       - name: Verify photo gallery and pinch gestures

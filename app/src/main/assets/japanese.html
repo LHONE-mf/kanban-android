@@ -4,7 +4,7 @@
 :root{color-scheme:light;--bg:#fafafa;--panel:#fff;--line:#e5e5e5;--txt:#171717;--muted:#666;--accent:#2563eb;--pink:#b91c1c;--button:#f5f5f5;--quiz-ok:#dcfce7;--quiz-bad:#fee2e2}
 :root[data-theme="dark"]{color-scheme:dark;--bg:#0a0a0a;--panel:#1a1a1a;--line:#303030;--txt:#f5f5f5;--muted:#a3a3a3;--accent:#60a5fa;--pink:#fca5a5;--button:#242424;--quiz-ok:#16382a;--quiz-bad:#4c2229}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:16px system-ui,-apple-system,sans-serif}main{max-width:760px;margin:auto;padding:18px 16px 60px}h1{font-size:27px;margin:8px 0}h2{font-size:20px}p{line-height:1.55;color:var(--muted)}.muted{color:var(--muted)}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px;margin:14px 0}.tabs{display:flex;gap:8px;overflow:auto;padding:8px 0}.tabs button{white-space:nowrap}.button,button{font:inherit;border-radius:11px;border:1px solid var(--line);padding:11px 14px;background:var(--button);color:var(--txt);cursor:pointer}button:focus-visible{outline:3px solid var(--accent)}button.primary{background:var(--accent);color:#fff;font-weight:700;border:0}button:disabled{opacity:.45}button.active{border-color:var(--accent);color:var(--accent)}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:10px}.kana{padding:12px 4px;text-align:center;min-height:103px}.kana b{font-size:38px;display:block;font-weight:500}.kana small{color:var(--muted)}.kana.done{border-color:var(--accent)}.big{font-size:100px;text-align:center;line-height:1.3}.roman{font-size:24px;text-align:center;color:var(--accent)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1}.progress{height:11px;border-radius:20px;background:var(--line);overflow:hidden}.progress span{display:block;height:100%;background:var(--accent)}.choices{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.choices button{min-height:62px;font-size:22px}.choices button.correct{border-color:var(--accent);background:var(--quiz-ok)}.choices button.wrong{border-color:var(--pink);background:var(--quiz-bad)}.hint{font-size:14px}.notice{color:var(--accent)}[hidden]{display:none!important}footer{font-size:12px;color:var(--muted);margin-top:25px}
-#writeCanvas{width:100%;height:290px;display:block;background:var(--panel);border-radius:14px;touch-action:none;border:2px solid var(--line)}.sentence{font-size:26px;color:var(--txt);margin:8px 0}.subtle{font-size:14px;color:var(--muted)}.study-toggle{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.tabs{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tabs button{flex-shrink:0}.card{box-shadow:0 1px 2px rgba(0,0,0,.03)}main{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px))}</style><link rel="stylesheet" href="design-system.css"></head><body class="japanese-learning"><main>
+#writeCanvas{width:100%;max-width:600px;height:auto;aspect-ratio:600/440;display:block;margin:10px auto;background:var(--panel);border-radius:14px;touch-action:none;border:2px solid var(--line)}.sentence{font-size:26px;color:var(--txt);margin:8px 0}.subtle{font-size:14px;color:var(--muted)}.study-toggle{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.tabs{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tabs button{flex-shrink:0}.card{box-shadow:0 1px 2px rgba(0,0,0,.03)}main{padding-bottom:calc(60px + env(safe-area-inset-bottom,0px))}</style><link rel="stylesheet" href="design-system.css"></head><body class="japanese-learning"><main>
 <header><div class="muted">KANBAN · LEARN</div><h1>日本語 · Японский с нуля</h1><p>Начни с чтения. Всего 5–10 минут практики за раз. Все упражнения работают без интернета.</p></header>
 <div class="card"><strong id="progressLabel">Изучено 0 / 46</strong><div class="progress" style="margin-top:12px"><span id="progressBar" style="width:0%"></span></div><p class="hint">Прогресс сохраняется на этом устройстве. «Изучено» означает, что ты отметил символ после знакомства с ним, а не что он уже запомнен навсегда.</p></div>
 <div class="tabs" role="tablist" aria-label="Разделы">
@@ -25,7 +25,7 @@
 <div class="card"><h2>Первые слова</h2><p>Попробуй прочитать слово до открытия подсказки. Пока здесь только слова, которые можно написать базовой хираганой.</p><div id="wordList"></div></div>
 </section>
 <section id="sentences" class="page" hidden><div class="card"><h2>Первые предложения</h2><p>Слушай, читай и раскрывай перевод. Здесь встречаются новые знаки, включая озвончённые слоги и долгие гласные: их разберём постепенно.</p><div id="sentenceList"></div><p class="hint">Частица は в этих предложениях произносится как «wa», а です часто звучит с ослабленным «u».</p></div></section>
-<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p>Обведи бледный символ пальцем или стилусом. Это упражнение для знакомства с формой; порядок черт пока не проверяется.</p><div class="row"><button id="writingPrev">←</button><strong id="writingLabel" style="text-align:center">あ · a</strong><button id="writingNext">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для обведения японского символа"></canvas><div class="row"><button id="writingClear">Очистить</button><button id="writingToggle">Скрыть подсказку</button></div></div></section>
+<section id="writing" class="page" hidden><div class="card"><h2>Практика письма</h2><p>Рисуй символ пальцем или стилусом. Можно скрыть образец и попробовать по памяти. Письмо не меняет отметки «изучено»; порядок черт пока не проверяется.</p><div class="study-toggle" role="group" aria-label="Азбука для письма"><button id="writingHiraganaMode" type="button" class="active" aria-pressed="true">ひらがな · Хирагана</button><button id="writingKatakanaMode" type="button" aria-pressed="false">カタカナ · Катакана</button></div><div class="row"><button id="writingPrev" type="button" aria-label="Предыдущий символ">←</button><strong id="writingLabel" style="text-align:center" aria-live="polite">あ · a</strong><button id="writingNext" type="button" aria-label="Следующий символ">→</button></div><canvas id="writeCanvas" width="600" height="440" aria-label="Поле для написания японского символа пальцем или стилусом"></canvas><div class="row"><button id="writingUndo" type="button" disabled>Отменить черту</button><button id="writingClear" type="button">Очистить</button><button id="writingToggle" type="button">Скрыть образец</button></div></div></section>
 <section id="review" class="page" hidden>
 <div class="card"><h2>Повторение с интервалами</h2><p>Сначала попробуй вспомнить чтение самостоятельно. Затем открой ответ и оцени, насколько легко вспомнил.</p><p id="dueCount"></p><div id="reviewBody"><div id="reviewKana" class="big"></div><div id="reviewAnswer" class="roman" hidden></div><p style="text-align:center"><button id="reveal">Показать ответ</button></p><div class="row" id="gradeButtons" hidden><button id="again">Не вспомнил</button><button id="good" class="primary">Вспомнил</button></div></div></div>
 </section>
@@ -143,10 +143,17 @@ $('sentenceList').replaceChildren(...sentences.map(item=>{
  reveal.onclick=()=>{detail.hidden=!detail.hidden;reveal.textContent=detail.hidden?'Показать смысл':'Скрыть смысл'};
  d.append(j,audio,reveal,detail);return d;
 }));
-const canvas=$('writeCanvas'),ctx=canvas.getContext('2d');let drawing=false;
+const canvas=$('writeCanvas'),ctx=canvas.getContext('2d');let activeWritingPointer=null;
 function drawWriting(){
+ for(const [name,id] of [['hiragana','writingHiraganaMode'],['katakana','writingKatakanaMode']]){
+  const active=script===name;
+  $(id).classList.toggle('active',active);
+  $(id).setAttribute('aria-pressed',String(active));
+ }
+ $('writingUndo').disabled=writingStrokes.length===0;
  if(!ctx)return;
- const item=allKana().flatMap(g=>g.items)[writeIndex%46];
+ const items=allKana().flatMap(g=>g.items);
+ const item=items[writeIndex%items.length];
  $('writingLabel').textContent=item.kana+' · '+item.roman;
  ctx.clearRect(0,0,canvas.width,canvas.height);
  ctx.fillStyle='#fafafa';ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -157,14 +164,35 @@ function drawWriting(){
  for(const stroke of writingStrokes){if(!stroke.length)continue;ctx.beginPath();ctx.moveTo(stroke[0][0],stroke[0][1]);for(const p of stroke.slice(1))ctx.lineTo(p[0],p[1]);if(stroke.length===1)ctx.lineTo(stroke[0][0]+.1,stroke[0][1]+.1);ctx.stroke()}
 }
 function point(e){const r=canvas.getBoundingClientRect();return [(e.clientX-r.left)*canvas.width/r.width,(e.clientY-r.top)*canvas.height/r.height]}
-canvas.addEventListener('pointerdown',e=>{e.preventDefault();canvas.setPointerCapture(e.pointerId);drawing=true;writingStrokes.push([point(e)]);drawWriting()});
-canvas.addEventListener('pointermove',e=>{if(!drawing)return;e.preventDefault();writingStrokes[writingStrokes.length-1].push(point(e));drawWriting()});
-function stopDraw(){drawing=false}
-canvas.addEventListener('pointerup',stopDraw);canvas.addEventListener('pointercancel',stopDraw);
-$('writingClear').onclick=()=>{writingStrokes=[];drawWriting()};
-$('writingToggle').onclick=()=>{showGuide=!showGuide;$('writingToggle').textContent=showGuide?'Скрыть подсказку':'Показать подсказку';drawWriting()};
-$('writingPrev').onclick=()=>{writeIndex=(writeIndex+45)%46;writingStrokes=[];drawWriting()};
-$('writingNext').onclick=()=>{writeIndex=(writeIndex+1)%46;writingStrokes=[];drawWriting()};
+canvas.addEventListener('pointerdown',e=>{
+ if(activeWritingPointer!==null||(e.pointerType==='mouse'&&e.button!==0))return;
+ e.preventDefault();activeWritingPointer=e.pointerId;
+ canvas.setPointerCapture(e.pointerId);writingStrokes.push([point(e)]);drawWriting();
+});
+canvas.addEventListener('pointermove',e=>{
+ if(e.pointerId!==activeWritingPointer)return;
+ e.preventDefault();writingStrokes[writingStrokes.length-1].push(point(e));drawWriting();
+});
+function stopDraw(e){
+ if(e.pointerId!==activeWritingPointer)return;
+ if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
+ activeWritingPointer=null;
+}
+canvas.addEventListener('pointerup',stopDraw);
+canvas.addEventListener('pointercancel',stopDraw);
+canvas.addEventListener('lostpointercapture',e=>{if(e.pointerId===activeWritingPointer)activeWritingPointer=null});
+$('writingHiraganaMode').onclick=()=>setScript('hiragana');
+$('writingKatakanaMode').onclick=()=>setScript('katakana');
+$('writingUndo').onclick=()=>{if(activeWritingPointer!==null)return;writingStrokes.pop();drawWriting()};
+$('writingClear').onclick=()=>{if(activeWritingPointer!==null)return;writingStrokes=[];drawWriting()};
+$('writingToggle').onclick=()=>{showGuide=!showGuide;$('writingToggle').textContent=showGuide?'Скрыть образец':'Показать образец';drawWriting()};
+function changeWriting(delta){
+ if(activeWritingPointer!==null)return;
+ const count=allKana().reduce((n,g)=>n+g.items.length,0);
+ writeIndex=(writeIndex+delta+count)%count;writingStrokes=[];drawWriting();
+}
+$('writingPrev').onclick=()=>changeWriting(-1);
+$('writingNext').onclick=()=>changeWriting(1);
 
 updateProgress();renderGroup();
  try{const savedTab=localStorage.getItem('kanban-japanese-active-tab-v1');if(savedTab&&document.getElementById(savedTab)?.classList.contains('page'))tab(savedTab)}catch(e){}

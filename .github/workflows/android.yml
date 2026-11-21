@@ -51,6 +51,8 @@ jobs:
         run: node tests/test_task_editor_atomic.js
       - name: Protect unsaved task edits on board switching
         run: node tests/test_board_switch_guard.js
+      - name: Keep board deletion atomic and shared attachments safe
+        run: node tests/test_board_delete_atomic.js
       - name: Check mobile attachment controls
         run: node tests/test_attachment_layout.js
       - name: Test Android Back and exact original Comrade icons

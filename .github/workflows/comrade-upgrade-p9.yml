@@ -79,8 +79,7 @@ jobs:
           script: |
             python3 -m venv "$RUNNER_TEMP/p9-venv"
             "$RUNNER_TEMP/p9-venv/bin/pip" -q install websocket-client
-            "$RUNNER_TEMP/p9-venv/bin/python" tools/ci_android_upgrade_smoke.py \
-              "$RUNNER_TEMP/comrade-before.apk" "$RUNNER_TEMP/comrade-after.apk"
+            "$RUNNER_TEMP/p9-venv/bin/python" tools/ci_android_upgrade_smoke.py "$RUNNER_TEMP/comrade-before.apk" "$RUNNER_TEMP/comrade-after.apk"
 
       - name: Remove signing key
         if: always()

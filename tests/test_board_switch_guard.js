@@ -100,7 +100,7 @@ function fixture({dirty=false,saving=false,confirm=true,failWrite=false,deferred
   const s=tasks.indexOf('async function saveTaskFromModal()');
   const e=tasks.indexOf('async function _saveTask()',s);
   assert.ok(s>=0&&e>s);
-  const c={savingTask:false,switchingBoard:true,calls:0,warnings:[],
+  const c={savingTask:false,switchingBoard:true,importInProgress:false,calls:0,warnings:[],
     _saveTask:async()=>c.calls++,showToast:msg=>c.warnings.push(msg)};
   vm.createContext(c);
   vm.runInContext(tasks.slice(s,e)+'\nthis.save=saveTaskFromModal;',c);

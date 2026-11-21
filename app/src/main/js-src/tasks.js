@@ -40,6 +40,7 @@ function captureModalSnapshot() {
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
+  if (importInProgress) { showToast('Дождитесь завершения импорта'); return; }
   lastFocusBeforeModal = document.activeElement;
   editingTaskId = taskId;
   editingPriority = 'none';
@@ -351,6 +352,7 @@ async function openFile(f, title) {
 let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
+  if (importInProgress) { showToast('Дождитесь завершения импорта'); return; }
   if (switchingBoard) { showToast('Дождитесь переключения доски'); return; }
   savingTask = true;
   try { await _saveTask(); } finally { savingTask = false; }

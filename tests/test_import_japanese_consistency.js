@@ -45,6 +45,8 @@ function fixture({webFailure=false,nativeFailure=false,readFailure=false,dbFailu
   };
   const ctx={
     localStorage,state,window:{},Map,Set,JSON,Object,Date,
+    savingTask:false,switchingBoard:false,
+    $:selector=>selector==='#taskModal'?{classList:{contains:()=>false}}:null,
     console:{warn(){},error(){}},clearTimeout(){},alert:msg=>alerts.push(msg),
     confirmDialog:async()=>!cancel,
     buildImportPlan:async()=>plan,

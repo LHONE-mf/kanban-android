@@ -1,0 +1,86 @@
+name: Comrade one-time Android upgrade smoke
+
+# Intentionally not in the normal PR CI. Runs only on this P9 test branch
+# (and on deliberate manual dispatch); no test matrix or scheduled repetition.
+on:
+  push:
+    branches:
+      - test/comrade-emulator-upgrade-p9
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  in-place-upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout P9 candidate
+        uses: actions/checkout@v4
+
+      - name: Checkout baseline main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Install Android SDK 37 (for both APK builds)
+        run: |
+          echo "y" | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Restore persistent debug signing key
+        run: |
+          set -euo pipefail
+          base64 --decode .github/keys/kanban-debug.keystore.b64 > .github/keys/kanban-debug.keystore
+          chmod 600 .github/keys/kanban-debug.keystore
+          echo "KANBAN_DEBUG_KEYSTORE_PATH=$GITHUB_WORKSPACE/.github/keys/kanban-debug.keystore" >> "$GITHUB_ENV"
+
+      - name: Build baseline and candidate with increasing version codes
+        run: |
+          set -euo pipefail
+          KANBAN_VERSION_CODE=91001 gradle -p baseline :app:assembleDebug --no-daemon
+          KANBAN_VERSION_CODE=91002 gradle :app:assembleDebug --no-daemon
+          cp baseline/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/comrade-before.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/comrade-after.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          OLD_CERT=$("$APKSIGNER" verify --print-certs "$RUNNER_TEMP/comrade-before.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          NEW_CERT=$("$APKSIGNER" verify --print-certs "$RUNNER_TEMP/comrade-after.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test -n "$OLD_CERT" && test "$OLD_CERT" = "$NEW_CERT"
+          for APK in "$RUNNER_TEMP/comrade-before.apk" "$RUNNER_TEMP/comrade-after.apk"; do
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -q "name='com.kanban.offline'"
+          done
+          python3 -m py_compile tools/ci_android_upgrade_smoke.py
+
+      - name: Permit accelerated Android emulator
+        run: |
+          sudo chmod 666 /dev/kvm || true
+
+      - name: In-place APK update and actual local-data persistence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          ram-size: 2048M
+          heap-size: 512M
+          disable-animations: true
+          script: |
+            python3 -m venv "$RUNNER_TEMP/p9-venv"
+            "$RUNNER_TEMP/p9-venv/bin/pip" -q install websocket-client
+            "$RUNNER_TEMP/p9-venv/bin/python" tools/ci_android_upgrade_smoke.py "$RUNNER_TEMP/comrade-before.apk" "$RUNNER_TEMP/comrade-after.apk"
+
+      - name: Remove signing key
+        if: always()
+        run: rm -f .github/keys/kanban-debug.keystore

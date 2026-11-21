@@ -72,6 +72,19 @@ assert.ok(listCss.some(rule => /overflow-y:\s*auto\s*;/.test(rule)), 'columns sc
 assert.doesNotMatch(metaCss, /padding-right:/, 'badges use card width below the title');
 const titleCss = css.match(/^\.task-title\s*\{([^}]*)\}/m)?.[1] || '';
 assert.match(titleCss,/word-break:\s*break-word/,'long titles can wrap onto new lines');
+const actionsCss = css.match(/^\.task-quick-actions\s*\{([^}]*)\}/m)?.[1] || '';
+const buttonsCss = css.match(/^\.task-quick-btn\s*\{([^}]*)\}/m)?.[1] || '';
+assert.match(actionsCss, /opacity:\s*1\s*;/, 'quick actions stay visible without hover');
+assert.doesNotMatch(css, /@media\s*\(hover:\s*none\)[^}]*opacity:\s*0\./,
+  'touchscreen buttons must not be faded');
+assert.match(buttonsCss, /width:\s*30px;\s*height:\s*30px;/, 'tap targets are enlarged');
+assert.match(titleCss,/padding-right:\s*104px;/,'title stays clear of visible actions');
+assert.match(context.createTaskCard({
+  id:'icons0001',title:'Icons',desc:'',tags:[],files:[],checklist:[],
+  priority:'high',deadline:''
+},{color:'#abc',isDone:false}).innerHTML,
+ /data-move-next="1"[\s\S]*data-move-done="1"[\s\S]*data-delete="1"/,
+ 'quick actions remain on the card');
 assert.doesNotMatch(cardCss,/(?:^|;)\s*(?:height|max-height):/,'card height is content-based');
 
 console.log('Readable task cards: title-first, 4 priorities, unset case, scrolling layout passed.');

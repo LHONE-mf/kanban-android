@@ -130,22 +130,49 @@ function updateBoardSelect() {
   ).join('');
 }
 
-async function persistBoards() {
+async function persistBoards(activeBoardId = state.activeBoardId) {
   await dbPutSettingsBulk([
     ['boards', state.boards],
-    ['activeBoardId', state.activeBoardId]
+    ['activeBoardId', activeBoardId]
   ]);
 }
 
+let switchingBoard = false;
 async function switchBoard(id) {
-  if (!getBoard(id) || id === state.activeBoardId) return;
-  if ($('#taskModal').classList.contains('open')) closeModal('taskModal');
-  state.activeBoardId = id;
-  applyActiveBoard();
-  try { await persistBoards(); } catch (e) { showToast('Не сохранилось: ' + e.message); }
-  renderBoard();
-  saveUIState();
-  notifyOtherTabs();
+  const select = $('#boardSelect');
+  if (switchingBoard || !getBoard(id) || id === state.activeBoardId) {
+    if (select) select.value = state.activeBoardId;
+    return false;
+  }
+  switchingBoard = true;
+  try {
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    const modal = $('#taskModal');
+    if (modal.classList.contains('open') && isModalDirty()) {
+      const discard = await confirmDialog('Сменить доску без сохранения?', 'Несохранённые изменения задачи будут потеряны.');
+      if (!discard) return false;
+    }
+    // A save may have started while the confirmation dialog was open.
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    try { await persistBoards(id); }
+    catch (e) { showToast('Не сохранилось: ' + e.message); return false; }
+    if (modal.classList.contains('open')) closeModal('taskModal');
+    state.activeBoardId = id;
+    applyActiveBoard();
+    renderBoard();
+    saveUIState();
+    notifyOtherTabs();
+    return true;
+  } finally {
+    switchingBoard = false;
+    if (select) select.value = state.activeBoardId;
+  }
 }
 
 async function addBoard(name) {
@@ -354,6 +381,14 @@ async function dbClearActiveBoardTasks(boardId) {
 async function dbReplaceAll(plan) {
   return new Promise((res, rej) => {
     const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readwrite');
+    let failure = null;
+    // A request error fires before the transaction has finished rolling back.
+    // Preserve its cause, but only reject after onabort confirms rollback.
+    tx.oncomplete = () => res();
+    tx.onerror = event => {
+      if (!failure) failure = event.target?.error || tx.error;
+    };
+    tx.onabort = () => rej(wrapTxError(failure || tx.error));
     try {
       const ts = tx.objectStore(STORE_TASKS);
       const ss = tx.objectStore(STORE_SETTINGS);
@@ -367,13 +402,9 @@ async function dbReplaceAll(plan) {
         ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
       }
     } catch (e) {
-      try { tx.abort(); } catch (_) {}
-      rej(wrapTxError(e));
-      return;
+      failure = e;
+      try { tx.abort(); } catch (_) { rej(wrapTxError(e)); }
     }
-    tx.oncomplete = () => res();
-    tx.onerror = () => rej(wrapTxError(tx.error));
-    tx.onabort = () => rej(new Error('Импорт отменён'));
   });
 }
 async function mediaPut(id, blob, thumb, type) {

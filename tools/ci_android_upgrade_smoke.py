@@ -135,7 +135,7 @@ def eval_page(expression):
             url = page["webSocketDebuggerUrl"]
             url = re.sub(r"^ws://[^/]+/", f"ws://127.0.0.1:{PORT}/", url)
             connection = websocket.create_connection(
-                url, timeout=25, origin=f"http://127.0.0.1:{PORT}"
+                url, timeout=25, suppress_origin=True
             )
             try:
                 connection.send(json.dumps({
@@ -160,7 +160,8 @@ def eval_page(expression):
                 raise RuntimeError("No Runtime.evaluate response")
             finally:
                 connection.close()
-        except (OSError, ValueError, RuntimeError, KeyError, IndexError) as exc:
+        except (OSError, ValueError, RuntimeError, KeyError, IndexError,
+                websocket.WebSocketException) as exc:
             last = str(exc)
             time.sleep(2)
     raise RuntimeError(f"Cannot evaluate Comrade WebView: {last}")

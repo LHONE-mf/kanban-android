@@ -48,6 +48,7 @@ function fixture({saveBusy=false,switchBusy=false,editorOpen=false,confirmDeferr
   return {
     ctx,state,file,toasts,alerts,
     resolveConfirm:yes=>resolveConfirm(yes),
+    get confirmReady(){return typeof resolveConfirm==='function';},
     setEditorOpen:value=>open=value,
     get open(){return open;},get reads(){return reads;},
     get writes(){return writes;},get saved(){return saved;}
@@ -76,9 +77,9 @@ function fixture({saveBusy=false,switchBusy=false,editorOpen=false,confirmDeferr
 
   f=fixture({confirmDeferred:true});
   const importing=f.ctx.importFile(f.file);
-  for(let n=0;n<8&&!f.ctx.lock();n++)await Promise.resolve();
+  for(let n=0;n<8&&!f.confirmReady;n++)await Promise.resolve();
+  assert.equal(f.confirmReady,true,'confirmation must be pending');
   assert.equal(f.ctx.lock(),true);
-  f.ctx.openTaskModalPlaceholder = true;
   f.ctx.openTask();
   assert.equal(f.open,false,'editor blocked before any DOM manipulation');
   await f.ctx.saveTask();
@@ -92,7 +93,8 @@ function fixture({saveBusy=false,switchBusy=false,editorOpen=false,confirmDeferr
 
   f=fixture({confirmDeferred:true});
   const pending=f.ctx.importFile(f.file);
-  for(let n=0;n<8&&!f.ctx.lock();n++)await Promise.resolve();
+  for(let n=0;n<8&&!f.confirmReady;n++)await Promise.resolve();
+  assert.equal(f.confirmReady,true,'confirmation must be pending');
   f.setEditorOpen(true); // editor changed by another UI event while confirming
   f.resolveConfirm(true);
   await pending;

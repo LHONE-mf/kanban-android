@@ -560,7 +560,20 @@ button { font-family: inherit; }
   transition: background 0.15s, border-color 0.15s, color 0.15s; width: 100%;
 }
 .add-btn-dashed:hover { background: var(--surface-2); color: var(--text); border-color: var(--text-subtle); }
-.media-preview { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+/* Native file inputs can exceed narrow Android modal widths due to filename text. */
+#taskFile {
+  display: block; width: 100%; max-width: 100%; min-width: 0;
+  box-sizing: border-box; font-size: 14px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis;
+}
+#taskFile::file-selector-button {
+  max-width: 100%; min-height: 44px; padding: 8px 12px;
+  margin-right: 8px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: var(--surface-2);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+#taskFile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.media-preview { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .media-file-row {
   display: flex; flex-direction: column; align-items: stretch; gap: 6px;
   padding: 8px; border: 1px solid var(--border); border-radius: var(--radius);

@@ -11,6 +11,13 @@ function block(selector) {
 assert.match(block('.modal-body'),/overflow-y:\s*auto/);
 assert.match(block('.modal-body'),/min-height:\s*0/);
 assert.match(block('.media-file-actions'),/flex-wrap:\s*wrap/);
+assert.match(block('#taskFile'),/width:\s*100%/);
+assert.match(block('#taskFile'),/max-width:\s*100%/);
+assert.match(block('#taskFile'),/min-width:\s*0/);
+assert.match(block('#taskFile'),/overflow:\s*hidden/);
+assert.match(block('#taskFile::file-selector-button'),/min-height:\s*44px/);
+assert.match(block('.media-preview'),/min-width:\s*0/);
+
 assert.match(block('.media-file-name'),/overflow-wrap:\s*anywhere/);
 assert.match(block('.media-remove'),/min-height:\s*44px/);
 assert.match(block('.media-remove'),/min-width:\s*44px/);

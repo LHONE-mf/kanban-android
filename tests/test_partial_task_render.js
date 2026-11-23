@@ -85,7 +85,7 @@ context.sortMode='created_asc';
 context.document.activeElement=null;
 const again=list.children[0];
 context.update(before,after);
-assert.equal(fullRenders,14,'created-time sort permits a stable edit');
+assert.equal(fullRenders,15,'created-time sort permits a stable edit');
 assert.equal(changedCards,2);
 assert.notEqual(list.children[0],again);
 

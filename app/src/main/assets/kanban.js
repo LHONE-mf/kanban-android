@@ -908,10 +908,11 @@ async function getThumb(mediaId) {
 function countVisibleDescendants(tasks, visibleRoots) {
   const childrenByParent = new Map();
   for (const task of tasks) {
-    if (!task.parentId) continue;
-    const siblings = childrenByParent.get(task.parentId);
+    const parentId = task.parentId;
+    if (!parentId) continue;
+    const siblings = childrenByParent.get(parentId);
     if (siblings) siblings.push(task.id);
-    else childrenByParent.set(task.parentId, [task.id]);
+    else childrenByParent.set(parentId, [task.id]);
   }
 
   const counts = new Map();

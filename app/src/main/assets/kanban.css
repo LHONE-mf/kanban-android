@@ -211,7 +211,7 @@ button { font-family: inherit; }
 .task-card:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 .task-title {
   font-size: 13.5px; font-weight: 500; color: var(--text);
-  word-break: break-word; line-height: 1.4; padding-right: 72px;
+  word-break: break-word; line-height: 1.4; padding-right: 104px;
 }
 .task-description {
   margin-top: 6px; font-size: 12px; color: var(--text-muted);
@@ -268,24 +268,25 @@ button { font-family: inherit; }
   margin-left: auto; font-size: 10px; color: var(--text-subtle);
   opacity: 0.7; font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
+/* Actions must remain visible on touchscreens, where hover does not exist. */
 .task-quick-actions {
   position: absolute; top: 6px; right: 6px;
-  display: flex; gap: 2px; opacity: 0;
-  transition: opacity 0.15s; z-index: 1;
+  display: flex; gap: 2px; opacity: 1; z-index: 1;
 }
-.task-card:hover .task-quick-actions,
-.task-card:focus-within .task-quick-actions { opacity: 1; }
 .task-quick-btn {
-  width: 22px; height: 22px; padding: 0;
-  border-radius: var(--radius-sm); border: none;
-  background: var(--surface-2); color: var(--text-muted);
-  cursor: pointer; font-size: 12px; line-height: 1;
+  width: 30px; height: 30px; padding: 0;
+  border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--text);
+  cursor: pointer; font-size: 15px; line-height: 1;
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s, color 0.15s;
 }
-.task-quick-btn:hover { background: var(--surface-3); color: var(--text); }
-.task-quick-btn.danger:hover { background: var(--danger-bg); color: var(--danger); }
-@media (hover: none) { .task-quick-actions { opacity: 0.65; } }
+.task-quick-btn:hover, .task-quick-btn:focus-visible {
+  background: var(--surface-3); color: var(--text);
+}
+.task-quick-btn.danger:hover, .task-quick-btn.danger:focus-visible {
+  background: var(--danger-bg); color: var(--danger);
+}
 
 .dashboard {
   flex: 1; overflow-y: auto;
@@ -559,7 +560,20 @@ button { font-family: inherit; }
   transition: background 0.15s, border-color 0.15s, color 0.15s; width: 100%;
 }
 .add-btn-dashed:hover { background: var(--surface-2); color: var(--text); border-color: var(--text-subtle); }
-.media-preview { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+/* Native file inputs can exceed narrow Android modal widths due to filename text. */
+#taskFile {
+  display: block; width: 100%; max-width: 100%; min-width: 0;
+  box-sizing: border-box; font-size: 14px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis;
+}
+#taskFile::file-selector-button {
+  max-width: 100%; min-height: 44px; padding: 8px 12px;
+  margin-right: 8px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); background: var(--surface-2);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+#taskFile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.media-preview { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .media-file-row {
   display: flex; flex-direction: column; align-items: stretch; gap: 6px;
   padding: 8px; border: 1px solid var(--border); border-radius: var(--radius);
@@ -583,6 +597,25 @@ button { font-family: inherit; }
 #taskModal .modal-body { scroll-padding-bottom: 32px; padding-bottom: 32px; }
 #taskModal .modal-footer { flex-wrap: wrap; justify-content: flex-end; }
 #taskModal .modal-footer .btn { min-height: 44px; }
+/* Keep attachment actions fully scrollable above the editor footer on small phones. */
+@media (max-width: 600px) {
+  #taskModal .modal-body {
+    padding-bottom: max(88px, env(safe-area-inset-bottom, 0px));
+    scroll-padding-bottom: 88px;
+  }
+  #taskModal .media-file-row { scroll-margin-bottom: 24px; }
+  #taskModal .modal-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  #taskModal .modal-footer .spacer { display: none; }
+  #taskModal .modal-footer .btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+  }
+}
 .columns-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .column-row {
   display: flex; align-items: center; gap: 6px;

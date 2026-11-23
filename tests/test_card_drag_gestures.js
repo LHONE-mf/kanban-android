@@ -7,9 +7,10 @@ const begin = source.indexOf('function setupDragAndDrop() {');
 const end = source.indexOf('// ============================================================\n// EVENT BINDINGS', begin);
 assert.ok(begin >= 0 && end > begin);
 
-function scenario() {
+function scenario({withDescendants = false, failWrite = false} = {}) {
   const timers = [];
   const writes = [];
+  const toasts = [];
   let renders = 0;
   let prevented = 0;
   const makeClassList = (...initial) => {
@@ -59,11 +60,16 @@ function scenario() {
     addEventListener(){},removeEventListener(){}
   };
   const window={addEventListener(){},removeEventListener(){}};
-  const t={id:'task1',columnId:'col_a',order:0};
+  const t={id:'task1',parentId:'',columnId:'col_a',order:0};
+  const descendants = withDescendants ? [
+    {id:'child',parentId:'task1',columnId:'col_a',order:0},
+    {id:'grandchild',parentId:'child',columnId:'col_a',order:0},
+    {id:'unrelated',parentId:'',columnId:'col_a',order:1}
+  ] : [];
   const sandbox={
     drag:null,autoScrollInterval:null,autoScrollDir:{x:0,y:0},
     lastPointer:{x:0,y:0},lastDragEndTime:0,
-    window,document,navigator:{},state:{tasks:[t]},
+    window,document,navigator:{},state:{tasks:[t,...descendants]},
     isDragAllowed:()=>true,
     $:sel=>{assert.equal(sel,'#board');return board;},
     $$:(sel,root)=>sel==='.task-card'?root.children:
@@ -73,10 +79,23 @@ function scenario() {
     setInterval:()=>{throw Error('unexpected auto-scroll');},
     clearInterval(){},
     applyColumnChange:(task,colId)=>({...task,columnId:colId}),
-    dbPutTasks:async candidates=>{writes.push(candidates.map(x=>({...x})));},
-    syncKids:async()=>{},notifyOtherTabs(){},
+    dbPutTasks:async candidates=>{
+      writes.push(candidates.map(x=>({...x})));
+      if(failWrite) throw Error('disk full');
+    },
+    subtree:id=>{
+      const children=[];
+      const visit=parent=>{
+        for(const task of sandbox.state.tasks) {
+          if(task.parentId===parent){children.push(task);visit(task.id);}
+        }
+      };
+      visit(id);
+      return children;
+    },
+    notifyOtherTabs(){},
     renderBoard:()=>{renders++;},
-    showToast:msg=>{throw Error(msg);}
+    showToast:msg=>{toasts.push(msg);}
   };
   vm.runInNewContext(source.slice(begin,end),sandbox);
   const down = (pointerId=1) => sandbox.onPointerDown({
@@ -89,7 +108,7 @@ function scenario() {
   const activate = ()=>{const timer=timers.at(-1);assert.ok(timer&&!timer.cancelled);timer.fn();};
   const up = async(x,y,pointerId=1)=>sandbox.onPointerUp({pointerId,clientX:x,clientY:y});
   const cancel = pointerId=>sandbox.onPointerCancel({pointerId});
-  return {sandbox,board,card,first,second,writes,down,move,activate,up,cancel,
+  return {sandbox,board,card,first,second,writes,toasts,down,move,activate,up,cancel,
     get renders(){return renders;},get prevented(){return prevented;},timers};
 }
 
@@ -128,6 +147,32 @@ function scenario() {
   assert.equal(s.writes[0][0].columnId,'col_b');
   assert.equal(s.sandbox.state.tasks[0].columnId,'col_b');
   assert.equal(s.renders,1);
+
+  s=scenario({withDescendants:true});
+  s.down();s.activate();s.move(370,150);
+  await s.up(370,150);
+  assert.equal(s.writes.length,1,'parent and descendants need one transaction');
+  assert.deepEqual(Array.from(s.writes[0],t=>t.id).sort(),['child','grandchild','task1'],
+    'the single transaction contains the parent and both descendants');
+  assert.ok(s.sandbox.state.tasks.filter(t=>t.id!=='unrelated')
+    .every(t=>t.columnId==='col_b'),'descendants follow the parent');
+  assert.equal(s.sandbox.state.tasks.find(t=>t.id==='unrelated').columnId,'col_a');
+
+  s=scenario({withDescendants:true,failWrite:true});
+  s.down();s.activate();s.move(370,150);
+  await s.up(370,150);
+  assert.equal(s.writes.length,1,'failed move still uses only one transaction');
+  assert.ok(s.sandbox.state.tasks.every(t=>t.columnId==='col_a'),
+    'failed transaction leaves parent and children unchanged in memory');
+  assert.ok(s.toasts.some(message=>message.includes('disk full')),
+    'failed transaction reports an error');
+  assert.equal(s.renders,1,'failed drop restores the board from unchanged state');
+
+  s=scenario({withDescendants:true});
+  s.down();s.activate();s.move(370,150);s.cancel(1);
+  assert.equal(s.writes.length,0,'cancelled parent drag must never write');
+  assert.ok(s.sandbox.state.tasks.every(t=>t.columnId==='col_a'),
+    'cancelled drag keeps descendants unchanged');
 
   s=scenario();
   s.down();await s.up(110,150);

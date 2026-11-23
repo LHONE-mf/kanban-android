@@ -130,22 +130,49 @@ function updateBoardSelect() {
   ).join('');
 }
 
-async function persistBoards() {
+async function persistBoards(activeBoardId = state.activeBoardId) {
   await dbPutSettingsBulk([
     ['boards', state.boards],
-    ['activeBoardId', state.activeBoardId]
+    ['activeBoardId', activeBoardId]
   ]);
 }
 
+let switchingBoard = false;
 async function switchBoard(id) {
-  if (!getBoard(id) || id === state.activeBoardId) return;
-  if ($('#taskModal').classList.contains('open')) closeModal('taskModal');
-  state.activeBoardId = id;
-  applyActiveBoard();
-  try { await persistBoards(); } catch (e) { showToast('Не сохранилось: ' + e.message); }
-  renderBoard();
-  saveUIState();
-  notifyOtherTabs();
+  const select = $('#boardSelect');
+  if (switchingBoard || !getBoard(id) || id === state.activeBoardId) {
+    if (select) select.value = state.activeBoardId;
+    return false;
+  }
+  switchingBoard = true;
+  try {
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    const modal = $('#taskModal');
+    if (modal.classList.contains('open') && isModalDirty()) {
+      const discard = await confirmDialog('Сменить доску без сохранения?', 'Несохранённые изменения задачи будут потеряны.');
+      if (!discard) return false;
+    }
+    // A save may have started while the confirmation dialog was open.
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    try { await persistBoards(id); }
+    catch (e) { showToast('Не сохранилось: ' + e.message); return false; }
+    if (modal.classList.contains('open')) closeModal('taskModal');
+    state.activeBoardId = id;
+    applyActiveBoard();
+    renderBoard();
+    saveUIState();
+    notifyOtherTabs();
+    return true;
+  } finally {
+    switchingBoard = false;
+    if (select) select.value = state.activeBoardId;
+  }
 }
 
 async function addBoard(name) {
@@ -166,35 +193,46 @@ async function addBoard(name) {
   showToast(`Доска «${board.name}» создана`);
 }
 
+let deletingBoard = false;
 async function deleteBoard(id) {
-  if (state.boards.length <= 1) { showToast('Нельзя удалить единственную доску'); return; }
+  if (deletingBoard) return false;
+  if (state.boards.length <= 1) { showToast('Нельзя удалить единственную доску'); return false; }
   const board = getBoard(id);
-  if (!board) return;
-  const tasks = state._tasksByBoard[id] || [];
-  const msg = tasks.length
-    ? `Удалить «${board.name}» и ${tasks.length} задач? Это нельзя отменить.`
-    : `Удалить доску «${board.name}»?`;
-  const ok = await confirmDialog('Удалить доску', msg);
-  if (!ok) return;
-
+  if (!board) return false;
+  if (savingTask || switchingBoard || importInProgress || $('#taskModal').classList.contains('open')) {
+    showToast('Сначала завершите редактирование или импорт'); return false;
+  }
+  deletingBoard = true;
   try {
-    if (tasks.length) await dbDeleteTasks(tasks.map(t => t.id));
-    const wasActive = state.activeBoardId === id;
-    state.boards = state.boards.filter(b => b.id !== id);
+    const tasks = state._tasksByBoard[id] || [];
+    const msg = tasks.length
+      ? 'Удалить доску «' + board.name + '» вместе с ' + tasks.length + ' задачами и их вложениями? Это нельзя отменить.'
+      : 'Удалить пустую доску «' + board.name + '»? Это нельзя отменить.';
+    if (!await confirmDialog('Удалить доску', msg)) return false;
+    // A board change or task editor may have started while the dialog was open.
+    if (state.boards.length <= 1 || !getBoard(id) || state.activeBoardId !== id ||
+        savingTask || switchingBoard || importInProgress || $('#taskModal').classList.contains('open')) {
+      showToast('Состояние доски изменилось. Повторите удаление.'); return false;
+    }
+    const nextBoards = state.boards.filter(b => b.id !== id);
+    const nextActiveId = nextBoards[0].id;
+    await dbDeleteBoard(id, nextBoards, nextActiveId);
+    state.boards = nextBoards;
     delete state._tasksByBoard[id];
-    if (wasActive) state.activeBoardId = state.boards[0].id;
-    await persistBoards();
-    tasks.forEach(t => t.files.forEach(f => scheduleMediaDelete(f.id, 0)));
+    state.activeBoardId = nextActiveId;
+    if ($('#settingsModal').classList.contains('open')) closeModal('settingsModal');
+    applyActiveBoard();
+    renderBoard();
+    saveUIState();
+    notifyOtherTabs();
+    showToast('Доска удалена');
+    return true;
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message);
-    return;
+    return false;
+  } finally {
+    deletingBoard = false;
   }
-
-  applyActiveBoard();
-  renderBoard();
-  saveUIState();
-  notifyOtherTabs();
-  showToast('Доска удалена');
 }
 
 // ============================================================
@@ -323,6 +361,53 @@ async function dbDeleteTasks(ids) {
     tx.onerror = tx.onabort = () => rej(wrapTxError(tx.error));
   });
 }
+async function dbDeleteBoard(boardId, nextBoards, nextActiveBoardId) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readwrite');
+    const taskStore = tx.objectStore(STORE_TASKS);
+    const settingsStore = tx.objectStore(STORE_SETTINGS);
+    const mediaStore = tx.objectStore(STORE_MEDIA);
+    let failure = null;
+    // Only resolve or reject once IndexedDB confirms commit or rollback.
+    tx.oncomplete = () => res();
+    tx.onerror = event => { if (!failure) failure = event.target?.error || tx.error; };
+    tx.onabort = () => rej(wrapTxError(failure || tx.error || new Error('Транзакция отменена')));
+    try {
+      const req = taskStore.getAll();
+      req.onerror = () => { if (!failure) failure = req.error || tx.error; };
+      req.onsuccess = () => {
+        try {
+          const removedMedia = new Set();
+          const remainingMedia = new Set();
+          const mediaIds = task => {
+            const ids = Array.isArray(task.files) ? task.files.map(f => f && f.id) : [];
+            if (typeof task.mediaId === 'string') ids.push(task.mediaId);
+            return ids.filter(id => typeof id === 'string' && id);
+          };
+          for (const task of req.result) {
+            const isDeleted = task.boardId === boardId;
+            for (const mediaId of mediaIds(task)) {
+              (isDeleted ? removedMedia : remainingMedia).add(mediaId);
+            }
+            if (isDeleted) taskStore.delete(task.id);
+          }
+          for (const mediaId of removedMedia) {
+            if (!remainingMedia.has(mediaId)) mediaStore.delete(mediaId);
+          }
+          settingsStore.put({ key: 'boards', value: nextBoards });
+          settingsStore.put({ key: 'activeBoardId', value: nextActiveBoardId });
+        } catch (e) {
+          failure = e;
+          try { tx.abort(); } catch (_) { rej(wrapTxError(e)); }
+        }
+      };
+    } catch (e) {
+      failure = e;
+      try { tx.abort(); } catch (_) { rej(wrapTxError(e)); }
+    }
+  });
+}
+
 async function dbGetSettings() {
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_SETTINGS, 'readonly');
@@ -354,6 +439,14 @@ async function dbClearActiveBoardTasks(boardId) {
 async function dbReplaceAll(plan) {
   return new Promise((res, rej) => {
     const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readwrite');
+    let failure = null;
+    // A request error fires before the transaction has finished rolling back.
+    // Preserve its cause, but only reject after onabort confirms rollback.
+    tx.oncomplete = () => res();
+    tx.onerror = event => {
+      if (!failure) failure = event.target?.error || tx.error;
+    };
+    tx.onabort = () => rej(wrapTxError(failure || tx.error));
     try {
       const ts = tx.objectStore(STORE_TASKS);
       const ss = tx.objectStore(STORE_SETTINGS);
@@ -367,13 +460,9 @@ async function dbReplaceAll(plan) {
         ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
       }
     } catch (e) {
-      try { tx.abort(); } catch (_) {}
-      rej(wrapTxError(e));
-      return;
+      failure = e;
+      try { tx.abort(); } catch (_) { rej(wrapTxError(e)); }
     }
-    tx.oncomplete = () => res();
-    tx.onerror = () => rej(wrapTxError(tx.error));
-    tx.onabort = () => rej(new Error('Импорт отменён'));
   });
 }
 async function mediaPut(id, blob, thumb, type) {

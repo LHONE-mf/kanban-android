@@ -130,22 +130,49 @@ function updateBoardSelect() {
   ).join('');
 }
 
-async function persistBoards() {
+async function persistBoards(activeBoardId = state.activeBoardId) {
   await dbPutSettingsBulk([
     ['boards', state.boards],
-    ['activeBoardId', state.activeBoardId]
+    ['activeBoardId', activeBoardId]
   ]);
 }
 
+let switchingBoard = false;
 async function switchBoard(id) {
-  if (!getBoard(id) || id === state.activeBoardId) return;
-  if ($('#taskModal').classList.contains('open')) closeModal('taskModal');
-  state.activeBoardId = id;
-  applyActiveBoard();
-  try { await persistBoards(); } catch (e) { showToast('Не сохранилось: ' + e.message); }
-  renderBoard();
-  saveUIState();
-  notifyOtherTabs();
+  const select = $('#boardSelect');
+  if (switchingBoard || !getBoard(id) || id === state.activeBoardId) {
+    if (select) select.value = state.activeBoardId;
+    return false;
+  }
+  switchingBoard = true;
+  try {
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    const modal = $('#taskModal');
+    if (modal.classList.contains('open') && isModalDirty()) {
+      const discard = await confirmDialog('Сменить доску без сохранения?', 'Несохранённые изменения задачи будут потеряны.');
+      if (!discard) return false;
+    }
+    // A save may have started while the confirmation dialog was open.
+    if (savingTask) {
+      showToast('Дождитесь сохранения задачи');
+      return false;
+    }
+    try { await persistBoards(id); }
+    catch (e) { showToast('Не сохранилось: ' + e.message); return false; }
+    if (modal.classList.contains('open')) closeModal('taskModal');
+    state.activeBoardId = id;
+    applyActiveBoard();
+    renderBoard();
+    saveUIState();
+    notifyOtherTabs();
+    return true;
+  } finally {
+    switchingBoard = false;
+    if (select) select.value = state.activeBoardId;
+  }
 }
 
 async function addBoard(name) {
@@ -166,35 +193,46 @@ async function addBoard(name) {
   showToast(`Доска «${board.name}» создана`);
 }
 
+let deletingBoard = false;
 async function deleteBoard(id) {
-  if (state.boards.length <= 1) { showToast('Нельзя удалить единственную доску'); return; }
+  if (deletingBoard) return false;
+  if (state.boards.length <= 1) { showToast('Нельзя удалить единственную доску'); return false; }
   const board = getBoard(id);
-  if (!board) return;
-  const tasks = state._tasksByBoard[id] || [];
-  const msg = tasks.length
-    ? `Удалить «${board.name}» и ${tasks.length} задач? Это нельзя отменить.`
-    : `Удалить доску «${board.name}»?`;
-  const ok = await confirmDialog('Удалить доску', msg);
-  if (!ok) return;
-
+  if (!board) return false;
+  if (savingTask || switchingBoard || importInProgress || $('#taskModal').classList.contains('open')) {
+    showToast('Сначала завершите редактирование или импорт'); return false;
+  }
+  deletingBoard = true;
   try {
-    if (tasks.length) await dbDeleteTasks(tasks.map(t => t.id));
-    const wasActive = state.activeBoardId === id;
-    state.boards = state.boards.filter(b => b.id !== id);
+    const tasks = state._tasksByBoard[id] || [];
+    const msg = tasks.length
+      ? 'Удалить доску «' + board.name + '» вместе с ' + tasks.length + ' задачами и их вложениями? Это нельзя отменить.'
+      : 'Удалить пустую доску «' + board.name + '»? Это нельзя отменить.';
+    if (!await confirmDialog('Удалить доску', msg)) return false;
+    // A board change or task editor may have started while the dialog was open.
+    if (state.boards.length <= 1 || !getBoard(id) || state.activeBoardId !== id ||
+        savingTask || switchingBoard || importInProgress || $('#taskModal').classList.contains('open')) {
+      showToast('Состояние доски изменилось. Повторите удаление.'); return false;
+    }
+    const nextBoards = state.boards.filter(b => b.id !== id);
+    const nextActiveId = nextBoards[0].id;
+    await dbDeleteBoard(id, nextBoards, nextActiveId);
+    state.boards = nextBoards;
     delete state._tasksByBoard[id];
-    if (wasActive) state.activeBoardId = state.boards[0].id;
-    await persistBoards();
-    tasks.forEach(t => t.files.forEach(f => scheduleMediaDelete(f.id, 0)));
+    state.activeBoardId = nextActiveId;
+    if ($('#settingsModal').classList.contains('open')) closeModal('settingsModal');
+    applyActiveBoard();
+    renderBoard();
+    saveUIState();
+    notifyOtherTabs();
+    showToast('Доска удалена');
+    return true;
   } catch (e) {
     showToast('Ошибка удаления: ' + e.message);
-    return;
+    return false;
+  } finally {
+    deletingBoard = false;
   }
-
-  applyActiveBoard();
-  renderBoard();
-  saveUIState();
-  notifyOtherTabs();
-  showToast('Доска удалена');
 }
 
 // ============================================================
@@ -323,6 +361,53 @@ async function dbDeleteTasks(ids) {
     tx.onerror = tx.onabort = () => rej(wrapTxError(tx.error));
   });
 }
+async function dbDeleteBoard(boardId, nextBoards, nextActiveBoardId) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readwrite');
+    const taskStore = tx.objectStore(STORE_TASKS);
+    const settingsStore = tx.objectStore(STORE_SETTINGS);
+    const mediaStore = tx.objectStore(STORE_MEDIA);
+    let failure = null;
+    // Only resolve or reject once IndexedDB confirms commit or rollback.
+    tx.oncomplete = () => res();
+    tx.onerror = event => { if (!failure) failure = event.target?.error || tx.error; };
+    tx.onabort = () => rej(wrapTxError(failure || tx.error || new Error('Транзакция отменена')));
+    try {
+      const req = taskStore.getAll();
+      req.onerror = () => { if (!failure) failure = req.error || tx.error; };
+      req.onsuccess = () => {
+        try {
+          const removedMedia = new Set();
+          const remainingMedia = new Set();
+          const mediaIds = task => {
+            const ids = Array.isArray(task.files) ? task.files.map(f => f && f.id) : [];
+            if (typeof task.mediaId === 'string') ids.push(task.mediaId);
+            return ids.filter(id => typeof id === 'string' && id);
+          };
+          for (const task of req.result) {
+            const isDeleted = task.boardId === boardId;
+            for (const mediaId of mediaIds(task)) {
+              (isDeleted ? removedMedia : remainingMedia).add(mediaId);
+            }
+            if (isDeleted) taskStore.delete(task.id);
+          }
+          for (const mediaId of removedMedia) {
+            if (!remainingMedia.has(mediaId)) mediaStore.delete(mediaId);
+          }
+          settingsStore.put({ key: 'boards', value: nextBoards });
+          settingsStore.put({ key: 'activeBoardId', value: nextActiveBoardId });
+        } catch (e) {
+          failure = e;
+          try { tx.abort(); } catch (_) { rej(wrapTxError(e)); }
+        }
+      };
+    } catch (e) {
+      failure = e;
+      try { tx.abort(); } catch (_) { rej(wrapTxError(e)); }
+    }
+  });
+}
+
 async function dbGetSettings() {
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_SETTINGS, 'readonly');
@@ -354,6 +439,14 @@ async function dbClearActiveBoardTasks(boardId) {
 async function dbReplaceAll(plan) {
   return new Promise((res, rej) => {
     const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readwrite');
+    let failure = null;
+    // A request error fires before the transaction has finished rolling back.
+    // Preserve its cause, but only reject after onabort confirms rollback.
+    tx.oncomplete = () => res();
+    tx.onerror = event => {
+      if (!failure) failure = event.target?.error || tx.error;
+    };
+    tx.onabort = () => rej(wrapTxError(failure || tx.error));
     try {
       const ts = tx.objectStore(STORE_TASKS);
       const ss = tx.objectStore(STORE_SETTINGS);
@@ -367,13 +460,9 @@ async function dbReplaceAll(plan) {
         ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
       }
     } catch (e) {
-      try { tx.abort(); } catch (_) {}
-      rej(wrapTxError(e));
-      return;
+      failure = e;
+      try { tx.abort(); } catch (_) { rej(wrapTxError(e)); }
     }
-    tx.oncomplete = () => res();
-    tx.onerror = () => rej(wrapTxError(tx.error));
-    tx.onabort = () => rej(new Error('Импорт отменён'));
   });
 }
 async function mediaPut(id, blob, thumb, type) {
@@ -1578,6 +1667,7 @@ function captureModalSnapshot() {
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
+  if (importInProgress) { showToast('Дождитесь завершения импорта'); return; }
   lastFocusBeforeModal = document.activeElement;
   editingTaskId = taskId;
   editingPriority = 'none';
@@ -1889,6 +1979,8 @@ async function openFile(f, title) {
 let savingTask = false;
 async function saveTaskFromModal() {
   if (savingTask) return;
+  if (importInProgress) { showToast('Дождитесь завершения импорта'); return; }
+  if (switchingBoard) { showToast('Дождитесь переключения доски'); return; }
   savingTask = true;
   try { await _saveTask(); } finally { savingTask = false; }
 }
@@ -1974,8 +2066,10 @@ async function duplicateTask(taskId) {
   const sameCol = state.tasks.filter(t => t.columnId === src.columnId);
   const maxOrder = sameCol.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
   const files = [];
+  // Only newly generated copies are eligible for rollback, never source media.
+  const discardCopies = () => Promise.all(files.map(f => mediaDelete(f.id).catch(() => {})));
   try { for (const f of src.files) { const m = await mediaGet(f.id); if (!m) continue; const id = 'm_' + generateId(); await mediaPut(id, m.full, m.thumb, m.type); files.push({ ...f, id }); } }
-  catch (e) { files.forEach(x => mediaDelete(x.id).catch(() => {})); showToast('Не удалось скопировать файлы: ' + e.message); return; }
+  catch (e) { await discardCopies(); showToast('Не удалось скопировать файлы: ' + e.message); return; }
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',
     tags: [...src.tags], checklist: src.checklist.map(c => ({ id: 'cl_' + generateId(), text: c.text, checked: c.checked })),
@@ -1984,7 +2078,7 @@ async function duplicateTask(taskId) {
     boardId: src.boardId || state.activeBoardId
   };
   try { await dbPutTask(copy); }
-  catch (e) { showToast('Не удалось дублировать: ' + e.message); return; }
+  catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
   closeModal('taskModal'); notifyOtherTabs(); renderBoard();
   showToast('Задача продублирована');
@@ -2676,6 +2770,15 @@ function base64ToBlob(dataUrl) {
 }
 
 async function buildImportPlan(data) {
+  // Full v5/v6 backups must have both collections; otherwise an incomplete
+  // archive could silently replace a real board with an empty one.
+  if (!Array.isArray(data) && data && Object.prototype.hasOwnProperty.call(data, 'version')) {
+    const version = Number(data.version);
+    if (!Number.isInteger(version) || version < 1 || version > 6)
+      throw new Error('Неподдерживаемая версия архива');
+    if (version >= 5 && (!Array.isArray(data.boards) || !Array.isArray(data.tasks)))
+      throw new Error('Архив неполный: отсутствуют доски или задачи');
+  }
   const warnings = [];
   let rawBoards, rawTasks, mediaSrc, activeBoardId;
 
@@ -2824,8 +2927,38 @@ async function buildImportPlan(data) {
     report: { skippedTasks, brokenMedia, warnings } };
 }
 
+// The WebView, IndexedDB and Android preferences are different stores.
+// Restore secondary progress before the atomic IndexedDB replacement and
+// compensate best-effort on failure, without discarding the existing boards.
+function restoreJapaneseImportSnapshot(previous) {
+  if (!previous) return;
+  let firstError = null;
+  for (const [key, value] of Object.entries(previous)) {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    } catch (e) { if (!firstError) firstError = e; }
+  }
+  if (firstError) throw firstError;
+}
+
+// Only one import may read, confirm, restore progress or replace data at a time.
+let importInProgress = false;
+function taskEditorBlocksImport() {
+  return savingTask || switchingBoard || $('#taskModal').classList.contains('open');
+}
 async function handleImport(file) {
   if (!file) return;
+  if (importInProgress) { showToast('Импорт уже выполняется'); return; }
+  if (taskEditorBlocksImport()) {
+    showToast('Закройте редактор задачи и завершите сохранение перед импортом');
+    return;
+  }
+  importInProgress = true;
+  try { await importSingleFile(file); }
+  finally { importInProgress = false; }
+}
+async function importSingleFile(file) {
   let data;
   try { data = JSON.parse(await file.text()); }
   catch (e) { alert('Неверный JSON: ' + e.message); return; }
@@ -2843,18 +2976,71 @@ async function handleImport(file) {
 
   const ok = await confirmDialog('Импорт данных', message);
   if (!ok) return;
-
-  try { await dbReplaceAll(plan); }
-  catch (e) { console.error(e); alert('Не удалось записать данные: ' + e.message + '\nСтарые данные сохранены.'); return; }
-
-  let japaneseError = null;
-  try { restoreJapaneseBackup(plan.japanese); }
-  catch (e) { japaneseError = e; console.error('Japanese progress restore failed:', e); }
-  let nativeJapaneseError = null;
-  if (plan.nativeJapanese) {
-    try { await nativeJapaneseCommand('restore', plan.nativeJapanese); }
-    catch (e) { nativeJapaneseError = e; console.error('Native Japanese progress restore failed:', e); }
+  // The editor may have opened while the archive was being read or validated.
+  if (taskEditorBlocksImport()) {
+    showToast('Импорт отменён: завершите редактирование задачи');
+    return;
   }
+
+  // Read both snapshots before changing anything. Missing Android bridge or
+  // unreadable storage must abort before the destructive IndexedDB transaction.
+  let previousWeb = null;
+  let previousNative = null;
+  try {
+    if (plan.japanese) {
+      previousWeb = Object.fromEntries(Object.keys(plan.japanese)
+        .map(key => [key, localStorage.getItem(key)]));
+    }
+    if (plan.nativeJapanese) {
+      previousNative = await nativeJapaneseCommand('read');
+      if (!previousNative) throw new Error('Невозможно сохранить текущий нативный прогресс японского');
+    }
+  } catch (e) {
+    console.error('Import preflight failed:', e);
+    alert('Импорт отменён без изменений: ' + e.message);
+    return;
+  }
+
+  let webAttempted = false;
+  let nativeAttempted = false;
+  try {
+    if (plan.japanese) {
+      webAttempted = true;
+      restoreJapaneseBackup(plan.japanese);
+    }
+    if (plan.nativeJapanese) {
+      nativeAttempted = true;
+      const restored = await nativeJapaneseCommand('restore', plan.nativeJapanese);
+      if (restored !== true) throw new Error('Android не подтвердил восстановление японского');
+    }
+    // Existing tasks/media/settings are replaced only after progress succeeds.
+    // IndexedDB provides one atomic transaction for all these records.
+    await dbReplaceAll(plan);
+  } catch (e) {
+    const rollbackErrors = [];
+    // Even a rejected Android restore might have applied before the reply failed.
+    if (nativeAttempted) {
+      try {
+        const reverted = await nativeJapaneseCommand('restore', previousNative);
+        if (reverted !== true) throw new Error('Android не подтвердил откат японского');
+      } catch (error) { rollbackErrors.push('нативный прогресс: ' + error.message); }
+    }
+    if (webAttempted) {
+      try { restoreJapaneseImportSnapshot(previousWeb); }
+      catch (error) { rollbackErrors.push('веб-прогресс: ' + error.message); }
+    }
+    console.error('Import failed before IndexedDB commit:', e);
+    if (rollbackErrors.length) {
+      console.error('Import rollback incomplete:', rollbackErrors);
+      alert('Импорт не завершён: ' + e.message
+        + '\nДоски и задачи не заменены, но откат японского прогресса завершился с ошибкой: '
+        + rollbackErrors.join('; ') + '. Проверьте прогресс перед повторным импортом.');
+    } else {
+      alert('Импорт отменён: ' + e.message + '\nСтарые доски и задачи сохранены.');
+    }
+    return;
+  }
+
   undoStack.length = 0; for (const t of pendingMediaDeletes.values()) clearTimeout(t); pendingMediaDeletes.clear(); apStop();
   rebucket(plan.tasks, plan.boards, plan.activeBoardId);
   applyActiveBoard();
@@ -2863,9 +3049,7 @@ async function handleImport(file) {
   saveUIState();
 
   const suffix = totalWarn ? ` (${totalWarn} предупр.)` : '';
-  showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`
-    + (japaneseError ? '. Внимание: веб-прогресс японского языка не восстановлен.' : '')
-    + (nativeJapaneseError ? '. Внимание: мини-викторина японского не восстановлена.' : ''),
+  showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`,
     null, null, 5500);
 }
 
@@ -2976,12 +3160,24 @@ async function onPointerUp(e) {
         toUpdate.push(updated);
       }
       try {
-        await dbPutTasks(toUpdate);
-        toUpdate.forEach(cand => {
+        // Save a moved parent and all descendants in one IndexedDB transaction.
+        const changes = new Map(toUpdate.map(t => [t.id, t]));
+        for (const parent of toUpdate) {
+          const previous = state.tasks.find(t => t.id === parent.id);
+          if (!previous || previous.columnId === parent.columnId) continue;
+          for (const child of subtree(parent.id)) {
+            const current = changes.get(child.id) || child;
+            if (current.columnId !== parent.columnId) {
+              changes.set(child.id, applyColumnChange(current, parent.columnId));
+            }
+          }
+        }
+        const updates = [...changes.values()];
+        await dbPutTasks(updates);
+        updates.forEach(cand => {
           const idx = state.tasks.findIndex(x => x.id === cand.id);
           if (idx !== -1) state.tasks[idx] = cand;
         });
-        for (const c of toUpdate) await syncKids(c);
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }

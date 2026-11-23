@@ -37,6 +37,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Verify generated Kanban JavaScript
         run: python3 tools/build_kanban_js.py --check
+      - name: Protect Android in-place update data contract
+        run: node tests/test_android_upgrade_contract.js
       - name: Check JavaScript syntax
         run: node --check app/src/main/assets/kanban.js
       - name: Verify removal of the AI experiment
@@ -47,6 +49,10 @@ jobs:
         run: node tests/test_daily_plan.js
       - name: Verify atomic editor save and failure handling
         run: node tests/test_task_editor_atomic.js
+      - name: Protect unsaved task edits on board switching
+        run: node tests/test_board_switch_guard.js
+      - name: Keep board deletion atomic and shared attachments safe
+        run: node tests/test_board_delete_atomic.js
       - name: Check mobile attachment controls
         run: node tests/test_attachment_layout.js
       - name: Test Android Back and exact original Comrade icons
@@ -65,6 +71,14 @@ jobs:
         run: node tests/test_card_drag_gestures.js
       - name: Verify backup completeness, daily plan, and Japanese progress
         run: node tests/test_backup_integrity.js
+      - name: Verify import preserves boards and Japanese progress on failures
+        run: node tests/test_import_japanese_consistency.js
+      - name: Verify atomic media import on storage errors and quota
+        run: node tests/test_import_media_transaction.js
+      - name: Verify legacy imports and concurrent import lock
+        run: node tests/test_import_compatibility_guard.js
+      - name: Prevent import and task-editor races
+        run: node tests/test_import_editor_guard.js
       - name: Verify native Japanese progress backup and restoration bridge
         run: node tests/test_native_japanese_transport.js
       - name: Verify Android backup chunk-transfer protocol
@@ -75,6 +89,8 @@ jobs:
         run: node tests/test_multiple_attachments.js
       - name: Verify failed multi-file saves clean staged blobs
         run: node tests/test_attachment_rollback.js
+      - name: Verify duplicated attachment rollback on failed copies and database saves
+        run: node tests/test_duplicate_media_rollback.js
       - name: Verify adaptive photo compression
         run: node tests/test_photo_compression.js
       - name: Verify photo gallery and pinch gestures

@@ -946,7 +946,7 @@ function renderBoard() {
   board.innerHTML = '';
   board.dataset.boardId = state.activeBoardId;
   const visible = getVisibleTasks();
-  const descendantCounts = countVisibleDescendants(state.tasks, visible);
+  const descendantCounts = visible.length ? countVisibleDescendants(state.tasks, visible) : null;
 
   state.columns.forEach(col => {
     const colTasks = sortTasks(visible.filter(t => t.columnId === col.id));

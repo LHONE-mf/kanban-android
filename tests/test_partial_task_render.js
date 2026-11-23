@@ -24,7 +24,7 @@ function card(id) {
 const original = card('t1');
 const untouched = card('t2');
 const list = {dataset:{columnId:'todo'},children:[original,untouched]};
-const board = {dataset:{boardId:'b'}};
+const board = {dataset:{boardId:'b'},querySelectorAll(sel){assert.equal(sel,'.task-list');return [list];}};
 let fullRenders = 0, changedCards = 0, tagsUpdated = 0, storageUpdated = 0;
 const context = {
   sortMode:'manual', currentView:'kanban', searchQuery:'',

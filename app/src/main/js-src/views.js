@@ -119,7 +119,7 @@ function renderSavedTaskCard(previous, task) {
     return;
   }
   const column = state.columns.find(c => c.id === task.columnId);
-  const list = $('.task-list', board).find(el => el.dataset.columnId === task.columnId);
+  const list = [...board.querySelectorAll('.task-list')].find(el => el.dataset.columnId === task.columnId);
   const oldCard = list && [...list.children].find(el =>
     el.classList.contains('task-card') && el.dataset.taskId === task.id);
   if (!column || !oldCard) {

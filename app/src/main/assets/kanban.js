@@ -904,6 +904,34 @@ async function getThumb(mediaId) {
 // ============================================================
 // RENDER dispatcher
 // ============================================================
+// One parent index per render avoids a full subtree() scan for every card.
+function countVisibleDescendants(tasks, visibleRoots) {
+  const childrenByParent = new Map();
+  for (const task of tasks) {
+    if (!task.parentId) continue;
+    const siblings = childrenByParent.get(task.parentId);
+    if (siblings) siblings.push(task.id);
+    else childrenByParent.set(task.parentId, [task.id]);
+  }
+
+  const counts = new Map();
+  for (const root of visibleRoots) {
+    const stack = [...(childrenByParent.get(root.id) || [])];
+    const seen = new Set([root.id]);
+    let count = 0;
+    while (stack.length) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      count++;
+      const children = childrenByParent.get(id);
+      if (children) stack.push(...children);
+    }
+    counts.set(root.id, count);
+  }
+  return counts;
+}
+
 function renderBoard() {
   updateTagFilter();
   const board = $('#board');
@@ -917,6 +945,7 @@ function renderBoard() {
   board.innerHTML = '';
   board.dataset.boardId = state.activeBoardId;
   const visible = getVisibleTasks();
+  const descendantCounts = countVisibleDescendants(state.tasks, visible);
 
   state.columns.forEach(col => {
     const colTasks = sortTasks(visible.filter(t => t.columnId === col.id));
@@ -950,7 +979,7 @@ function renderBoard() {
       empty.textContent = totalCount === 0 ? 'Нет задач' : 'Ничего не найдено';
       list.appendChild(empty);
     } else {
-      colTasks.forEach(task => list.appendChild(createTaskCard(task, col)));
+      colTasks.forEach(task => list.appendChild(createTaskCard(task, col, descendantCounts)));
     }
     colDiv.appendChild(list);
 
@@ -972,7 +1001,7 @@ function renderBoard() {
   else if (currentView === 'calendar') renderCalendar();
 }
 
-function createTaskCard(task, column) {
+function createTaskCard(task, column, descendantCounts) {
   const card = document.createElement('div');
   card.className = 'task-card';
   card.dataset.taskId = task.id;
@@ -989,7 +1018,7 @@ function createTaskCard(task, column) {
     mediaHtml = cached ? `<img class="task-media-thumb" data-media="1" alt="" src="${escapeHtml(cached)}">`
       : `<div class="task-media-thumb" data-media="1" data-thumb-for="${escapeHtml(imgF.id)}"></div>`;
   }
-  const kidsN = subtree(task.id).length;
+  const kidsN = descendantCounts ? (descendantCounts.get(task.id) || 0) : subtree(task.id).length;
   const tagsHtml = task.tags.length
     ? `<div class="task-tags">${task.tags.map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>`
     : '';

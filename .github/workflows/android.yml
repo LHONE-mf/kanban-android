@@ -45,6 +45,8 @@ jobs:
         run: node tests/test_no_ai.js
       - name: Test task priority badges in all four states
         run: node tests/test_task_priority_badges.js
+      - name: Test indexed nested-task counts on large boards
+        run: node tests/test_large_board_descendant_counts.js
       - name: Test all-board Comrade daily planning
         run: node tests/test_daily_plan.js
       - name: Verify atomic editor save and failure handling

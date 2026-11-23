@@ -408,7 +408,7 @@ async function _saveTask() {
     if (childIdx !== -1) state.tasks[childIdx] = child;
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
-  closeModal('taskModal'); notifyOtherTabs(); renderBoard();
+  closeModal('taskModal'); notifyOtherTabs(); renderSavedTaskCard(existing, candidate);
 }
 
 function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }

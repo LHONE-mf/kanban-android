@@ -1002,6 +1002,42 @@ function renderBoard() {
   else if (currentView === 'calendar') renderCalendar();
 }
 
+// P16.1: replace only the edited card when its place and visibility are stable.
+// Other cases deliberately use the established full-render path.
+function renderSavedTaskCard(previous, task) {
+  const stableSort = sortMode === 'manual' || sortMode === 'created_asc' || sortMode === 'created_desc';
+  if (!previous || previous.parentId || task.parentId ||
+      previous.boardId !== task.boardId ||
+      previous.columnId !== task.columnId ||
+      previous.order !== task.order ||
+      currentView !== 'kanban' || !stableSort ||
+      searchQuery.trim() || filterTag || filterPriority || filterDeadline) {
+    renderBoard();
+    return;
+  }
+
+  const board = $('#board');
+  if (!board || board.dataset.boardId !== state.activeBoardId) {
+    renderBoard();
+    return;
+  }
+  const column = state.columns.find(c => c.id === task.columnId);
+  const list = [...board.querySelectorAll('.task-list')].find(el => el.dataset.columnId === task.columnId);
+  const oldCard = list && [...list.children].find(el =>
+    el.classList.contains('task-card') && el.dataset.taskId === task.id);
+  if (!column || !oldCard) {
+    renderBoard();
+    return;
+  }
+
+  const restoreFocus = oldCard === document.activeElement || oldCard.contains(document.activeElement);
+  const replacement = createTaskCard(task, column);
+  oldCard.replaceWith(replacement);
+  if (restoreFocus) replacement.focus({ preventScroll: true });
+  updateTagFilter();
+  updateStorageInfo();
+}
+
 function createTaskCard(task, column, descendantCounts) {
   const card = document.createElement('div');
   card.className = 'task-card';
@@ -2065,7 +2101,7 @@ async function _saveTask() {
     if (childIdx !== -1) state.tasks[childIdx] = child;
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
-  closeModal('taskModal'); notifyOtherTabs(); renderBoard();
+  closeModal('taskModal'); notifyOtherTabs(); renderSavedTaskCard(existing, candidate);
 }
 
 function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }

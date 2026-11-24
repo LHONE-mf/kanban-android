@@ -98,7 +98,12 @@ fallback(before,after); // board changed while saving
 board.dataset.boardId='b';
 assert.ok(tasks.includes("renderSavedTaskCard(existing, candidate)"),
   'only task editor save uses partial update');
-assert.ok(tasks.includes("closeModal('taskModal'); notifyOtherTabs(); renderSavedTaskCard(existing, candidate)"));
+assert.ok(tasks.includes("closeModal('taskModal'); notifyOtherTabs();"),
+  'save completes before updating cards');
+assert.ok(tasks.includes("if (existing) renderSavedTaskCard(existing, candidate);"),
+  'existing task edit still updates only that card');
+assert.ok(tasks.includes("else renderTaskCollectionChange(candidate, false);"),
+  'new task creation uses collection insertion');
 assert.ok(tasks.includes("closeModal('taskModal'); notifyOtherTabs(); renderTaskCollectionChange(copy, false);"),
   'duplicate-task creation delegates to targeted collection update');
 console.log('P16.1 stable card update, focus, untouched cards, and all fallback paths passed.');

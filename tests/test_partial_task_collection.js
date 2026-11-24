@@ -60,7 +60,7 @@ const context={
 };
 vm.createContext(context);
 vm.runInContext(views.slice(start,end)+'\nthis.rootOf = taskRootForCollection; this.mutate=renderTaskCollectionChange;',context);
-const ids=list=>list.children.map(c=>c.dataset.taskId||'empty');
+const ids=list=>list.children.map(c=>c.dataset?.taskId||'empty');
 const oldB=todo.list.children[1],oldDone=done.list.children[0];
 const next=task('new','todo',-1);
 state.tasks.push(next);

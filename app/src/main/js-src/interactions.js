@@ -9,18 +9,27 @@ function onPointerDown(e) {
   if (drag || e.button !== 0) return;
   const card = e.target.closest('.task-card');
   if (!card) return;
-  if (e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], button, input, .ap')) return;
+  const grip = e.target.closest('[data-drag-handle]');
+  if (!grip && e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], button, input, .ap')) return;
   if (!isDragAllowed()) return;
   drag = {
     card, taskId: card.dataset.taskId, pointerId: e.pointerId,
     startX: e.clientX, startY: e.clientY, startTime: Date.now(),
-    isTouch: e.pointerType !== 'mouse', active: false, timer: null
+    isTouch: e.pointerType !== 'mouse', fromGrip: !!grip, active: false, timer: null
   };
   lastPointer = { x: e.clientX, y: e.clientY };
+  // Capture on a stationary parent: a card may move between columns during drag.
+  if (grip) {
+    if (e.cancelable) e.preventDefault();
+    const board = $('#board');
+    if (board.setPointerCapture) {
+      try { board.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+  }
   window.addEventListener('pointermove', onPointerMove, { passive: false });
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('pointercancel', onPointerCancel);
-  if (drag.isTouch) drag.timer = setTimeout(() => { if (drag && !drag.active) startDrag(); }, 300);
+  if (drag.isTouch && !drag.fromGrip) drag.timer = setTimeout(() => { if (drag && !drag.active) startDrag(); }, 300);
 }
 function startDrag() {
   if (!drag || drag.active) return;
@@ -39,7 +48,8 @@ function onPointerMove(e) {
   lastPointer = { x: e.clientX, y: e.clientY };
   if (!drag.active) {
     const dist = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
-    if (drag.isTouch) { if (dist > 10) { cleanupDragWithoutRerender(); return; } }
+    if (drag.fromGrip) { if (dist < 5) return; startDrag(); }
+    else if (drag.isTouch) { if (dist > 10) { cleanupDragWithoutRerender(); return; } }
     else { if (dist < 5) return; startDrag(); }
   }
   if (e.cancelable) e.preventDefault();

@@ -12,7 +12,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const writes = [];
   const toasts = [];
   let renders = 0;
-  let prevented = 0;
+  let prevented = 0, downPrevented = 0, captured = null;
   const makeClassList = (...initial) => {
     const names = new Set(initial);
     return {
@@ -47,6 +47,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const board = {
     classList:makeClassList('board'),scrollLeft:0,scrollWidth:500,clientWidth:500,
     getBoundingClientRect(){return{left:0,right:500,top:0,bottom:500};},
+    setPointerCapture(id){captured=id;},
     addEventListener(){}
   };
   const target = (x,y) => {
@@ -98,9 +99,11 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
     showToast:msg=>{toasts.push(msg);}
   };
   vm.runInNewContext(source.slice(begin,end),sandbox);
-  const down = (pointerId=1) => sandbox.onPointerDown({
-    button:0,pointerId,pointerType:'touch',clientX:110,clientY:150,
-    target:{closest:selector=>selector==='.task-card'?card:null}
+  const down = (pointerId=1, grip=false) => sandbox.onPointerDown({
+    button:0,pointerId,pointerType:'touch',clientX:110,clientY:150,cancelable:true,
+    preventDefault(){downPrevented++;},
+    target:{closest:selector=>selector==='.task-card'?card:
+      grip && (selector==='[data-drag-handle]' || selector.includes('button')) ? {dragGrip:true}:null}
   });
   const move = (x,y,pointerId=1)=>sandbox.onPointerMove({
     pointerId,clientX:x,clientY:y,cancelable:true,preventDefault(){prevented++;}
@@ -109,7 +112,8 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const up = async(x,y,pointerId=1)=>sandbox.onPointerUp({pointerId,clientX:x,clientY:y});
   const cancel = pointerId=>sandbox.onPointerCancel({pointerId});
   return {sandbox,board,card,first,second,writes,toasts,down,move,activate,up,cancel,
-    get renders(){return renders;},get prevented(){return prevented;},timers};
+    get renders(){return renders;},get prevented(){return prevented;},
+    get downPrevented(){return downPrevented;},get captured(){return captured;},timers};
 }
 
 (async()=>{
@@ -179,7 +183,35 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   assert.equal(s.writes.length,0,'a simple tap never changes task order');
   assert.equal(s.renders,0);
 
+  // Tablet scenario: touch-action:none on a dedicated grip makes horizontal
+  // finger drag deterministic without disabling ordinary touch scrolling.
+  s=scenario();
+  s.down(1,true);
+  assert.equal(s.sandbox.drag.fromGrip,true,'grip recognised even though it is a button');
+  assert.equal(s.downPrevented,1,'grip prevents native touch gesture');
+  assert.equal(s.captured,1,'stable board captures touch across DOM reparenting');
+  assert.equal(s.timers.length,0,'grip does not wait for a long-press timer');
+  s.move(112,152);
+  assert.equal(s.sandbox.drag.active,false,'small movement is not an accidental drag');
+  s.move(370,150);
+  assert.equal(s.sandbox.drag.active,true,'grip starts drag on first substantial motion');
+  await s.up(370,150);
+  assert.equal(s.writes.length,1,'tablet grip drop persists movement');
+  assert.equal(s.sandbox.state.tasks[0].columnId,'col_b');
+  assert.equal(s.renders,1);
+
+  s=scenario();
+  s.down(1,true);
+  await s.up(110,150);
+  assert.equal(s.renders,0,'tapping the grip does not flash/rebuild the board');
+  assert.equal(s.writes.length,0,'tapping the grip does not move or save');
+
+  const views=fs.readFileSync('app/src/main/js-src/views.js','utf8');
+  assert.match(views,/data-drag-handle="1"/,'drag grip exists on every card');
+  assert.match(views,/dragHandle\.onkeydown/,'grip has keyboard move support');
   const css=fs.readFileSync('app/src/main/assets/kanban.css','utf8');
+  assert.match(css,/\.task-drag-handle\s*\{[^}]*touch-action:\s*none/s,
+    'grip takes ownership of tablet pointer gestures');
   assert.match(css,/\.board\s*\{[^}]*overflow-x:\s*auto;\s*overflow-y:\s*hidden/s);
   assert.match(css,/\.task-list\s*\{[^}]*overflow-y:\s*auto/s);
   assert.match(css,/\.task-card\s*\{[^}]*touch-action:\s*manipulation/s);

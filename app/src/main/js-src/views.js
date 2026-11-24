@@ -135,8 +135,6 @@ function renderSavedTaskCard(previous, task) {
   updateStorageInfo();
 }
 
-// P16.2: a root task only changes one card; nested changes update its top root.
-// Keep full rendering as a safe fallback for filters, stale DOM and other views.
 function taskRootForCollection(task) {
   const seen = new Set();
   let current = task;
@@ -279,6 +277,7 @@ function createTaskCard(task, column, descendantCounts) {
     ${descHtml}${mediaHtml}${task.files.some(isAudio) ? '<div class="task-audio"></div>' : ''}${tagsHtml}${checklistHtml}
     <div class="task-footer">
       ${task.files.length ? `<span class="task-footer-item" title="Файлы">📎 ${task.files.length}</span>` : ''}${kidsN ? `<span class="task-footer-item" title="Вложенные узлы">⑂ ${kidsN}</span>` : ''}
+      <button type="button" class="task-drag-handle" data-drag-handle="1" title="Переместить задачу: тяните за значок (только в режиме «Мой порядок»)" aria-label="Перетащить задачу; стрелки влево и вправо для перемещения">⠿</button>
       <span class="task-id">#${escapeHtml(task.id.slice(-4))}</span>
     </div>
     <div class="task-quick-actions">
@@ -306,6 +305,15 @@ function createTaskCard(task, column, descendantCounts) {
     audSlot.appendChild(createAudioPlayer(au[0], { compact: true, scope: 'card', getBlob: async () => (await mediaGet(au[0].id))?.full }));
     if (au.length > 1) audSlot.insertAdjacentHTML('beforeend', `<span class="ap-more">+${au.length - 1}</span>`);
   }
+  const dragHandle = card.querySelector('[data-drag-handle]');
+  if (dragHandle) {
+    dragHandle.onclick = e => e.stopPropagation();
+    dragHandle.onkeydown = e => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault(); e.stopPropagation();
+      moveCardToAdjacentColumn(task.id, e.key === 'ArrowLeft' ? -1 : 1);
+    };
+  }
   card.querySelector('[data-delete]').onclick = (e) => { e.stopPropagation(); deleteTask(task.id); };
   card.querySelector('[data-move-next]').onclick = (e) => { e.stopPropagation(); moveCardToAdjacentColumn(task.id, +1); };
   card.querySelector('[data-move-done]').onclick = (e) => { e.stopPropagation(); markTaskDone(task.id); };
@@ -313,7 +321,7 @@ function createTaskCard(task, column, descendantCounts) {
     el.addEventListener('click', (e) => { e.stopPropagation(); openLightbox(task); });
   });
   card.addEventListener('click', (e) => {
-    if (e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], .ap')) return;
+    if (e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], [data-drag-handle], .ap')) return;
     if (Date.now() - lastDragEndTime < 250) return;
     openTaskModal(task.id);
   });

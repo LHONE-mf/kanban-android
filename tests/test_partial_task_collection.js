@@ -49,7 +49,11 @@ let renders=0,made=[],tags=0,storage=0;
 const context={
   state,sortMode:'manual',currentView:'kanban',searchQuery:'',
   filterTag:'',filterPriority:'',filterDeadline:'',
-  document:{activeElement:null,createElement:tag=>({tag,className:'',textContent:'',classList:makeClasses([])})},
+  document:{activeElement:null,createElement:tag=>{
+    const el={tag,className:'',textContent:''};
+    el.classList={contains:value=>el.className.split(/\s+/).includes(value)};
+    return el;
+  }},
   $:sel=>{assert.equal(sel,'#board');return board;},
   getVisibleTasks:()=>state.tasks.filter(t=>!t.parentId),
   sortTasks:ts=>[...ts].sort((x,y)=>x.order-y.order),

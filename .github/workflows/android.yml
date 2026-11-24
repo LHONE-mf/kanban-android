@@ -75,6 +75,8 @@ jobs:
         run: node tests/test_column_scroll_state.js
       - name: Test mobile long-press drag, cancellation and safe drops
         run: node tests/test_card_drag_gestures.js
+      - name: Verify partial move reconciliation across columns
+        run: node tests/test_partial_move.js
       - name: Verify backup completeness, daily plan, and Japanese progress
         run: node tests/test_backup_integrity.js
       - name: Verify import preserves boards and Japanese progress on failures

@@ -13,7 +13,8 @@ function onPointerDown(e) {
   if (!grip && e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], button, input, .ap')) return;
   if (!isDragAllowed()) return;
   drag = {
-    card, taskId: card.dataset.taskId, pointerId: e.pointerId,
+    card, taskId: card.dataset.taskId, sourceColumnId: card.parentElement?.dataset.columnId,
+    pointerId: e.pointerId,
     startX: e.clientX, startY: e.clientY, startTime: Date.now(),
     isTouch: e.pointerType !== 'mouse', fromGrip: !!grip, active: false, timer: null
   };
@@ -70,6 +71,8 @@ async function onPointerUp(e) {
   if (!drag || e.pointerId !== drag.pointerId) return;
   const wasActive = drag.active;
   const card = drag.card;
+  const taskId = drag.taskId;
+  const sourceColumnId = drag.sourceColumnId;
   cleanupDragListeners();
   clearTimeout(drag.timer);
   stopAutoScroll();
@@ -81,6 +84,7 @@ async function onPointerUp(e) {
     document.body.style.userSelect = '';
     $('#board').classList.remove('is-dragging');
     const list = dropList && card.parentElement === dropList ? dropList : null;
+    const touched = [sourceColumnId, card.parentElement?.dataset.columnId];
     drag = null;
     if (list) {
       const newColId = list.dataset.columnId;
@@ -116,7 +120,7 @@ async function onPointerUp(e) {
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
-    renderBoard();
+    renderMovedTaskColumns(touched, list ? [taskId] : []);
   } else {
     drag = null;
   }
@@ -124,10 +128,11 @@ async function onPointerUp(e) {
 function onPointerCancel(e) {
   if (!drag || e.pointerId !== drag.pointerId) return;
   const wasActive = drag.active;
+  const touched = [drag.sourceColumnId, drag.card.parentElement?.dataset.columnId];
   cleanupDragWithoutRerender();
   if (wasActive) {
     lastDragEndTime = Date.now();
-    renderBoard(); // restore DOM after a cancelled drag; storage was never changed
+    renderMovedTaskColumns(touched); // restore only affected columns after cancellation
   }
 }
 function cleanupDragListeners() {

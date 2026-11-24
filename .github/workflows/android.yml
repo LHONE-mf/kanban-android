@@ -47,6 +47,8 @@ jobs:
         run: node tests/test_task_priority_badges.js
       - name: Verify safe partial card rendering after task edit
         run: node tests/test_partial_task_render.js
+      - name: Verify partial creation, deletion, nested counts and undo rendering
+        run: node tests/test_partial_task_collection.js
       - name: Test indexed nested-task counts on large boards
         run: node tests/test_large_board_descendant_counts.js
       - name: Test all-board Comrade daily planning

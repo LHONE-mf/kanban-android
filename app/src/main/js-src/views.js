@@ -135,6 +135,101 @@ function renderSavedTaskCard(previous, task) {
   updateStorageInfo();
 }
 
+// P16.2: a root task only changes one card; nested changes update its top root.
+// Keep full rendering as a safe fallback for filters, stale DOM and other views.
+function taskRootForCollection(task) {
+  const seen = new Set();
+  let current = task;
+  while (current && current.parentId) {
+    if (seen.has(current.id)) return null;
+    seen.add(current.id);
+    current = state.tasks.find(t => t.id === current.parentId);
+  }
+  return current || null;
+}
+
+function renderTaskCollectionChange(task, removed, rootBeforeRemoval = null) {
+  if (!task || task.boardId !== state.activeBoardId || currentView !== 'kanban' ||
+      searchQuery.trim() || filterTag || filterPriority || filterDeadline) {
+    renderBoard();
+    return;
+  }
+  const root = task.parentId ? (rootBeforeRemoval || taskRootForCollection(task)) : task;
+  const board = $('#board');
+  const column = root && state.columns.find(col => col.id === root.columnId);
+  const columnNode = board && [...board.children].find(el =>
+    el.dataset.columnId === root?.columnId);
+  const list = columnNode && columnNode.querySelector('.task-list');
+  const header = columnNode && columnNode.querySelector('.column-header');
+  const countNode = header && header.querySelector('.column-count');
+  if (!root || !column || !board || board.dataset.boardId !== state.activeBoardId ||
+      !list || !header || !countNode) {
+    renderBoard();
+    return;
+  }
+
+  const cards = [...list.children].filter(el => el.classList.contains('task-card'));
+  if (task.parentId) {
+    // Children are displayed inside the top-level task's editor, not as cards.
+    // Only its footer (number of descendants) needs to change.
+    const oldCard = cards.find(el => el.dataset.taskId === root.id);
+    if (!oldCard || cards.length !== list.children.length) {
+      renderBoard();
+      return;
+    }
+    const focusWasInside = oldCard.contains(document.activeElement);
+    const newCard = createTaskCard(root, column);
+    oldCard.replaceWith(newCard);
+    if (focusWasInside) newCard.focus({ preventScroll: true });
+  } else {
+    const visibleIds = sortTasks(getVisibleTasks().filter(t => t.columnId === column.id))
+      .map(t => t.id);
+    const oldIds = cards.map(el => el.dataset.taskId);
+    if (removed) {
+      const oldCard = cards.find(el => el.dataset.taskId === task.id);
+      const remainingIds = oldIds.filter(id => id !== task.id);
+      if (!oldCard || oldIds.length !== visibleIds.length + 1 ||
+          remainingIds.some((id, i) => id !== visibleIds[i]) ||
+          cards.length !== list.children.length) {
+        renderBoard();
+        return;
+      }
+      const focusWasInside = oldCard.contains(document.activeElement);
+      oldCard.remove();
+      if (!visibleIds.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-hint';
+        empty.textContent = 'Нет задач';
+        list.appendChild(empty);
+      } else if (focusWasInside) {
+        const nextCard = [...list.children].find(el => el.classList.contains('task-card'));
+        if (nextCard) nextCard.focus({ preventScroll: true });
+      }
+    } else {
+      const at = visibleIds.indexOf(task.id);
+      const expectedOld = visibleIds.filter(id => id !== task.id);
+      if (at < 0 || oldIds.length !== expectedOld.length ||
+          oldIds.some((id, i) => id !== expectedOld[i]) ||
+          (cards.length ? cards.length !== list.children.length :
+            list.children.length !== 1 || !list.children[0].classList.contains('empty-hint'))) {
+        renderBoard();
+        return;
+      }
+      const newCard = createTaskCard(task, column);
+      if (!cards.length) list.replaceChildren(newCard);
+      else list.insertBefore(newCard, cards[at] || null);
+    }
+  }
+
+  const total = state.tasks.filter(t => t.columnId === column.id && !t.parentId).length;
+  const limit = column.wipLimit || 0;
+  header.classList.toggle('wip-exceeded', !!limit && total > limit);
+  header.classList.toggle('wip-warning', !!limit && total === limit);
+  countNode.textContent = String(total) + (limit ? '/' + limit : '');
+  updateTagFilter();
+  updateStorageInfo();
+}
+
 function createTaskCard(task, column, descendantCounts) {
   const card = document.createElement('div');
   card.className = 'task-card';

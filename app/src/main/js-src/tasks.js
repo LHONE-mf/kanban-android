@@ -4,6 +4,7 @@
 async function deleteTask(taskId) {
   const root = state.tasks.find(t => t.id === taskId);
   if (!root) return;
+  const rootBeforeRemoval = root.parentId ? taskRootForCollection(root) : null;
   const gone = [root, ...subtree(taskId)], ids = new Set(gone.map(t => t.id));
   try { await dbDeleteTasks([...ids]); }
   catch (e) { showToast('Не удалось удалить: ' + e.message); return; }
@@ -18,11 +19,11 @@ async function deleteTask(taskId) {
       try { await dbPutTasks(gone); }
       catch (e) { showToast('Не удалось восстановить: ' + e.message); return false; }
       (state._tasksByBoard[root.boardId] || state.tasks).push(...gone);
-      notifyOtherTabs(); renderBoard();
+      notifyOtherTabs(); renderTaskCollectionChange(root, false);
       return true;
     }
   });
-  notifyOtherTabs(); renderBoard();
+  notifyOtherTabs(); renderTaskCollectionChange(root, true, rootBeforeRemoval);
   showToast(`Удалено: «${truncate(root.title, 40)}»${gone.length > 1 ? ` и ещё ${gone.length - 1}` : ''}`, 'Вернуть', async () => {
     const op = consumeUndo(undoId);
     if (op) await op.restore();
@@ -408,7 +409,9 @@ async function _saveTask() {
     if (childIdx !== -1) state.tasks[childIdx] = child;
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
-  closeModal('taskModal'); notifyOtherTabs(); renderSavedTaskCard(existing, candidate);
+  closeModal('taskModal'); notifyOtherTabs();
+  if (existing) renderSavedTaskCard(existing, candidate);
+  else renderTaskCollectionChange(candidate, false);
 }
 
 function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }
@@ -453,7 +456,7 @@ async function duplicateTask(taskId) {
   try { await dbPutTask(copy); }
   catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
-  closeModal('taskModal'); notifyOtherTabs(); renderBoard();
+  closeModal('taskModal'); notifyOtherTabs(); renderTaskCollectionChange(copy, false);
   showToast('Задача продублирована');
 }
 

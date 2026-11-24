@@ -99,6 +99,6 @@ board.dataset.boardId='b';
 assert.ok(tasks.includes("renderSavedTaskCard(existing, candidate)"),
   'only task editor save uses partial update');
 assert.ok(tasks.includes("closeModal('taskModal'); notifyOtherTabs(); renderSavedTaskCard(existing, candidate)"));
-assert.ok(tasks.includes("closeModal('taskModal'); notifyOtherTabs(); renderBoard();"),
-  'duplicate-task handling stays full render');
+assert.ok(tasks.includes("closeModal('taskModal'); notifyOtherTabs(); renderTaskCollectionChange(copy, false);"),
+  'duplicate-task creation delegates to targeted collection update');
 console.log('P16.1 stable card update, focus, untouched cards, and all fallback paths passed.');

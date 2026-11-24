@@ -41,7 +41,8 @@ async function scenario(failAt, withAttachments = true) {
       saved.push(item);
     },
     showToast: message => {toasts.push(message); events.push('toast');},
-    closeModal: () => {}, notifyOtherTabs: () => {}, renderBoard: () => {}
+    closeModal: () => {}, notifyOtherTabs: () => {}, renderBoard: () => {},
+    renderTaskCollectionChange: () => {}
   };
   vm.createContext(ctx);
   vm.runInContext(src.slice(start, end) + '\nthis.duplicate = duplicateTask;', ctx);

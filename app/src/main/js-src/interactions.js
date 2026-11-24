@@ -440,7 +440,7 @@ async function quickAddTask(text) {
   try { await dbPutTask(task); }
   catch (e) { showToast('Не удалось добавить: ' + e.message); return false; }
   state.tasks.push(task);
-  notifyOtherTabs(); renderBoard();
+  notifyOtherTabs(); renderTaskCollectionChange(task, false);
   showToast(`Добавлено в «${state.boardName}»`);
   return true;
 }

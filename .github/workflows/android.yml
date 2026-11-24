@@ -49,6 +49,8 @@ jobs:
         run: node tests/test_partial_task_render.js
       - name: Verify partial creation, deletion, nested counts and undo rendering
         run: node tests/test_partial_task_collection.js
+      - name: Verify incremental search, filters and sorting
+        run: node tests/test_incremental_filters.js
       - name: Test indexed nested-task counts on large boards
         run: node tests/test_large_board_descendant_counts.js
       - name: Test all-board Comrade daily planning

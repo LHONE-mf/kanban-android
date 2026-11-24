@@ -284,12 +284,12 @@ function bindEvents() {
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderBoard(); }, 150);
+    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderFilteredBoard(); }, 150);
   };
-  $('#tagFilter').onchange = (e) => { filterTag = e.target.value; saveUIState(); renderBoard(); };
-  $('#priorityFilter').onchange = (e) => { filterPriority = e.target.value; saveUIState(); renderBoard(); };
-  $('#deadlineFilter').onchange = (e) => { filterDeadline = e.target.value; saveUIState(); renderBoard(); };
-  $('#sortSelect').onchange = (e) => { sortMode = e.target.value; saveUIState(); renderBoard(); };
+  $('#tagFilter').onchange = (e) => { filterTag = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#priorityFilter').onchange = (e) => { filterPriority = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#deadlineFilter').onchange = (e) => { filterDeadline = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#sortSelect').onchange = (e) => { sortMode = e.target.value; saveUIState(); renderFilteredBoard(); };
 
   $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;

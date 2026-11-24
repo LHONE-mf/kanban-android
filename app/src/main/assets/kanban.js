@@ -1002,6 +1002,77 @@ function renderBoard() {
   else if (currentView === 'calendar') renderCalendar();
 }
 
+function renderFilteredBoard() {
+  const board = $('#board');
+  if (!board || board.dataset.boardId !== state.activeBoardId ||
+      currentView !== 'kanban' || (drag && drag.active) ||
+      board.children.length !== state.columns.length) {
+    renderBoard();
+    return;
+  }
+  updateTagFilter();
+  const byColumn = new Map(state.columns.map(col => [col.id, []]));
+  for (const task of getVisibleTasks()) {
+    if (byColumn.has(task.columnId)) byColumn.get(task.columnId).push(task);
+  }
+  const columns = [];
+  const newTasks = [];
+  const knownIds = new Set(state.tasks.map(t => t.id));
+  for (const column of state.columns) {
+    const node = [...board.children].find(el => el.dataset.columnId === column.id);
+    const list = node && node.querySelector('.task-list');
+    const header = node && node.querySelector('.column-header');
+    const count = header && header.querySelector('.column-count');
+    if (!list || !header || !count) { renderBoard(); return; }
+    const cards = new Map();
+    for (const child of [...list.children]) {
+      if (child.classList.contains('empty-hint')) continue;
+      if (!child.classList.contains('task-card') ||
+          !knownIds.has(child.dataset.taskId) || cards.has(child.dataset.taskId)) {
+        renderBoard();
+        return;
+      }
+      cards.set(child.dataset.taskId, child);
+    }
+    const ordered = sortTasks(byColumn.get(column.id));
+    for (const task of ordered) if (!cards.has(task.id)) newTasks.push(task);
+    columns.push({column,list,header,count,cards,ordered,scroll:list.scrollTop});
+  }
+  const descendantCounts = newTasks.length
+    ? countVisibleDescendants(state.tasks, newTasks) : null;
+  const boardScroll = board.scrollLeft;
+  for (const entry of columns) {
+    const {column,list,header,count,cards,ordered} = entry;
+    const wanted = new Set(ordered.map(t => t.id));
+    for (const child of [...list.children]) {
+      if (child.classList.contains('empty-hint') || !wanted.has(child.dataset.taskId))
+        child.remove();
+    }
+    let anchor = null;
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      const task = ordered[i];
+      const card = cards.get(task.id) || createTaskCard(task,column,descendantCounts);
+      if (card.parentElement !== list || card.nextElementSibling !== anchor)
+        list.insertBefore(card,anchor);
+      anchor = card;
+    }
+    const total = state.tasks.filter(t => t.columnId === column.id && !t.parentId).length;
+    if (!ordered.length) {
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = total ? 'Ничего не найдено' : 'Нет задач';
+      list.appendChild(hint);
+    }
+    const limit = column.wipLimit || 0;
+    header.classList.toggle('wip-exceeded', !!limit && total > limit);
+    header.classList.toggle('wip-warning', !!limit && total === limit);
+    count.textContent = String(total) + (limit ? '/' + limit : '');
+  }
+  for (const entry of columns) entry.list.scrollTop = entry.scroll;
+  board.scrollLeft = boardScroll;
+  updateStorageInfo();
+}
+
 // P16.1: replace only the edited card when its place and visibility are stable.
 // Other cases deliberately use the established full-render path.
 function renderSavedTaskCard(previous, task) {
@@ -3618,12 +3689,12 @@ function bindEvents() {
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderBoard(); }, 150);
+    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderFilteredBoard(); }, 150);
   };
-  $('#tagFilter').onchange = (e) => { filterTag = e.target.value; saveUIState(); renderBoard(); };
-  $('#priorityFilter').onchange = (e) => { filterPriority = e.target.value; saveUIState(); renderBoard(); };
-  $('#deadlineFilter').onchange = (e) => { filterDeadline = e.target.value; saveUIState(); renderBoard(); };
-  $('#sortSelect').onchange = (e) => { sortMode = e.target.value; saveUIState(); renderBoard(); };
+  $('#tagFilter').onchange = (e) => { filterTag = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#priorityFilter').onchange = (e) => { filterPriority = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#deadlineFilter').onchange = (e) => { filterDeadline = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#sortSelect').onchange = (e) => { sortMode = e.target.value; saveUIState(); renderFilteredBoard(); };
 
   $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;

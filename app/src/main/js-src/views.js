@@ -280,6 +280,7 @@ function renderMovedTaskColumns(columnIds, refreshTaskIds = []) {
   }
   for (const entry of columns) {
     const { list, ordered, column, header, count } = entry;
+    list.classList.remove('drag-over');
     for (const hint of [...list.children]) {
       if (hint.classList.contains('empty-hint')) hint.remove();
     }

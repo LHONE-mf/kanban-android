@@ -10,7 +10,7 @@ function classes(...values){
     toggle:(v,on)=>on?s.add(v):s.delete(v)};
 }
 function listNode(id){
-  const list={dataset:{columnId:id},children:[],scrollTop:75,
+  const list={dataset:{columnId:id},children:[],scrollTop:75,classList:classes('task-list','drag-over'),
     appendChild(el){return this.insertBefore(el,null);},
     insertBefore(el,next){
       if(el.parentElement){const arr=el.parentElement.children;const ix=arr.indexOf(el);if(ix>=0)arr.splice(ix,1);}
@@ -72,6 +72,8 @@ assert.equal(a.count.textContent,'1/2');assert.equal(b.count.textContent,'2/1');
 assert.equal(b.header.classList.contains('wip-exceeded'),true);
 assert.equal(a.list.scrollTop,scroll);assert.equal(board.scrollLeft,boardScroll);
 assert.equal(full,0);
+assert.equal(a.list.classList.contains('drag-over'),false,'source highlight cleared');
+assert.equal(b.list.classList.contains('drag-over'),false,'target highlight cleared');
 // Cancelled tablet drag after DOM reparenting must restore original state/order.
 state.tasks[0]=t1;
 const dragged=b.list.children[0];a.list.insertBefore(dragged,null);

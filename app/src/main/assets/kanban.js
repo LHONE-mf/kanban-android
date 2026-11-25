@@ -646,6 +646,13 @@ async function updateStorageInfo() {
 // ============================================================
 function sanitizeTask(t) {
   if (!t || typeof t !== 'object') return null;
+  const attachedResults = new Set((Array.isArray(t.files) ? t.files : []).map(f => f?.resultId).filter(Boolean));
+  const results = Array.isArray(t.results) ? t.results.filter(r => r && typeof r.text === 'string' && (r.text.trim() || attachedResults.has(r.id))).map(r => ({
+    id: String(r.id || 'result_' + generateId()), text: r.text,
+    createdAt: Number.isFinite(r.createdAt) ? r.createdAt : Date.now(),
+    updatedAt: Number.isFinite(r.updatedAt) ? r.updatedAt : (Number.isFinite(r.createdAt) ? r.createdAt : Date.now())
+  })) : [];
+  const resultIds = new Set(results.map(r => r.id));
   return {
     id: String(t.id || generateId()),
     boardId: typeof t.boardId === 'string' ? t.boardId : '',
@@ -657,7 +664,7 @@ function sanitizeTask(t) {
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
-      ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
+      ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(resultIds.has(f.resultId) ? { resultId: f.resultId } : {}), ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
       : (typeof t.mediaId === 'string' ? [{ id: t.mediaId, name: 'Вложение', type: String(t.mediaType || ''), size: 0 }] : []),
     checklist: Array.isArray(t.checklist)
       ? t.checklist.map(c => c && typeof c === 'object' ? {
@@ -666,12 +673,7 @@ function sanitizeTask(t) {
           checked: !!(c.checked || c.done)
         } : null).filter(c => c && c.text)
       : [],
-    results: Array.isArray(t.results) ? t.results.filter(r => r && typeof r.text === 'string' && r.text.trim()).map(r => ({
-      id: String(r.id || 'result_' + generateId()),
-      text: r.text,
-      createdAt: Number.isFinite(r.createdAt) ? r.createdAt : Date.now(),
-      updatedAt: Number.isFinite(r.updatedAt) ? r.updatedAt : (Number.isFinite(r.createdAt) ? r.createdAt : Date.now())
-    })) : [],
+    results,
     order: typeof t.order === 'number' ? t.order : 0,
     createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
     updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : Date.now(),
@@ -886,7 +888,8 @@ function getVisibleTasks() {
     if (q) {
       const checklistText = t.checklist.map(c => c.text).join(' ');
       const hay = (t.title + ' ' + t.desc + ' ' + t.tags.join(' ') + ' ' + checklistText).toLowerCase();
-      if (!hay.includes(q)) return false;
+      if (!hay.includes(q) && !(t.results || []).some(r => r.text.toLowerCase().includes(q)) &&
+          !(t.files || []).some(f => f.resultId && f.name.toLowerCase().includes(q))) return false;
     }
     return true;
   });
@@ -1468,6 +1471,7 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderMovedTaskColumns([task.columnId, targetCol.id], [task.id]);
+  offerTaskResult(task.id, task.columnId);
 }
 async function markTaskDone(taskId) {
   const doneCol = state.columns.find(c => c.isDone);
@@ -1483,6 +1487,17 @@ async function markTaskDone(taskId) {
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderMovedTaskColumns([taskColumnId, doneCol.id], [taskId]);
+  offerTaskResult(taskId, taskColumnId);
+}
+function offerTaskResult(taskId, oldColumnId) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task || task.columnId === oldColumnId || state.columns.find(c => c.id === oldColumnId)?.isDone ||
+      !state.columns.find(c => c.id === task.columnId)?.isDone) return;
+  const boardId = state.activeBoardId;
+  showToast('Задача выполнена. Записать результат?', 'Результат', () => {
+    if (state.activeBoardId !== boardId || $('#taskModal').classList.contains('open') || drag || savingTask || importInProgress) return;
+    if (state.tasks.some(t => t.id === taskId)) openTaskModal(taskId, null, { results: true });
+  }, 6500);
 }
 
 function updateTagFilter() {
@@ -2045,7 +2060,7 @@ function captureModalSnapshot() {
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
     deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
     results: tempResults,
-    parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
+    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || ''])
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
@@ -2096,8 +2111,8 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     $('#dupTaskBtn').style.display = 'none';
   }
 
-  renderFiles();
   renderTaskResults();
+  renderFiles();
   $('#addTaskResultBtn').onclick = addTaskResult;
   modalInitialSnapshot = captureModalSnapshot();
   modal.classList.add('open');
@@ -2122,6 +2137,7 @@ function renderTaskResults() {
   for (const [index, entry] of tempResults.entries()) {
     const row = document.createElement('div');
     row.className = 'task-result-row';
+    row.dataset.resultId = entry.id;
     const header = document.createElement('div');
     header.className = 'task-result-header';
     const date = document.createElement('span');
@@ -2132,8 +2148,12 @@ function renderTaskResults() {
     remove.textContent = 'Удалить';
     remove.setAttribute('aria-label', 'Удалить результат ' + (index + 1));
     remove.onclick = () => {
+      if (savingTask || rec.mr || rec.starting || rec.finishing) return;
       tempResults.splice(index, 1);
+      tempFiles = tempFiles.filter(f => f.resultId !== entry.id);
+      newFiles = newFiles.filter(f => f._resultId !== entry.id);
       renderTaskResults();
+      renderFiles();
       $('#addTaskResultBtn').focus();
     };
     header.append(date, remove);
@@ -2146,15 +2166,42 @@ function renderTaskResults() {
       entry.text = text.value;
       entry.updatedAt = Date.now();
     };
-    row.append(header, text);
+    const media = document.createElement('div');
+    media.className = 'result-file-list';
+    const audio = document.createElement('div');
+    audio.className = 'audio-list result-audio-list';
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.multiple = true;
+    picker.hidden = true;
+    picker.onchange = () => {
+      const selected = Array.from(picker.files || []);
+      picker.value = '';
+      if (!tempResults.includes(entry) || savingTask) return;
+      for (const file of selected) file._resultId = entry.id;
+      stageSelectedFiles(selected);
+    };
+    const attach = document.createElement('button');
+    attach.type = 'button'; attach.className = 'btn btn-secondary btn-small';
+    attach.textContent = '+ Файл / фото';
+    attach.onclick = () => { if (!savingTask) picker.click(); };
+    const voice = document.createElement('button');
+    voice.type = 'button'; voice.className = 'btn btn-secondary btn-small';
+    voice.textContent = 'Записать голосом';
+    voice.onclick = () => { if (!savingTask) void recStart(entry.id); };
+    const controls = document.createElement('div');
+    controls.className = 'result-controls';
+    controls.append(attach, voice);
+    row.append(header, text, media, audio, picker, controls);
     container.appendChild(row);
   }
 }
 function addTaskResult() {
-  if (savingTask) return;
+  if (savingTask || rec.mr || rec.starting || rec.finishing) return;
   const now = Date.now();
   tempResults.push({ id: 'result_' + generateId(), text: '', createdAt: now, updatedAt: now });
   renderTaskResults();
+  renderFiles();
   $('#taskResultsList').lastElementChild.querySelector('textarea').focus();
 }
 function setPriorityChips(priority) {
@@ -2241,6 +2288,11 @@ function fillParentSelect(task, colId) {
 function renderFiles() {
   const box = $('#mediaPreview');
   box.innerHTML = '';
+  const resultBoxes = new Map();
+  for (const row of $('#taskResultsList').children) {
+    const target = row.querySelector('.result-file-list');
+    if (target) { target.replaceChildren(); resultBoxes.set(row.dataset.resultId, target); }
+  }
   const all = [...tempFiles.map(f => ({ f, old: true })), ...newFiles.map(f => ({ f, old: false }))].filter(it => !isAudio(it.f));
   all.forEach((it, i) => {
     const row = document.createElement('div');
@@ -2252,7 +2304,7 @@ function renderFiles() {
     if (op) op.onclick = () => openFile(it.f, $('#taskTitle').value);
     const edit = row.querySelector('[data-edit]');
     if (edit) edit.onclick = () => editAttachmentExternally(it.f);
-    box.appendChild(row);
+    (resultBoxes.get(it.old ? it.f.resultId : it.f._resultId) || box).appendChild(row);
   });
   renderAudioList();
 }
@@ -2270,7 +2322,7 @@ async function storeFile(file) {
   // An encoded WebP must not retain a misleading .png/.heic extension.
   const name = blob !== file && type === 'image/webp' && !/\.webp$/i.test(originalName)
     ? originalName.replace(/\.[^./]+$/, '') + '.webp' : originalName;
-  return { id, name, type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
+  return { id, name, type, size: blob.size, ...(file._resultId ? { resultId: file._resultId } : {}), ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
   if (!window.KanbanFileEdit?.postMessage) {
@@ -2436,7 +2488,9 @@ async function _saveTask() {
   const columnId = par ? par.columnId : pv.slice(4);
   const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
 
+  if (rec.starting) { showToast('Дождитесь доступа к микрофону'); return; }
   if (rec.mr) await recStop();
+  else if (rec.finishing) await rec.done;
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }
   catch (e) {
@@ -2444,6 +2498,7 @@ async function _saveTask() {
     showToast('Не удалось сохранить файл: ' + (e.message || e)); return;
   }
   const files = [...tempFiles, ...stored];
+  const attachedResults = new Set(files.map(f => f.resultId).filter(Boolean));
 
   const moved = !existing || existing.parentId !== parentId || existing.columnId !== columnId;
   const sib = state.tasks.filter(t => t !== existing && t.parentId === parentId && (parentId || t.columnId === columnId));
@@ -2452,7 +2507,7 @@ async function _saveTask() {
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, files,
-    results: tempResults.filter(r => r.text.trim()).map(r => ({ ...r, text: r.text.trim() })),
+    results: tempResults.filter(r => r.text.trim() || attachedResults.has(r.id)).map(r => ({ ...r, text: r.text.trim() })),
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
@@ -2481,9 +2536,10 @@ async function _saveTask() {
     renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
   else if (existing) renderSavedTaskCard(existing, candidate);
   else renderTaskCollectionChange(candidate, false);
+  if (existing && typeof offerTaskResult === 'function') offerTaskResult(candidate.id, existing.columnId);
 }
 
-function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }
+function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || !!rec.starting || !!rec.finishing || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
   if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
@@ -2513,7 +2569,7 @@ async function duplicateTask(taskId) {
   const files = [];
   // Only newly generated copies are eligible for rollback, never source media.
   const discardCopies = () => Promise.all(files.map(f => mediaDelete(f.id).catch(() => {})));
-  try { for (const f of src.files) { const m = await mediaGet(f.id); if (!m) continue; const id = 'm_' + generateId(); await mediaPut(id, m.full, m.thumb, m.type); files.push({ ...f, id }); } }
+  try { for (const f of src.files.filter(f => !f.resultId)) { const m = await mediaGet(f.id); if (!m) continue; const id = 'm_' + generateId(); await mediaPut(id, m.full, m.thumb, m.type); files.push({ ...f, id }); } }
   catch (e) { await discardCopies(); showToast('Не удалось скопировать файлы: ' + e.message); return; }
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',
@@ -3114,7 +3170,7 @@ async function exportData() {
     const allTasks = Object.values(state._tasksByBoard).flat();
     const settings = await dbGetSettings();
     const nativeJapanese = await nativeJapaneseCommand('read');
-    const version = allTasks.some(t => t.results?.length) ? 7 : 6;
+    const version = allTasks.some(t => t.files.some(f => f.resultId)) ? 8 : allTasks.some(t => t.results?.length) ? 7 : 6;
     const parts = ['{"version":' + version + ',"app":"comrade","exportedAt":' + JSON.stringify(new Date().toISOString())
       + ',"activeBoardId":' + JSON.stringify(state.activeBoardId) + ',"boards":' + JSON.stringify(state.boards)
       + ',"tasks":' + JSON.stringify(allTasks)
@@ -3220,7 +3276,7 @@ async function buildImportPlan(data) {
   // archive could silently replace a real board with an empty one.
   if (!Array.isArray(data) && data && Object.prototype.hasOwnProperty.call(data, 'version')) {
     const version = Number(data.version);
-    if (!Number.isInteger(version) || version < 1 || version > 7)
+    if (!Number.isInteger(version) || version < 1 || version > 8)
       throw new Error('Неподдерживаемая версия архива');
     if (version >= 5 && (!Array.isArray(data.boards) || !Array.isArray(data.tasks)))
       throw new Error('Архив неполный: отсутствуют доски или задачи');
@@ -3636,6 +3692,7 @@ async function onPointerUp(e) {
     const list = dropList && card.parentElement === dropList ? dropList : null;
     const touched = [sourceColumnId, card.parentElement?.dataset.columnId];
     drag = null;
+    let committed = false;
     if (list) {
       const newColId = list.dataset.columnId;
       const orderedIds = $$('.task-card', list).map(c => c.dataset.taskId);
@@ -3680,9 +3737,11 @@ async function onPointerUp(e) {
           if (idx !== undefined) currentTasks[idx] = cand;
         }
         notifyOtherTabs();
+        committed = true;
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
     renderMovedTaskColumns(touched, list ? [taskId] : []);
+    if (committed && typeof offerTaskResult === 'function') offerTaskResult(taskId, sourceColumnId);
   } else {
     drag = null;
   }
@@ -4377,6 +4436,11 @@ function createAudioPlayer(f, o = {}) {
 function renderAudioList() {
   const box = $('#audioList'); if (!box) return;
   box.innerHTML = '';
+  const resultBoxes = new Map();
+  for (const row of $('#taskResultsList').children) {
+    const target = row.querySelector('.result-audio-list');
+    if (target) { target.replaceChildren(); resultBoxes.set(row.dataset.resultId, target); }
+  }
   [...tempFiles.map(f => ({ f, old: true })), ...newFiles.map(f => ({ f, old: false }))].filter(it => isAudio(it.f)).forEach(({ f, old }) => {
     let meta = f, getBlob = async () => (await mediaGet(f.id))?.full;
     if (!old) { f._aid = f._aid || 'tmp_' + generateId(); const m = f._meta || {}; meta = { id: f._aid, name: f.name, dur: m.dur || f._dur, peaks: m.peaks }; meta.name = f._name || f.name; getBlob = async () => f; }
@@ -4387,27 +4451,33 @@ function renderAudioList() {
     } }));
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'audio-rm'; rm.textContent = '×'; rm.setAttribute('aria-label', 'Удалить запись');
     rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); };
-    row.appendChild(rm); box.appendChild(row);
+    row.appendChild(rm); (resultBoxes.get(old ? f.resultId : f._resultId) || box).appendChild(row);
   });
 }
 
-const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null };
-function bindAudio() { $('#recStartBtn').onclick = recStart; $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
-async function recStart() {
-  if (rec.mr) return;
+const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null, starting: false, finishing: false, session: null, resultId: '' };
+function bindAudio() { $('#recStartBtn').onclick = () => recStart(); $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
+async function recStart(resultId = '') {
+  if (rec.mr || rec.starting || rec.finishing || savingTask) return;
+  const session = tempResults;
+  if (resultId && !session.some(r => r.id === resultId)) return;
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { showToast('Запись звука не поддерживается в этом браузере'); return; }
   let stream;
+  rec.starting = true;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch (e) { showToast(e.name === 'NotAllowedError' ? 'Нет доступа к микрофону — разрешите его в настройках браузера' : e.name === 'NotFoundError' ? 'Микрофон не найден' : 'Не удалось включить микрофон'); return; }
+  finally { rec.starting = false; }
+  if (tempResults !== session || !$('#taskModal').classList.contains('open') || savingTask) { stream.getTracks().forEach(t => t.stop()); return; }
   apStop();
   const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
   let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); } catch (_) { stream.getTracks().forEach(t => t.stop()); showToast('Не удалось начать запись'); return; }
-  Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now() }); $('#recPause').textContent = 'Пауза';
+  Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now(), session, resultId }); $('#recPause').textContent = 'Пауза';
   mr.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
-  rec.done = new Promise(res => { mr.onstop = async () => { await recFinish(); res(); }; });
+  rec.done = new Promise(res => { mr.onstop = async () => { rec.finishing = true; try { await recFinish(); } finally { rec.finishing = false; res(); } }; });
   try { rec.ctx = new (window.AudioContext || window.webkitAudioContext)(); rec.ctx.resume?.(); rec.an = rec.ctx.createAnalyser(); rec.an.fftSize = 256; rec.ctx.createMediaStreamSource(stream).connect(rec.an); } catch (_) { rec.an = null; }
   mr.start(1000);
   $('#recPanel').hidden = false; $('#recStartBtn').hidden = true;
+  if (resultId) { showToast('Запись для результата начата'); $('#recPanel').scrollIntoView({ block: 'nearest' }); }
   rec.tick = setInterval(recTick, 80);
 }
 function recElapsed() { return (rec.acc + (rec.mr && rec.mr.state === 'recording' ? Date.now() - rec.seg : 0)) / 1000; }
@@ -4430,14 +4500,18 @@ function recTick() {
 function recStop() { if (!rec.mr) return Promise.resolve(); if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.seg = Date.now(); } try { if (rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {} return rec.done; }
 function recAbort() { if (!rec.mr) return; rec.cancel = true; recStop(); }
 async function recFinish() {
-  const dur = rec.acc / 1000, type = (rec.mr.mimeType || 'audio/webm').split(';')[0], cancel = rec.cancel, chunks = rec.chunks;
+  const dur = rec.acc / 1000, type = (rec.mr.mimeType || 'audio/webm').split(';')[0], cancel = rec.cancel, chunks = rec.chunks, session = rec.session, resultId = rec.resultId;
   clearInterval(rec.tick); rec.stream.getTracks().forEach(t => t.stop()); try { rec.ctx && rec.ctx.close(); } catch (_) {}
   rec.mr = null; rec.stream = null; rec.ctx = null; rec.an = null;
   $('#recPanel').hidden = true; $('#recStartBtn').hidden = false;
   if (cancel || !chunks.length) return;
   const d = new Date(), p = n => String(n).padStart(2, '0'), ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
   const file = new File(chunks, `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.${ext}`, { type });
-  file._dur = dur; await prepAudio(file); newFiles.push(file); renderFiles();
+  file._dur = dur;
+  if (resultId) file._resultId = resultId;
+  await prepAudio(file);
+  if (tempResults !== session || !$('#taskModal').classList.contains('open') || (resultId && !session.some(r => r.id === resultId))) return;
+  newFiles.push(file); renderFiles();
 }
 
 async function registerServiceWorker() {

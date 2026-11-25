@@ -3566,9 +3566,14 @@ async function onPointerUp(e) {
     if (list) {
       const newColId = list.dataset.columnId;
       const orderedIds = $$('.task-card', list).map(c => c.dataset.taskId);
+      // Keep the first match, as Array.find did, without rescanning per card.
+      const tasksById = new Map();
+      for (const task of state.tasks) {
+        if (!tasksById.has(task.id)) tasksById.set(task.id, task);
+      }
       const toUpdate = [];
       for (let i = 0; i < orderedIds.length; i++) {
-        const t = state.tasks.find(x => x.id === orderedIds[i]);
+        const t = tasksById.get(orderedIds[i]);
         if (!t) continue;
         if (t.columnId === newColId && t.order === i) continue;
         const updated = applyColumnChange(t, newColId);
@@ -3579,7 +3584,7 @@ async function onPointerUp(e) {
         // Save a moved parent and all descendants in one IndexedDB transaction.
         const changes = new Map(toUpdate.map(t => [t.id, t]));
         for (const parent of toUpdate) {
-          const previous = state.tasks.find(t => t.id === parent.id);
+          const previous = tasksById.get(parent.id);
           if (!previous || previous.columnId === parent.columnId) continue;
           for (const child of subtree(parent.id)) {
             const current = changes.get(child.id) || child;
@@ -3590,10 +3595,17 @@ async function onPointerUp(e) {
         }
         const updates = [...changes.values()];
         await dbPutTasks(updates);
-        updates.forEach(cand => {
-          const idx = state.tasks.findIndex(x => x.id === cand.id);
-          if (idx !== -1) state.tasks[idx] = cand;
-        });
+        // Storage is asynchronous: index the current array, not the old positions.
+        const currentTasks = state.tasks;
+        const positions = new Map();
+        for (let i = 0; i < currentTasks.length; i++) {
+          const id = currentTasks[i].id;
+          if (!positions.has(id)) positions.set(id, i);
+        }
+        for (const cand of updates) {
+          const idx = positions.get(cand.id);
+          if (idx !== undefined) currentTasks[idx] = cand;
+        }
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }

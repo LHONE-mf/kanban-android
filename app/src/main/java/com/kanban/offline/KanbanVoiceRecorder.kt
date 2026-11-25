@@ -10,6 +10,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.webkit.WebResourceResponse
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.util.UUID
 
@@ -28,6 +29,7 @@ internal class KanbanVoiceRecorder(
     private var elapsed = 0L
     private var started = 0L
     private var paused = false
+    private val amplitudes = ArrayList<Int>()
     @Volatile private var closed = false
     private data class Ready(val id: String, val token: String, val file: File)
     @Volatile private var ready: Ready? = null
@@ -44,6 +46,7 @@ internal class KanbanVoiceRecorder(
             val ms = duration()
             if (ms >= 1_200_000L) { finish(session); return }
             val amplitude = if (paused) 0 else runCatching { current.maxAmplitude }.getOrDefault(0)
+            if (!paused) amplitudes.add(amplitude.coerceIn(0, 32767))
             send(session, "level", JSONObject().put("ms", ms).put("level", amplitude / 32768.0))
             worker.postDelayed(this, 200)
         }
@@ -79,6 +82,7 @@ internal class KanbanVoiceRecorder(
             } }
             capture.prepare()
             capture.start()
+            amplitudes.clear()
             elapsed = 0L
             started = SystemClock.elapsedRealtime()
             paused = false
@@ -128,7 +132,16 @@ internal class KanbanVoiceRecorder(
             if (target.length() !in 1L..(50L * 1024 * 1024)) throw IllegalStateException("Пустая или слишком большая запись")
             val result = Ready(session, UUID.randomUUID().toString(), target)
             ready = result
-            send(session, "ready", JSONObject().put("token", result.token).put("ms", ms).put("size", target.length()))
+            val peaks = JSONArray()
+            val count = amplitudes.size
+            if (count > 0) for (i in 0 until 56) {
+                val from = i * count / 56
+                val to = ((i + 1) * count / 56).coerceAtLeast(from + 1).coerceAtMost(count)
+                val max = (from until to).maxOf { amplitudes[it] }
+                peaks.put((kotlin.math.sqrt(max / 32768.0) * 100).toInt().coerceIn(8, 100))
+            }
+            send(session, "ready", JSONObject().put("token", result.token).put("ms", ms)
+                .put("size", target.length()).put("peaks", peaks))
         } catch (e: Exception) {
             target.delete()
             fail(session, "Не удалось сохранить запись: " + (e.message ?: e.javaClass.simpleName))
@@ -158,6 +171,11 @@ internal class KanbanVoiceRecorder(
         } catch (_: Exception) { WebResourceResponse(null, null, null) }
     }
     fun stopInBackground() = enqueue { id?.let { finish(it) } }
+    fun cancelForNavigation() = enqueue {
+        reset(true)
+        ready?.file?.delete()
+        ready = null
+    }
     private fun enqueue(block: () -> Unit) {
         if (!closed) worker.post { if (!closed) block() }
     }

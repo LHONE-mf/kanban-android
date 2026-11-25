@@ -77,7 +77,7 @@ function fixture({failWrite=false,delayConfirm=false}={}) {
     {...archive(),boards:undefined},
     {...archive(),boards:{}},
     {...archive(),version:5,tasks:undefined},
-    {...archive(),version:8},
+    {...archive(),version:9},
     {...archive(),version:'invalid'}
   ]) {
     f=fixture();

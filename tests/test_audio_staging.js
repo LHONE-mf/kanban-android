@@ -38,6 +38,21 @@ function fixture(reject) {
   const device={getUserMedia:async c=>{calls.push(c);if(calls.length===1)throw Object.assign(new Error('capture'),{name:'NotReadableError'});return stream;}};
   assert.equal(await mic.requestMicStream(device,()=>true),stream);
   assert.equal(calls.length,2);
+  assert.equal(calls[0].audio.echoCancellation,false);
+  assert.equal(calls[0].audio.noiseSuppression,false);
+  assert.equal(calls[0].audio.autoGainControl,false);
+  assert.equal(calls[0].audio.sampleRate.ideal,48000);
+  assert.equal(calls[0].audio.channelCount.ideal,1);
+  const options=[];
+  class Recorder { constructor(stream, opts) { options.push(opts); } }
+  mic.createVoiceRecorder(stream,'audio/webm;codecs=opus',Recorder);
+  assert.equal(options[0].audioBitsPerSecond,128000);
+  assert.equal(options[0].mimeType,'audio/webm;codecs=opus');
+  const retries=[];
+  class LegacyRecorder { constructor(stream,opts) { retries.push(opts);if(opts.audioBitsPerSecond)throw Object.assign(new Error('unsupported'),{name:'NotSupportedError'}); } }
+  mic.createVoiceRecorder(stream,'audio/webm',LegacyRecorder);
+  assert.equal(retries.length,2);
+  assert.equal(retries[1].mimeType,'audio/webm');
   assert.equal(calls[1].audio,true);
   for(const [name,active] of [['NotAllowedError',true],['NotReadableError',false]]) {
     let count=0;

@@ -30,33 +30,73 @@ function fixture(reject) {
   assert.equal(saved.resultId,'result1','recorded or selected audio keeps result association');
   const extras=fs.readFileSync('app/src/main/js-src/android-extras.js','utf8');
   const manifest=fs.readFileSync('app/src/main/AndroidManifest.xml','utf8');
+  const native=fs.readFileSync('app/src/main/java/com/kanban/offline/KanbanVoiceRecorder.kt','utf8');
+  const activity=fs.readFileSync('app/src/main/java/com/kanban/offline/MainActivity.kt','utf8');
   assert.match(manifest,/android:name="android\.permission\.RECORD_AUDIO"/);
-  assert.match(manifest,/android:name="android\.permission\.MODIFY_AUDIO_SETTINGS"/);
-  const micSrc=extras.slice(extras.indexOf('function micErrorMessage('),extras.indexOf('async function recStart('));
-  const mic={};vm.createContext(mic);vm.runInContext(micSrc,mic);
-  const calls=[],stream={};
-  const device={getUserMedia:async c=>{calls.push(c);if(calls.length===1)throw Object.assign(new Error('capture'),{name:'NotReadableError'});return stream;}};
-  assert.equal(await mic.requestMicStream(device,()=>true),stream);
-  assert.equal(calls.length,2);
-  assert.equal(calls[1].audio,true);
-  for(const [name,active] of [['NotAllowedError',true],['NotReadableError',false]]) {
-    let count=0;
-    await assert.rejects(mic.requestMicStream({getUserMedia:async()=>{count++;throw Object.assign(new Error('capture'),{name});}},()=>active));
-    assert.equal(count,1,'no retry after denied permission or closed editor');
-  }
-  assert.match(mic.micErrorMessage({name:'NotReadableError'}),/NotReadableError/);
-  assert.match(mic.micErrorMessage({name:'NotAllowedError'}),/Android/);
-  const recSrc=extras.slice(extras.indexOf('async function recFinish()'),extras.indexOf('async function registerServiceWorker()'));
-  const session=[{id:'r1'}], files=[];
-  const env={tempResults:session,newFiles:files,rec:{mr:{mimeType:'audio/webm'},acc:1000,cancel:false,chunks:[new Blob(['audio'])],session,resultId:'r1',stream:{getTracks:()=>[{stop(){}}]}},
+  assert.doesNotMatch(extras,/getUserMedia|new MediaRecorder/);
+  assert.match(native,/setAudioSamplingRate\(48000\)/);
+  assert.match(native,/setAudioEncodingBitRate\(128000\)/);
+  assert.match(native,/AudioEncoder\.AAC/);
+  assert.match(native,/HandlerThread/);
+  assert.match(activity,/addWebMessageListener\(webView, "KanbanVoice", setOf\(appOrigin\)\)/);
+  assert.match(native,/path != current.token/);
+  const recSrc=extras.slice(extras.indexOf('const rec ='),extras.indexOf('async function registerServiceWorker()'));
+  assert.ok(recSrc.length>100);
+  const commands=[],files=[],notices=[],nodes=new Map();
+  let serial=0,failFetch=false;
+  const session=[{id:'r1'}];
+  const audioBlob=new Blob(['audio'],{type:'audio/mp4'});
+  const env={tempResults:session,newFiles:files,savingTask:false,MAX_VIDEO_SIZE:50*1024*1024,
     File:class extends Blob{constructor(chunks,name,opts){super(chunks,opts);this.name=name;}},
-    clearInterval(){},$:()=>({classList:{contains:()=>true}}),prepAudio:async()=>{},renderFiles(){}};
-  vm.createContext(env);vm.runInContext(recSrc,env);
-  await env.recFinish();
+    window:{KanbanVoice:{postMessage:raw=>commands.push(JSON.parse(raw))}},
+    generateId:()=>String(++serial),apStop(){},renderFiles(){},showToast:m=>notices.push(m),
+    $:selector=>{if(!nodes.has(selector))nodes.set(selector,{classList:{contains:()=>true},children:[],replaceChildren(){},scrollIntoView(){}});return nodes.get(selector);},
+    fetch:async()=>{if(failFetch)throw Error('transfer failed');return {ok:true,blob:async()=>audioBlob};}
+  };
+  vm.createContext(env);vm.runInContext(recSrc+'\nthis.recordState=rec;',env);
+  const send=(id,type,extra={})=>env.window.kanbanVoiceNativeResult(JSON.stringify({id,type,...extra}));
+  const ready={token:'a'.repeat(36),ms:1500,size:audioBlob.size,peaks:[20,40]};
+  env.recStart('r1');
+  const first=commands.at(-1).id;
+  assert.equal(env.recordState.starting,true);
+  send(first,'started');
+  assert.equal(env.recordState.active,true);
+  env.recPause();assert.equal(commands.at(-1).type,'pause');
+  const stop=env.recStop();
+  assert.equal(commands.at(-1).type,'stop');
+  send(first,'ready',ready);
+  assert.equal(await stop,true);
+  assert.equal(files.length,1);
   assert.equal(files[0]._resultId,'r1');
-  env.rec={...env.rec,mr:{mimeType:'audio/webm'},chunks:[new Blob(['audio'])],stream:{getTracks:()=>[]}};
+  assert.equal(files[0].type,'audio/mp4');
+  assert.equal(files[0]._meta.dur,1.5);
+  assert.equal(commands.at(-1).type,'ack');
+  env.recStart('r1');
+  const second=commands.at(-1).id;
+  send(second,'started');
+  failFetch=true;
+  const failing=env.recStop();send(second,'ready',ready);
+  assert.equal(await failing,false);
+  assert.equal(files.length,1);
+  assert.equal(env.recordState.ready.token,ready.token,'failed transfer retains retryable file');
+  assert.notEqual(commands.at(-1).type,'ack');
+  failFetch=false;
+  assert.equal(await env.recStop(),true);
+  assert.equal(files.length,2);
+  env.recStart('r1');
+  const third=commands.at(-1).id;
+  send(third,'started');
+  env.recAbort();
+  send(third,'ready',ready);
+  assert.equal(files.length,2,'cancelled session cannot attach late file');
+  assert.equal(commands.at(-1).type,'cancel');
+  env.recStart('r1');
+  const fourth=commands.at(-1).id;
+  send(fourth,'started');
+  const pending=env.recStop();
   env.tempResults=[];
-  await env.recFinish();
-  assert.equal(files.length,1,'late voice recording cannot attach to another task editor');
-  console.log('Audio: successful save keeps metadata, failed decoding never writes.');
+  send(fourth,'ready',ready);
+  assert.equal(await pending,false);
+  assert.equal(files.length,2,'different editor cannot receive old recording');
+  console.log('Native voice: session identity, retry, cancel, result association and capture contract verified.');
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -60,7 +60,8 @@ class MainActivity : ComponentActivity() {
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private lateinit var backupSaver: KanbanBackupSaver
     private lateinit var attachmentOpener: KanbanAttachmentOpener
-    private var pendingMicRequest: PermissionRequest? = null
+    private lateinit var voiceRecorder: KanbanVoiceRecorder
+    private var pendingVoicePermission: String? = null
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
     private var editingDigest: String? = null
@@ -133,26 +134,71 @@ class MainActivity : ComponentActivity() {
         if (::backupSaver.isInitialized) backupSaver.onDestinationPicked(uri)
     }
 
+    private fun voiceEvent(event: JSONObject) {
+        if (::webView.isInitialized && webView.url?.endsWith("/assets/kanban.html") == true) {
+            webView.evaluateJavascript(
+                "window.kanbanVoiceNativeResult && window.kanbanVoiceNativeResult(" +
+                    JSONObject.quote(event.toString()) + ")", null
+            )
+        }
+    }
+
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        val request = pendingMicRequest
-        pendingMicRequest = null
-        if (request != null) {
-            if (granted && request.origin.toString().removeSuffix("/") == appOrigin &&
-                request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
-                request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        val session = pendingVoicePermission
+        pendingVoicePermission = null
+        if (session != null) {
+            if (granted && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                voiceRecorder.start(session)
             } else {
-                request.deny()
+                voiceEvent(JSONObject().put("id", session).put("type", "error")
+                    .put("message", "Нет доступа к микрофону. Проверьте разрешения Comrade"))
             }
+        }
+    }
+
+    private fun handleVoiceCommand(raw: String) {
+        val data = try { JSONObject(raw) } catch (_: Exception) { return }
+        val session = data.optString("id")
+        val action = data.optString("type")
+        if (!session.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return
+        when (action) {
+            "start" -> {
+                if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                    voiceEvent(JSONObject().put("id", session).put("type", "error")
+                        .put("message", "Откройте Comrade для записи"))
+                } else if (pendingVoicePermission != null) {
+                    voiceEvent(JSONObject().put("id", session).put("type", "error")
+                        .put("message", "Запрос микрофона уже открыт"))
+                } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED) {
+                    voiceRecorder.start(session)
+                } else {
+                    pendingVoicePermission = session
+                    try { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
+                    catch (_: Exception) {
+                        pendingVoicePermission = null
+                        voiceEvent(JSONObject().put("id", session).put("type", "error")
+                            .put("message", "Не удалось запросить разрешение микрофона"))
+                    }
+                }
+            }
+            "cancel" -> {
+                if (pendingVoicePermission == session) pendingVoicePermission = null
+                voiceRecorder.command(session, action)
+            }
+            "pause", "resume", "stop", "ack" -> voiceRecorder.command(session, action)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         removeOldModelCopy()
+        voiceRecorder = KanbanVoiceRecorder(this, ::voiceEvent)
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/voice-capture/", WebViewAssetLoader.PathHandler { path -> voiceRecorder.resource(path) })
             .build()
 
         japaneseSpeech = TextToSpeech(this) { status ->
@@ -189,33 +235,21 @@ class MainActivity : ComponentActivity() {
                 }
 
                 override fun onPermissionRequest(request: PermissionRequest) {
-                    runOnUiThread {
-                        // Grant only microphone access to the trusted bundled app origin.
-                        // Never automatically grant camera or unrelated WebView permissions.
-                        val trusted = request.origin.toString().removeSuffix("/") == appOrigin
-                        val audioOnly = request.resources.size == 1 &&
-                            request.resources[0] == PermissionRequest.RESOURCE_AUDIO_CAPTURE
-                        if (!trusted || !audioOnly || pendingMicRequest != null) {
-                            request.deny()
-                        } else if (ContextCompat.checkSelfPermission(
-                                this@MainActivity, Manifest.permission.RECORD_AUDIO
-                            ) == PackageManager.PERMISSION_GRANTED) {
-                            request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
-                        } else {
-                            pendingMicRequest = request
-                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    }
-                }
-
-                override fun onPermissionRequestCanceled(request: PermissionRequest) {
-                    if (pendingMicRequest === request) pendingMicRequest = null
+                    // Audio capture belongs to the native recorder, never to web content.
+                    request.deny()
                 }
             }
             webViewClient = object : WebViewClientCompat() {
                 override fun shouldInterceptRequest(
                     view: WebView, request: WebResourceRequest
                 ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    if (!url.endsWith("/assets/kanban.html")) {
+                        pendingVoicePermission = null
+                        voiceRecorder.cancelForNavigation()
+                    }
+                }
 
                 override fun onPageFinished(view: WebView, url: String) {
                     if (::japaneseButton.isInitialized) {
@@ -224,6 +258,17 @@ class MainActivity : ComponentActivity() {
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }
                 }
+            }
+        }
+
+        // The bridge accepts commands only from the local Kanban main frame.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanVoice", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url?.endsWith("/assets/kanban.html") != true) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length <= 1024) runOnUiThread { handleVoiceCommand(raw) }
             }
         }
 
@@ -808,11 +853,17 @@ class MainActivity : ComponentActivity() {
         return panel
     }
 
+    override fun onStop() {
+        // Finish active recording when the application leaves the foreground.
+        if (::voiceRecorder.isInitialized) voiceRecorder.stopInBackground()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         if (::backupSaver.isInitialized) backupSaver.close()
         if (::attachmentOpener.isInitialized) attachmentOpener.close()
-        pendingMicRequest?.deny()
-        pendingMicRequest = null
+        pendingVoicePermission = null
+        if (::voiceRecorder.isInitialized) voiceRecorder.close()
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null
         webView.destroy()

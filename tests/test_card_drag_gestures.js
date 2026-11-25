@@ -327,6 +327,59 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   s.flush();
   assert.equal(s.writes.length,0);
 
+  // P17.5: a large destination column must not scan the task array per card.
+  s=scenario({withDescendants:true});
+  const large = s.sandbox.state.tasks;
+  for(let i=0;i<500;i++){
+    const id='destination-'+i;
+    large.push({id,parentId:'',columnId:'col_b',order:i+1});
+    s.second.appendChild({
+      dataset:{taskId:id},classList:{contains:()=>false},parentElement:null,
+      getBoundingClientRect:()=>({top:0,height:20})
+    });
+  }
+  for(let i=0;i<2496;i++)large.push({id:'other-'+i,parentId:'',columnId:'col_a',order:i+2});
+  assert.equal(large.length,3000);
+  large.find=()=>{throw Error('unexpected per-card find');};
+  large.findIndex=()=>{throw Error('unexpected per-update findIndex');};
+  const unrelated=large[3];
+  s.down();s.activate();s.move(370,150);
+  await s.up(370,150);
+  assert.equal(s.writes.length,1);
+  assert.equal(s.writes[0].length,503,'500 reordered cards, parent and two descendants');
+  assert.equal(s.toasts.length,0);
+  assert.equal(large[0].order,500);
+  assert.ok(large.slice(0,3).every(t=>t.columnId==='col_b'));
+  assert.equal(large[3],unrelated,'unrelated task identity preserved');
+  assert.ok(large.slice(4,504).every((t,i)=>t.order===i));
+
+  // The committed task is located again by ID after the asynchronous write.
+  s=scenario({withDescendants:true});
+  let finishWrite;
+  const originalWrite=s.sandbox.dbPutTasks;
+  s.sandbox.dbPutTasks=async updates=>{
+    await originalWrite(updates);
+    await new Promise(resolve=>{finishWrite=resolve;});
+  };
+  s.down();s.activate();s.move(370,150);
+  const saving=s.up(370,150);
+  await Promise.resolve();
+  assert.equal(typeof finishWrite,'function');
+  const before=s.sandbox.state.tasks;
+  const replacement=[before[3],before[2],before[0]]; // child absent, other positions changed
+  replacement.findIndex=()=>{throw Error('unexpected post-write findIndex');};
+  s.sandbox.state.tasks=replacement;
+  finishWrite();
+  await saving;
+  assert.equal(s.toasts.length,0);
+  assert.equal(s.sandbox.state.tasks,replacement);
+  assert.equal(replacement[0],before[3]);
+  assert.equal(replacement[1].id,'grandchild');
+  assert.equal(replacement[1].columnId,'col_b');
+  assert.equal(replacement[2].id,'task1');
+  assert.equal(replacement[2].columnId,'col_b');
+  assert.equal(replacement.length,3,'missing tasks are not resurrected');
+
   const views=fs.readFileSync('app/src/main/js-src/views.js','utf8');
   assert.match(views,/data-drag-handle="1"/,'drag grip exists on every card');
   assert.match(views,/dragHandle\.onkeydown/,'grip has keyboard move support');

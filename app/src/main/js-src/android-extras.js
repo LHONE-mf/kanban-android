@@ -152,6 +152,11 @@ function createAudioPlayer(f, o = {}) {
 function renderAudioList() {
   const box = $('#audioList'); if (!box) return;
   box.innerHTML = '';
+  const resultBoxes = new Map();
+  for (const row of $('#taskResultsList').children) {
+    const target = row.querySelector('.result-audio-list');
+    if (target) { target.replaceChildren(); resultBoxes.set(row.dataset.resultId, target); }
+  }
   [...tempFiles.map(f => ({ f, old: true })), ...newFiles.map(f => ({ f, old: false }))].filter(it => isAudio(it.f)).forEach(({ f, old }) => {
     let meta = f, getBlob = async () => (await mediaGet(f.id))?.full;
     if (!old) { f._aid = f._aid || 'tmp_' + generateId(); const m = f._meta || {}; meta = { id: f._aid, name: f.name, dur: m.dur || f._dur, peaks: m.peaks }; meta.name = f._name || f.name; getBlob = async () => f; }
@@ -162,27 +167,33 @@ function renderAudioList() {
     } }));
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'audio-rm'; rm.textContent = '×'; rm.setAttribute('aria-label', 'Удалить запись');
     rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); };
-    row.appendChild(rm); box.appendChild(row);
+    row.appendChild(rm); (resultBoxes.get(old ? f.resultId : f._resultId) || box).appendChild(row);
   });
 }
 
-const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null };
-function bindAudio() { $('#recStartBtn').onclick = recStart; $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
-async function recStart() {
-  if (rec.mr) return;
+const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null, starting: false, finishing: false, session: null, resultId: '' };
+function bindAudio() { $('#recStartBtn').onclick = () => recStart(); $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
+async function recStart(resultId = '') {
+  if (rec.mr || rec.starting || rec.finishing || savingTask) return;
+  const session = tempResults;
+  if (resultId && !session.some(r => r.id === resultId)) return;
   if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { showToast('Запись звука не поддерживается в этом браузере'); return; }
   let stream;
+  rec.starting = true;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch (e) { showToast(e.name === 'NotAllowedError' ? 'Нет доступа к микрофону — разрешите его в настройках браузера' : e.name === 'NotFoundError' ? 'Микрофон не найден' : 'Не удалось включить микрофон'); return; }
+  finally { rec.starting = false; }
+  if (tempResults !== session || !$('#taskModal').classList.contains('open') || savingTask) { stream.getTracks().forEach(t => t.stop()); return; }
   apStop();
   const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
   let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); } catch (_) { stream.getTracks().forEach(t => t.stop()); showToast('Не удалось начать запись'); return; }
-  Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now() }); $('#recPause').textContent = 'Пауза';
+  Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now(), session, resultId }); $('#recPause').textContent = 'Пауза';
   mr.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
-  rec.done = new Promise(res => { mr.onstop = async () => { await recFinish(); res(); }; });
+  rec.done = new Promise(res => { mr.onstop = async () => { rec.finishing = true; try { await recFinish(); } finally { rec.finishing = false; res(); } }; });
   try { rec.ctx = new (window.AudioContext || window.webkitAudioContext)(); rec.ctx.resume?.(); rec.an = rec.ctx.createAnalyser(); rec.an.fftSize = 256; rec.ctx.createMediaStreamSource(stream).connect(rec.an); } catch (_) { rec.an = null; }
   mr.start(1000);
   $('#recPanel').hidden = false; $('#recStartBtn').hidden = true;
+  if (resultId) { showToast('Запись для результата начата'); $('#recPanel').scrollIntoView({ block: 'nearest' }); }
   rec.tick = setInterval(recTick, 80);
 }
 function recElapsed() { return (rec.acc + (rec.mr && rec.mr.state === 'recording' ? Date.now() - rec.seg : 0)) / 1000; }
@@ -205,14 +216,18 @@ function recTick() {
 function recStop() { if (!rec.mr) return Promise.resolve(); if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.seg = Date.now(); } try { if (rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {} return rec.done; }
 function recAbort() { if (!rec.mr) return; rec.cancel = true; recStop(); }
 async function recFinish() {
-  const dur = rec.acc / 1000, type = (rec.mr.mimeType || 'audio/webm').split(';')[0], cancel = rec.cancel, chunks = rec.chunks;
+  const dur = rec.acc / 1000, type = (rec.mr.mimeType || 'audio/webm').split(';')[0], cancel = rec.cancel, chunks = rec.chunks, session = rec.session, resultId = rec.resultId;
   clearInterval(rec.tick); rec.stream.getTracks().forEach(t => t.stop()); try { rec.ctx && rec.ctx.close(); } catch (_) {}
   rec.mr = null; rec.stream = null; rec.ctx = null; rec.an = null;
   $('#recPanel').hidden = true; $('#recStartBtn').hidden = false;
   if (cancel || !chunks.length) return;
   const d = new Date(), p = n => String(n).padStart(2, '0'), ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
   const file = new File(chunks, `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.${ext}`, { type });
-  file._dur = dur; await prepAudio(file); newFiles.push(file); renderFiles();
+  file._dur = dur;
+  if (resultId) file._resultId = resultId;
+  await prepAudio(file);
+  if (tempResults !== session || !$('#taskModal').classList.contains('open') || (resultId && !session.some(r => r.id === resultId))) return;
+  newFiles.push(file); renderFiles();
 }
 
 async function registerServiceWorker() {

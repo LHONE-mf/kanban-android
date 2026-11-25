@@ -38,7 +38,7 @@ function captureModalSnapshot() {
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
     deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
     results: tempResults,
-    parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
+    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || ''])
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
@@ -89,8 +89,8 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     $('#dupTaskBtn').style.display = 'none';
   }
 
-  renderFiles();
   renderTaskResults();
+  renderFiles();
   $('#addTaskResultBtn').onclick = addTaskResult;
   modalInitialSnapshot = captureModalSnapshot();
   modal.classList.add('open');
@@ -115,6 +115,7 @@ function renderTaskResults() {
   for (const [index, entry] of tempResults.entries()) {
     const row = document.createElement('div');
     row.className = 'task-result-row';
+    row.dataset.resultId = entry.id;
     const header = document.createElement('div');
     header.className = 'task-result-header';
     const date = document.createElement('span');
@@ -125,8 +126,12 @@ function renderTaskResults() {
     remove.textContent = 'Удалить';
     remove.setAttribute('aria-label', 'Удалить результат ' + (index + 1));
     remove.onclick = () => {
+      if (savingTask || rec.mr || rec.starting || rec.finishing) return;
       tempResults.splice(index, 1);
+      tempFiles = tempFiles.filter(f => f.resultId !== entry.id);
+      newFiles = newFiles.filter(f => f._resultId !== entry.id);
       renderTaskResults();
+      renderFiles();
       $('#addTaskResultBtn').focus();
     };
     header.append(date, remove);
@@ -139,15 +144,42 @@ function renderTaskResults() {
       entry.text = text.value;
       entry.updatedAt = Date.now();
     };
-    row.append(header, text);
+    const media = document.createElement('div');
+    media.className = 'result-file-list';
+    const audio = document.createElement('div');
+    audio.className = 'audio-list result-audio-list';
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.multiple = true;
+    picker.hidden = true;
+    picker.onchange = () => {
+      const selected = Array.from(picker.files || []);
+      picker.value = '';
+      if (!tempResults.includes(entry) || savingTask) return;
+      for (const file of selected) file._resultId = entry.id;
+      stageSelectedFiles(selected);
+    };
+    const attach = document.createElement('button');
+    attach.type = 'button'; attach.className = 'btn btn-secondary btn-small';
+    attach.textContent = '+ Файл / фото';
+    attach.onclick = () => { if (!savingTask) picker.click(); };
+    const voice = document.createElement('button');
+    voice.type = 'button'; voice.className = 'btn btn-secondary btn-small';
+    voice.textContent = 'Записать голосом';
+    voice.onclick = () => { if (!savingTask) void recStart(entry.id); };
+    const controls = document.createElement('div');
+    controls.className = 'result-controls';
+    controls.append(attach, voice);
+    row.append(header, text, media, audio, picker, controls);
     container.appendChild(row);
   }
 }
 function addTaskResult() {
-  if (savingTask) return;
+  if (savingTask || rec.mr || rec.starting || rec.finishing) return;
   const now = Date.now();
   tempResults.push({ id: 'result_' + generateId(), text: '', createdAt: now, updatedAt: now });
   renderTaskResults();
+  renderFiles();
   $('#taskResultsList').lastElementChild.querySelector('textarea').focus();
 }
 function setPriorityChips(priority) {
@@ -234,6 +266,11 @@ function fillParentSelect(task, colId) {
 function renderFiles() {
   const box = $('#mediaPreview');
   box.innerHTML = '';
+  const resultBoxes = new Map();
+  for (const row of $('#taskResultsList').children) {
+    const target = row.querySelector('.result-file-list');
+    if (target) { target.replaceChildren(); resultBoxes.set(row.dataset.resultId, target); }
+  }
   const all = [...tempFiles.map(f => ({ f, old: true })), ...newFiles.map(f => ({ f, old: false }))].filter(it => !isAudio(it.f));
   all.forEach((it, i) => {
     const row = document.createElement('div');
@@ -245,7 +282,7 @@ function renderFiles() {
     if (op) op.onclick = () => openFile(it.f, $('#taskTitle').value);
     const edit = row.querySelector('[data-edit]');
     if (edit) edit.onclick = () => editAttachmentExternally(it.f);
-    box.appendChild(row);
+    (resultBoxes.get(it.old ? it.f.resultId : it.f._resultId) || box).appendChild(row);
   });
   renderAudioList();
 }
@@ -263,7 +300,7 @@ async function storeFile(file) {
   // An encoded WebP must not retain a misleading .png/.heic extension.
   const name = blob !== file && type === 'image/webp' && !/\.webp$/i.test(originalName)
     ? originalName.replace(/\.[^./]+$/, '') + '.webp' : originalName;
-  return { id, name, type, size: blob.size, ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
+  return { id, name, type, size: blob.size, ...(file._resultId ? { resultId: file._resultId } : {}), ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
   if (!window.KanbanFileEdit?.postMessage) {
@@ -429,7 +466,9 @@ async function _saveTask() {
   const columnId = par ? par.columnId : pv.slice(4);
   const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
 
+  if (rec.starting) { showToast('Дождитесь доступа к микрофону'); return; }
   if (rec.mr) await recStop();
+  else if (rec.finishing) await rec.done;
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }
   catch (e) {
@@ -437,6 +476,7 @@ async function _saveTask() {
     showToast('Не удалось сохранить файл: ' + (e.message || e)); return;
   }
   const files = [...tempFiles, ...stored];
+  const attachedResults = new Set(files.map(f => f.resultId).filter(Boolean));
 
   const moved = !existing || existing.parentId !== parentId || existing.columnId !== columnId;
   const sib = state.tasks.filter(t => t !== existing && t.parentId === parentId && (parentId || t.columnId === columnId));
@@ -445,7 +485,7 @@ async function _saveTask() {
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, files,
-    results: tempResults.filter(r => r.text.trim()).map(r => ({ ...r, text: r.text.trim() })),
+    results: tempResults.filter(r => r.text.trim() || attachedResults.has(r.id)).map(r => ({ ...r, text: r.text.trim() })),
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
@@ -474,9 +514,10 @@ async function _saveTask() {
     renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
   else if (existing) renderSavedTaskCard(existing, candidate);
   else renderTaskCollectionChange(candidate, false);
+  if (existing && typeof offerTaskResult === 'function') offerTaskResult(candidate.id, existing.columnId);
 }
 
-function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || modalInitialSnapshot !== captureModalSnapshot()); }
+function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || !!rec.starting || !!rec.finishing || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
   if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
@@ -506,7 +547,7 @@ async function duplicateTask(taskId) {
   const files = [];
   // Only newly generated copies are eligible for rollback, never source media.
   const discardCopies = () => Promise.all(files.map(f => mediaDelete(f.id).catch(() => {})));
-  try { for (const f of src.files) { const m = await mediaGet(f.id); if (!m) continue; const id = 'm_' + generateId(); await mediaPut(id, m.full, m.thumb, m.type); files.push({ ...f, id }); } }
+  try { for (const f of src.files.filter(f => !f.resultId)) { const m = await mediaGet(f.id); if (!m) continue; const id = 'm_' + generateId(); await mediaPut(id, m.full, m.thumb, m.type); files.push({ ...f, id }); } }
   catch (e) { await discardCopies(); showToast('Не удалось скопировать файлы: ' + e.message); return; }
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',

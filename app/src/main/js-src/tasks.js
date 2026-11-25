@@ -288,18 +288,25 @@ function renderFiles() {
 }
 async function storeFile(file) {
   let blob = file, thumb = null, type = file.type || 'application/octet-stream';
-  if (/^image\/(jpeg|png|webp|heic|heif)$/.test(type)) {
-    try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) { blob = file; }
+  const processablePhoto = /^image\/(jpeg|png|webp|heic|heif)$/.test(type);
+  const nativePhoto = processablePhoto && globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID;
+  if (nativePhoto) {
+    try { ({ blob, thumb } = await processNativePhoto(file)); type = blob.type; } catch (_) {}
+  } else {
+    if (processablePhoto) {
+      try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) {}
+    }
+    if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   }
-  if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   // Decode audio before storing: a decoder error must not create orphaned media.
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   const id = 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
   const originalName = file._name || file.name || 'Файл';
-  // An encoded WebP must not retain a misleading .png/.heic extension.
-  const name = blob !== file && type === 'image/webp' && !/\.webp$/i.test(originalName)
-    ? originalName.replace(/\.[^./]+$/, '') + '.webp' : originalName;
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' }[type];
+  const name = type !== file.type && extension && !(type === 'image/jpeg' && /\.jpe?g$/i.test(originalName)) &&
+    !originalName.toLowerCase().endsWith('.' + extension)
+    ? originalName.replace(/\.[^./]+$/, '') + '.' + extension : originalName;
   return { id, name, type, size: blob.size, ...(file._resultId ? { resultId: file._resultId } : {}), ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {

@@ -48,7 +48,34 @@ async function scenario(type, size, mimeSupported = true) {
   const fallback = await scenario('image/png',10_000_000,false);
   assert.equal(fallback.result,fallback.input,'do not silently convert to unsupported codec');
   const tasks = fs.readFileSync('app/src/main/js-src/tasks.js','utf8');
-  assert.match(tasks,/type === 'image\/webp'/);
-  assert.match(tasks,/\.webp' : originalName/);
+  const saved = [];
+  const original = Object.assign(new Blob(['transparency'], { type: 'image/png' }), { name: 'photo.png', _resultId: 'r1' });
+  const derived = new Blob(['webp'], { type: 'image/webp' });
+  const thumb = new Blob(['preview'], { type: 'image/webp' });
+  let fail = false;
+  const discarded = [];
+  const env = {
+    generateId: () => 'test', mediaPut: async (...args) => saved.push(args),
+    crypto: { randomUUID: () => 'session' }, KanbanMedia: { postMessage() {} },
+    mediaDiscard: id => discarded.push(id),
+    stageNativeMedia: async (_id, blob) => {
+      assert.equal(blob, original);
+      return { mime: derived.type, originalMime: original.type, fullSize: derived.size, thumbSize: thumb.size };
+    },
+    fetch: async path => ({ ok: !fail, blob: async () => path.endsWith('/full') ? derived : thumb }),
+    FileReader: class { readAsDataURL(blob) { this.result = 'data:' + blob.type + ';base64,'; this.onload(); } }
+  };
+  vm.runInNewContext(source.slice(source.indexOf('async function processNativePhoto'), start) +
+    tasks.slice(tasks.indexOf('async function storeFile'), tasks.indexOf('async function editAttachmentExternally')), env);
+  const optimized = await env.storeFile(original);
+  assert.equal(saved[0][1], derived);
+  assert.equal(saved[0][2], 'data:image/webp;base64,');
+  assert.equal(optimized.name, 'photo.webp');
+  assert.equal(optimized.resultId, 'r1');
+  fail = true;
+  const preserved = await env.storeFile(original);
+  assert.equal(saved[1][1], original);
+  assert.equal(preserved.name, original.name);
+  assert.deepEqual(discarded, ['session', 'session']);
   console.log('C-07 photo compression and transparency regression passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

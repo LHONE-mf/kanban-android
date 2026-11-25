@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.webkit.WebResourceResponse
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -27,9 +28,13 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
     @Volatile private var foreground = false
 
     private data class Upload(
-        val id: String, val size: Long, val file: File, val output: FileOutputStream,
+        val id: String, val size: Long, val operation: String, val file: File, val output: FileOutputStream,
         var written: Long = 0
     )
+
+    private data class PhotoLease(val id: String, val photo: KanbanPhotoProcessor.Photo)
+    @Volatile private var photoLease: PhotoLease? = null
+    private val photoTimeout = Runnable { clearPhoto() }
 
     private var upload: Upload? = null
     private val uploadTimeout = Runnable {
@@ -53,10 +58,11 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
         if (!sessionId.matches(id)) return@dispatch
         try {
             when (val type = data.optString("type")) {
-                "begin" -> begin(id, data.optLong("size"))
+                "begin" -> begin(id, data.optLong("size"), data.optString("operation", "audio"))
                 "finish" -> finish(id)
                 "discard" -> {
                     if (upload?.id == id) abortUpload()
+                    if (photoLease?.id == id) clearPhoto()
                     audio.command(id, "stop", data)
                 }
                 "play" -> {
@@ -87,12 +93,12 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
         }
     }
 
-    private fun begin(id: String, size: Long) {
-        check(size in 1..MAX_FILE_BYTES && upload == null)
+    private fun begin(id: String, size: Long, operation: String) {
+        check(size in 1..MAX_FILE_BYTES && upload == null && operation in setOf("audio", "photo"))
         check(cache.isDirectory || cache.mkdirs())
         val file = File.createTempFile("media-", ".tmp", cache)
         try {
-            upload = Upload(id, size, file, FileOutputStream(file))
+            upload = Upload(id, size, operation, file, FileOutputStream(file))
         } catch (error: Exception) {
             file.delete()
             throw error
@@ -107,7 +113,39 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
         current.output.close()
         upload = null
         worker.removeCallbacks(uploadTimeout)
-        audio.load(id, current.file)
+        if (current.operation == "audio") {
+            audio.load(id, current.file)
+            return
+        }
+        try {
+            val photo = KanbanPhotoProcessor.process(current.file, cache)
+            clearPhoto()
+            photoLease = PhotoLease(id, photo)
+            worker.postDelayed(photoTimeout, 30_000L)
+            send(id, "loaded", state = JSONObject().put("originalMime", photo.originalMime)
+                .put("mime", photo.mime).put("fullSize", photo.full?.length() ?: 0L).put("thumbSize", photo.thumb.length()))
+        } finally { current.file.delete() }
+    }
+
+    private fun clearPhoto() {
+        worker.removeCallbacks(photoTimeout)
+        val current = photoLease
+        photoLease = null
+        current?.photo?.delete()
+    }
+
+    fun resource(path: String): WebResourceResponse {
+        val current = photoLease
+        if (closed || current == null) return WebResourceResponse(null, null, null)
+        val file = when (path) {
+            "${current.id}/full" -> current.photo.full
+            "${current.id}/thumb" -> current.photo.thumb
+            else -> null
+        } ?: return WebResourceResponse(null, null, null)
+        return try {
+            WebResourceResponse(current.photo.mime, null, 200, "OK",
+                mapOf("Cache-Control" to "no-store", "Content-Length" to file.length().toString()), file.inputStream())
+        } catch (_: Exception) { WebResourceResponse(null, null, null) }
     }
 
     private fun refreshTimeout() {
@@ -138,6 +176,7 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
     fun reset() {
         worker.post {
             abortUpload()
+            clearPhoto()
             audio.reset()
         }
     }
@@ -151,6 +190,7 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
         closed = true
         worker.post {
             abortUpload()
+            clearPhoto()
             audio.close()
             thread.quitSafely()
         }

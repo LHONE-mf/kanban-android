@@ -211,6 +211,9 @@ class MainActivity : ComponentActivity() {
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/voice-capture/", WebViewAssetLoader.PathHandler { path -> voiceRecorder.resource(path) })
+            .addPathHandler("/native-media/", WebViewAssetLoader.PathHandler { path ->
+                nativeMedia?.resource(path) ?: WebResourceResponse(null, null, null)
+            })
             .build()
 
         japaneseSpeech = TextToSpeech(this) { status ->

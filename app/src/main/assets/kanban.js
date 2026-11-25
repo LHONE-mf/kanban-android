@@ -2314,18 +2314,25 @@ function renderFiles() {
 }
 async function storeFile(file) {
   let blob = file, thumb = null, type = file.type || 'application/octet-stream';
-  if (/^image\/(jpeg|png|webp|heic|heif)$/.test(type)) {
-    try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) { blob = file; }
+  const processablePhoto = /^image\/(jpeg|png|webp|heic|heif)$/.test(type);
+  const nativePhoto = processablePhoto && globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID;
+  if (nativePhoto) {
+    try { ({ blob, thumb } = await processNativePhoto(file)); type = blob.type; } catch (_) {}
+  } else {
+    if (processablePhoto) {
+      try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) {}
+    }
+    if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   }
-  if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   // Decode audio before storing: a decoder error must not create orphaned media.
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
   const id = 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
   const originalName = file._name || file.name || 'Файл';
-  // An encoded WebP must not retain a misleading .png/.heic extension.
-  const name = blob !== file && type === 'image/webp' && !/\.webp$/i.test(originalName)
-    ? originalName.replace(/\.[^./]+$/, '') + '.webp' : originalName;
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' }[type];
+  const name = type !== file.type && extension && !(type === 'image/jpeg' && /\.jpe?g$/i.test(originalName)) &&
+    !originalName.toLowerCase().endsWith('.' + extension)
+    ? originalName.replace(/\.[^./]+$/, '') + '.' + extension : originalName;
   return { id, name, type, size: blob.size, ...(file._resultId ? { resultId: file._resultId } : {}), ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
@@ -2613,6 +2620,36 @@ function releaseFocusTrap(modalEl) {
 // ============================================================
 // IMAGE PROCESSING
 // ============================================================
+async function processNativePhoto(file) {
+  const id = crypto.randomUUID();
+  try {
+    const info = await stageNativeMedia(id, file, () => true, { operation: 'photo' });
+    const formats = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+    if (!formats.includes(info.originalMime) || !['image/jpeg', 'image/webp'].includes(info.mime) ||
+        !Number.isSafeInteger(info.thumbSize) || info.thumbSize <= 0 || info.thumbSize > 1024 * 1024 ||
+        !Number.isSafeInteger(info.fullSize) || info.fullSize < 0 || info.fullSize >= file.size) {
+      throw new Error('Некорректный результат обработки фото');
+    }
+    const read = async (kind, size) => {
+      const response = await fetch('/native-media/' + id + '/' + kind, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Файл фото недоступен');
+      const blob = await response.blob();
+      if (blob.size !== size || blob.type !== info.mime) throw new Error('Фото передано не полностью');
+      return blob;
+    };
+    const preview = await read('thumb', info.thumbSize);
+    const thumb = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Не удалось прочитать миниатюру'));
+      reader.readAsDataURL(preview);
+    });
+    const blob = info.fullSize > 0 ? await read('full', info.fullSize) :
+      file.type === info.originalMime ? file : file.slice(0, file.size, info.originalMime);
+    return { blob, thumb };
+  } finally { mediaDiscard(id); }
+}
+
 async function compressImage(file, maxDim, quality) {
   const targetSize = 2 * 1024 * 1024;
   // Retain original small files, including PNG alpha and EXIF metadata.

@@ -41,7 +41,7 @@ function startDrag() {
   $('#board').classList.add('is-dragging');
   document.body.style.userSelect = 'none';
   document.addEventListener('touchmove', preventTouch, { passive: false });
-  if (navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }
+  try { globalThis.KanbanHaptics?.postMessage('drag'); } catch (_) {}
   updateDropTarget(lastPointer.x, lastPointer.y);
 }
 function preventTouch(e) { if (drag && drag.active) e.preventDefault(); }
@@ -160,11 +160,14 @@ async function onPointerUp(e) {
           if (idx !== undefined) currentTasks[idx] = cand;
         }
         notifyOtherTabs();
-        committed = true;
+        committed = updates.length > 0;
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
     renderMovedTaskColumns(touched, list ? [taskId] : []);
-    if (committed && typeof offerTaskResult === 'function') offerTaskResult(taskId, sourceColumnId);
+    if (committed) {
+      const feedbackSent = typeof offerTaskResult === 'function' && offerTaskResult(taskId, sourceColumnId);
+      if (!feedbackSent) try { globalThis.KanbanHaptics?.postMessage('move'); } catch (_) {}
+    }
   } else {
     drag = null;
   }

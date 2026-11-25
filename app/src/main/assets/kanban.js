@@ -1491,13 +1491,17 @@ async function markTaskDone(taskId) {
 }
 function offerTaskResult(taskId, oldColumnId) {
   const task = state.tasks.find(t => t.id === taskId);
-  if (!task || task.columnId === oldColumnId || state.columns.find(c => c.id === oldColumnId)?.isDone ||
-      !state.columns.find(c => c.id === task.columnId)?.isDone) return;
+  if (!task || task.columnId === oldColumnId) return false;
+  const completed = !state.columns.find(c => c.id === oldColumnId)?.isDone &&
+    state.columns.find(c => c.id === task.columnId)?.isDone;
+  try { globalThis.KanbanHaptics?.postMessage(completed ? 'done' : 'move'); } catch (_) {}
+  if (!completed) return true;
   const boardId = state.activeBoardId;
   showToast('Задача выполнена. Записать результат?', 'Результат', () => {
     if (state.activeBoardId !== boardId || $('#taskModal').classList.contains('open') || drag || savingTask || importInProgress) return;
     if (state.tasks.some(t => t.id === taskId)) openTaskModal(taskId, null, { results: true });
   }, 6500);
+  return true;
 }
 
 function updateTagFilter() {
@@ -3617,7 +3621,7 @@ function startDrag() {
   $('#board').classList.add('is-dragging');
   document.body.style.userSelect = 'none';
   document.addEventListener('touchmove', preventTouch, { passive: false });
-  if (navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }
+  try { globalThis.KanbanHaptics?.postMessage('drag'); } catch (_) {}
   updateDropTarget(lastPointer.x, lastPointer.y);
 }
 function preventTouch(e) { if (drag && drag.active) e.preventDefault(); }
@@ -3736,11 +3740,14 @@ async function onPointerUp(e) {
           if (idx !== undefined) currentTasks[idx] = cand;
         }
         notifyOtherTabs();
-        committed = true;
+        committed = updates.length > 0;
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
     renderMovedTaskColumns(touched, list ? [taskId] : []);
-    if (committed && typeof offerTaskResult === 'function') offerTaskResult(taskId, sourceColumnId);
+    if (committed) {
+      const feedbackSent = typeof offerTaskResult === 'function' && offerTaskResult(taskId, sourceColumnId);
+      if (!feedbackSent) try { globalThis.KanbanHaptics?.postMessage('move'); } catch (_) {}
+    }
   } else {
     drag = null;
   }
@@ -4303,7 +4310,7 @@ function pomoBeep() {
     o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.08;
     o.start(); o.stop(c.currentTime + 0.35);
   } catch (_) {}
-  if (navigator.vibrate) try { navigator.vibrate([200, 100, 200]); } catch (_) {}
+  try { globalThis.KanbanHaptics?.postMessage('done'); } catch (_) {}
 }
 function pomoSwitch() { pomo.running = false; pomo.mode = pomo.mode === 'focus' ? 'break' : 'focus'; pomo.left = POMO_LEN[pomo.mode]; pomoSave(); pomoRender(); }
 function initPomo() {

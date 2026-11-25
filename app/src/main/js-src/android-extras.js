@@ -20,7 +20,7 @@ function pomoBeep() {
     o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.08;
     o.start(); o.stop(c.currentTime + 0.35);
   } catch (_) {}
-  if (navigator.vibrate) try { navigator.vibrate([200, 100, 200]); } catch (_) {}
+  try { globalThis.KanbanHaptics?.postMessage('done'); } catch (_) {}
 }
 function pomoSwitch() { pomo.running = false; pomo.mode = pomo.mode === 'focus' ? 'break' : 'focus'; pomo.left = POMO_LEN[pomo.mode]; pomoSave(); pomoRender(); }
 function initPomo() {

@@ -20,6 +20,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.view.View
+import android.view.HapticFeedbackConstants
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import java.time.LocalDate
@@ -95,6 +96,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val appOrigin = "https://appassets.androidplatform.net"
+    private val kanbanUrl = "$appOrigin/assets/kanban.html"
 
     /** Remove only private copies of the old GGUF; preserve IndexedDB and user files. */
     private fun removeOldModelCopy() {
@@ -263,6 +265,18 @@ class MainActivity : ComponentActivity() {
 
         // The bridge accepts commands only from the local Kanban main frame.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanHaptics", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl || !view.hasWindowFocus()) return@addWebMessageListener
+                val feedback = when (message.data) {
+                    "drag" -> HapticFeedbackConstants.LONG_PRESS
+                    "move" -> HapticFeedbackConstants.CLOCK_TICK
+                    "done" -> HapticFeedbackConstants.CONFIRM
+                    else -> return@addWebMessageListener
+                }
+                view.performHapticFeedback(feedback)
+            }
             WebViewCompat.addWebMessageListener(webView, "KanbanVoice", setOf(appOrigin)) {
                 _, message, sourceOrigin, isMainFrame, _ ->
                 if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||

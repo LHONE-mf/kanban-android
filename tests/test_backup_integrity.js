@@ -73,6 +73,17 @@ async function attempt(value) {
   assert.equal(archive.japanese['kanban-japanese-hiragana-v1'],'["あ"]');
   assert.equal(archive.japanese['kanban-japanese-script-v1'],'katakana');
 
+  // A result-bearing archive is explicitly versioned to avoid older importers
+  // silently discarding results.
+  const record={id:'result1',text:'Verified independently',createdAt:10,updatedAt:20};
+  task.results=[record];
+  const withResults=await attempt(async()=>({full:new Blob(['PNG'],{type:'image/png'}),thumb:null,type:'image/png'}));
+  const resultArchive=JSON.parse(await withResults.created[0].text());
+  assert.equal(resultArchive.version,7);
+  assert.deepEqual(resultArchive.tasks[0].results,[record]);
+  const resultPlan=await context.buildImportPlan({...resultArchive,tasks:[{...task,files:[]}]});
+  assert.equal(resultPlan.tasks[0].results[0].text,record.text);
+  delete task.results;
   const importData = {version:5,boards:context.state.boards,
     activeBoardId:'b',tasks:[{...task,files:[]}],media:{},japanese:archive.japanese,
     dayPlan:{date:'2026-11-20',ids:['t1','not-present']}};

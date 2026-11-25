@@ -76,10 +76,10 @@ function queueDragFrame(scroll = false) {
       updateAutoScroll(x, y);
       if (autoScrollInterval) {
         const board = $('#board');
-        if (autoScrollDir.x !== 0) board.scrollLeft += autoScrollDir.x * 12;
+        if (autoScrollDir.x !== 0) board.scrollLeft += autoScrollDir.x * 6;
         if (autoScrollDir.y !== 0) {
           const list = document.elementFromPoint(x, y)?.closest('.task-list');
-          if (list) list.scrollTop += autoScrollDir.y * 12;
+          if (list) list.scrollTop += autoScrollDir.y * 6;
         }
       }
     }

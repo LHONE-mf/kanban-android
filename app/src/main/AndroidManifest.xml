@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Audio notes use microphone access; Bluetooth peer chat was removed. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Chromium WebView needs audio routing access to start microphone capture. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <application android:allowBackup="false" android:label="Comrade"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:icon="@mipmap/ic_launcher"

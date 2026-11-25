@@ -336,7 +336,14 @@ class MainActivity : ComponentActivity() {
             webViewClient = object : WebViewClientCompat() {
                 override fun shouldInterceptRequest(
                     view: WebView, request: WebResourceRequest
-                ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+                ): WebResourceResponse? {
+                    val path = request.url.path.orEmpty()
+                    if ((path.startsWith("/native-media/") || path.startsWith("/native-backup/") ||
+                            path.startsWith("/voice-capture/")) && (request.isForMainFrame || request.method != "GET")) {
+                        return WebResourceResponse(null, null, null)
+                    }
+                    return loader.shouldInterceptRequest(request.url)
+                }
 
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                     kanbanLoaded = false

@@ -117,6 +117,11 @@ jobs:
         run: node tests/test_native_file_open.js
       - name: Verify combined media, menu and drag features
         run: node tests/test_combined_mobile_media.js
+      - name: Verify P19 Pomodoro, task reminders and ZIP backup contracts
+        run: |
+          node tests/test_native_pomodoro.js
+          node tests/test_task_reminders.js
+          node tests/test_zip_backup.js
       - name: Compile Kotlin before APK packaging
         env:
           KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore

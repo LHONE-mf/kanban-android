@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FilterInputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import java.util.zip.CRC32
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
@@ -225,6 +226,7 @@ internal class KanbanZipBackup(
                 val entry = zip.getEntry(name)
                 check(record.getLong("size") == entry.size)
                 val digest = MessageDigest.getInstance("SHA-256")
+                val crc = CRC32()
                 var read = 0L
                 zip.getInputStream(entry).use { input ->
                     while (true) {
@@ -233,9 +235,10 @@ internal class KanbanZipBackup(
                         read += amount
                         check(read <= entry.size)
                         digest.update(buffer, 0, amount)
+                        crc.update(buffer, 0, amount)
                     }
                 }
-                check(read == entry.size && record.getString("sha256") == digest.digest().hex())
+                check(read == entry.size && crc.value == entry.crc && record.getString("sha256") == digest.digest().hex())
             }
         }
         verified = Verified(session, archive, paths)
@@ -256,7 +259,8 @@ internal class KanbanZipBackup(
                     override fun close() { try { super.close() } finally { zip.close() } }
                 }
                 WebResourceResponse("application/octet-stream", null, 200, "OK",
-                    mapOf("Cache-Control" to "no-store", "Content-Length" to entry.size.toString()), stream)
+                    mapOf("Cache-Control" to "no-store", "X-Content-Type-Options" to "nosniff",
+                        "Content-Length" to entry.size.toString()), stream)
             } catch (error: Exception) { zip.close(); throw error }
         } catch (_: Exception) { WebResourceResponse(null, null, null) }
     }

@@ -64,6 +64,7 @@ let lastDragEndTime = 0;
 let editingTaskId = null;
 let editingPriority = 'none';
 let tempChecklist = [];
+let tempResults = [];
 let tempFiles = [], newFiles = [];
 const mm = { k: 1, x: 40, y: 40, sel: null, nodes: {}, ptrs: new Map(), down: null, drag: null, pinch: null, lastTap: null, fitBoard: '' };
 let modalInitialSnapshot = null;
@@ -665,6 +666,12 @@ function sanitizeTask(t) {
           checked: !!(c.checked || c.done)
         } : null).filter(c => c && c.text)
       : [],
+    results: Array.isArray(t.results) ? t.results.filter(r => r && typeof r.text === 'string' && r.text.trim()).map(r => ({
+      id: String(r.id || 'result_' + generateId()),
+      text: r.text,
+      createdAt: Number.isFinite(r.createdAt) ? r.createdAt : Date.now(),
+      updatedAt: Number.isFinite(r.updatedAt) ? r.updatedAt : (Number.isFinite(r.createdAt) ? r.createdAt : Date.now())
+    })) : [],
     order: typeof t.order === 'number' ? t.order : 0,
     createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
     updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : Date.now(),

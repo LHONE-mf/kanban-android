@@ -37,6 +37,7 @@ function captureModalSnapshot() {
   return JSON.stringify({
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
     deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
+    results: tempResults,
     parent: $('#taskParent').value, files: tempFiles.map(f => f.id + f.name), nf: newFiles.map(f => (f._name || f.name) + f.size)
   });
 }
@@ -46,6 +47,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   editingTaskId = taskId;
   editingPriority = 'none';
   tempChecklist = [];
+  tempResults = [];
   tempFiles = []; newFiles = [];
 
   const modal = $('#taskModal');
@@ -71,6 +73,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     colIdEl.value = task.columnId; setPriorityChips(task.priority);
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
+    tempResults = (task.results || []).map(r => ({ ...r }));
     fillParentSelect(task, task.columnId);
     renderNestedNodes(task.id);
     deleteBtn.style.display = 'inline-flex';
@@ -87,10 +90,65 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   }
 
   renderFiles();
+  renderTaskResults();
+  $('#addTaskResultBtn').onclick = addTaskResult;
   modalInitialSnapshot = captureModalSnapshot();
   modal.classList.add('open');
-  setTimeout(() => titleEl.focus(), 50);
+  setTimeout(() => {
+    if (opts.results) {
+      $('#taskResultsField').scrollIntoView({ block: 'start' });
+      $('#addTaskResultBtn').focus({ preventScroll: true });
+    } else titleEl.focus();
+  }, 50);
   trapFocus(modal);
+}
+function renderTaskResults() {
+  const container = $('#taskResultsList');
+  container.replaceChildren();
+  if (!tempResults.length) {
+    const hint = document.createElement('div');
+    hint.className = 'result-hint';
+    hint.textContent = 'Пока нет результатов. Добавляйте их на любом этапе задачи.';
+    container.appendChild(hint);
+    return;
+  }
+  for (const [index, entry] of tempResults.entries()) {
+    const row = document.createElement('div');
+    row.className = 'task-result-row';
+    const header = document.createElement('div');
+    header.className = 'task-result-header';
+    const date = document.createElement('span');
+    date.textContent = new Date(entry.createdAt).toLocaleString('ru-RU');
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-secondary btn-small';
+    remove.textContent = 'Удалить';
+    remove.setAttribute('aria-label', 'Удалить результат ' + (index + 1));
+    remove.onclick = () => {
+      tempResults.splice(index, 1);
+      renderTaskResults();
+      $('#addTaskResultBtn').focus();
+    };
+    header.append(date, remove);
+    const text = document.createElement('textarea');
+    text.setAttribute('aria-label', 'Результат ' + (index + 1));
+    text.placeholder = 'Что сделано? Какие получены результаты?';
+    text.maxLength = Math.max(10000, entry.text.length);
+    text.value = entry.text;
+    text.oninput = () => {
+      entry.text = text.value;
+      entry.updatedAt = Date.now();
+    };
+    row.append(header, text);
+    container.appendChild(row);
+  }
+}
+function addTaskResult() {
+  if (savingTask) return;
+  const now = Date.now();
+  tempResults.push({ id: 'result_' + generateId(), text: '', createdAt: now, updatedAt: now });
+  renderTaskResults();
+  $('#taskResultsList').lastElementChild.querySelector('textarea').focus();
 }
 function setPriorityChips(priority) {
   editingPriority = priority;
@@ -387,6 +445,7 @@ async function _saveTask() {
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, files,
+    results: tempResults.filter(r => r.text.trim()).map(r => ({ ...r, text: r.text.trim() })),
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
     createdAt: existing ? existing.createdAt : Date.now(), updatedAt: Date.now(),
@@ -452,7 +511,7 @@ async function duplicateTask(taskId) {
   const copy = {
     ...src, id: generateId(), title: src.title + ' (копия)',
     tags: [...src.tags], checklist: src.checklist.map(c => ({ id: 'cl_' + generateId(), text: c.text, checked: c.checked })),
-    files, completedAt: null,
+    files, results: [], completedAt: null,
     order: maxOrder + 1, createdAt: Date.now(), updatedAt: Date.now(),
     boardId: src.boardId || state.activeBoardId
   };

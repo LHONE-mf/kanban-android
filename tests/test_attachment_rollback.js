@@ -10,7 +10,7 @@ const fields={taskTitle:'Multi file',taskParent:'col:todo',taskDeadline:'',taskD
 const deleted=[];let storageFailure='file',saveAttempts=0;
 const context={
   $:q=>({value:fields[q.slice(1)]||'',hidden:false,focus(){}}),
-  state,editingTaskId:null,editingPriority:'none',tempFiles:[],newFiles:selected,tempChecklist:[],
+  state,editingTaskId:null,editingPriority:'none',tempFiles:[],newFiles:selected,tempChecklist:[],tempResults:[],
   rec:{mr:null},isValidISODate:()=>true,Date,generateId:()=> 'new-task',
   subtree:()=>[],computeCompletedAt:()=>null,showToast:()=>{},
   storeFile:async f=>{

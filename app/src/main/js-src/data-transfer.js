@@ -176,7 +176,8 @@ async function exportData() {
     const allTasks = Object.values(state._tasksByBoard).flat();
     const settings = await dbGetSettings();
     const nativeJapanese = await nativeJapaneseCommand('read');
-    const parts = ['{"version":6,"app":"comrade","exportedAt":' + JSON.stringify(new Date().toISOString())
+    const version = allTasks.some(t => t.results?.length) ? 7 : 6;
+    const parts = ['{"version":' + version + ',"app":"comrade","exportedAt":' + JSON.stringify(new Date().toISOString())
       + ',"activeBoardId":' + JSON.stringify(state.activeBoardId) + ',"boards":' + JSON.stringify(state.boards)
       + ',"tasks":' + JSON.stringify(allTasks)
       + ',"dayPlan":' + JSON.stringify(settings.comrade_day_plan_v1 || null)
@@ -277,11 +278,11 @@ function base64ToBlob(dataUrl) {
 }
 
 async function buildImportPlan(data) {
-  // Full v5/v6 backups must have both collections; otherwise an incomplete
+  // Full v5+ backups must have both collections; otherwise an incomplete
   // archive could silently replace a real board with an empty one.
   if (!Array.isArray(data) && data && Object.prototype.hasOwnProperty.call(data, 'version')) {
     const version = Number(data.version);
-    if (!Number.isInteger(version) || version < 1 || version > 6)
+    if (!Number.isInteger(version) || version < 1 || version > 7)
       throw new Error('Неподдерживаемая версия архива');
     if (version >= 5 && (!Array.isArray(data.boards) || !Array.isArray(data.tasks)))
       throw new Error('Архив неполный: отсутствуют доски или задачи');

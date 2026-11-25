@@ -12,7 +12,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   const frames = new Map(), intervals = new Map();
   let nextFrame = 0, nextInterval = 0;
   const writes = [];
-  const toasts = [];
+  const toasts = [], offers = [];
   const hover = {adds:0, removes:0, hits:0};
   let renders = 0, partialMoves = [];
   let prevented = 0, downPrevented = 0, captured = null;
@@ -104,6 +104,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
       return children;
     },
     notifyOtherTabs(){},
+    offerTaskResult:(id,old)=>offers.push([id,old]),
     renderBoard:()=>{renders++;},
     renderMovedTaskColumns:(ids,refresh=[])=>partialMoves.push({ids:Array.from(ids),refresh:Array.from(refresh)}),
     showToast:msg=>{toasts.push(msg);}
@@ -128,7 +129,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   const activate = ()=>{const timer=timers.at(-1);assert.ok(timer&&!timer.cancelled);timer.fn();};
   const up = async(x,y,pointerId=1)=>sandbox.onPointerUp({pointerId,clientX:x,clientY:y});
   const cancel = pointerId=>sandbox.onPointerCancel({pointerId});
-  return {sandbox,board,card,first,second,writes,toasts,hover,down,move,rawMove,flush,tick,frames,intervals,activate,up,cancel,
+  return {sandbox,board,card,first,second,writes,toasts,offers,hover,down,move,rawMove,flush,tick,frames,intervals,activate,up,cancel,
     get renders(){return renders;},get partialMoves(){return partialMoves;},get prevented(){return prevented;},
     get downPrevented(){return downPrevented;},get captured(){return captured;},timers};
 }
@@ -159,6 +160,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   s.down();s.activate();s.move(370,150);
   await s.up(650,150); // released outside the board after hovering over col_b
   assert.equal(s.writes.length,0,'dropping outside board must not commit a prior hover');
+  assert.equal(s.offers.length,0);
   assert.equal(s.renders,0,'invalid drop does not rebuild entire board');
   assert.equal(s.partialMoves.length,1,'invalid drop reconciles the touched columns');
 
@@ -166,6 +168,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   s.down();s.activate();s.move(370,150);
   await s.up(370,150);
   assert.equal(s.writes.length,1,'valid cross-column drop persists');
+  assert.deepEqual(s.offers,[['task1','col_a']]);
   assert.equal(s.writes[0].length,1);
   assert.equal(s.writes[0][0].columnId,'col_b');
   assert.equal(s.sandbox.state.tasks[0].columnId,'col_b');
@@ -186,6 +189,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   s.down();s.activate();s.move(370,150);
   await s.up(370,150);
   assert.equal(s.writes.length,1,'failed move still uses only one transaction');
+  assert.equal(s.offers.length,0,'failed write cannot offer completion');
   assert.ok(s.sandbox.state.tasks.every(t=>t.columnId==='col_a'),
     'failed transaction leaves parent and children unchanged in memory');
   assert.ok(s.toasts.some(message=>message.includes('disk full')),

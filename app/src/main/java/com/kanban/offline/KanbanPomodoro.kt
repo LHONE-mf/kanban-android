@@ -60,7 +60,8 @@ internal object KanbanPomodoro {
         val boot = Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1)
         val elapsed = SystemClock.elapsedRealtime()
         val wall = System.currentTimeMillis()
-        val stored = raw?.let { JSONObject(it) }
+        val restoring = action == "backup-restore"
+        val stored = raw?.takeUnless { restoring }?.let { JSONObject(it) }
         val source = stored ?: legacy ?: JSONObject()
         val mode = if (source.optString("mode") == "break") "break" else "focus"
         val original = Timer(mode, source.optLong("remaining", source.optLong("left", duration(mode) / 1000) * 1000)
@@ -101,11 +102,13 @@ internal object KanbanPomodoro {
         val snapshot = timer.json().toString()
         if (raw != snapshot) check(prefs.edit().putString(STATE_KEY, snapshot).commit())
         schedule(context, timer)
-        if (complete != null) notifyCompletion(context, complete)
+        if (complete != null && !restoring) notifyCompletion(context, complete)
         return JSONObject().put("mode", timer.mode).put("ms", timer.remaining)
             .put("running", timer.running).put("sessions", timer.sessions).put("started", starting)
             .put("completed", complete ?: JSONObject.NULL)
             .put("notificationsAllowed", notificationsAllowed(context))
+            .put("backup", JSONObject().put("mode", timer.mode).put("remaining", timer.remaining)
+                .put("day", timer.day).put("sessions", timer.sessions).put("running", timer.running).put("end", timer.wallEnd))
     }
 
     private fun schedule(context: Context, timer: Timer) {

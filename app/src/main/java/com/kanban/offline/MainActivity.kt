@@ -143,6 +143,10 @@ class MainActivity : ComponentActivity() {
         if (::backupSaver.isInitialized) backupSaver.onDestinationPicked(uri)
     }
 
+    private val zipDocumentPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) {
+        nativeMedia?.backupDestination(it)
+    }
+
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         sendKanbanEvent("kanbanNotificationPermissionResult", JSONObject())
     }
@@ -160,11 +164,15 @@ class MainActivity : ComponentActivity() {
         val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
         val id = data.optString("id")
         val action = data.optString("type")
-        if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}")) || action !in setOf("read", "toggle", "reset", "skip")) return
-        KanbanPomodoro.run(this, action, data.optJSONObject("legacy")) { result ->
+        if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}")) ||
+            action !in setOf("read", "toggle", "reset", "skip", "backup-read", "backup-restore")) return
+        val backup = action.startsWith("backup-")
+        val state = data.optJSONObject(if (action == "backup-restore") "state" else "legacy")
+        if (action == "backup-restore" && state == null) return
+        KanbanPomodoro.run(this, action, state) { result ->
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
-                sendKanbanEvent("kanbanPomoResult", result.put("id", id))
+                sendKanbanEvent(if (backup) "kanbanPomoBackupResult" else "kanbanPomoResult", result.put("id", id))
                 if (result.optBoolean("started") && webView.url == kanbanUrl) offerNotificationPermission()
             }
         }
@@ -282,6 +290,9 @@ class MainActivity : ComponentActivity() {
             .addPathHandler("/native-media/", WebViewAssetLoader.PathHandler { path ->
                 nativeMedia?.resource(path) ?: WebResourceResponse(null, null, null)
             })
+            .addPathHandler("/native-backup/", WebViewAssetLoader.PathHandler { path ->
+                nativeMedia?.backupResource(path) ?: WebResourceResponse(null, null, null)
+            })
             .build()
 
         japaneseSpeech = TextToSpeech(this) { status ->
@@ -353,7 +364,13 @@ class MainActivity : ComponentActivity() {
             WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_ARRAY_BUFFER)) {
             val preview = KanbanGallery(this) { sendKanbanEvent("kanbanGalleryResult", it) }
             gallery = preview
-            val media = KanbanMediaTransfer(this, preview) { sendKanbanEvent("kanbanMediaNativeResult", it) }
+            val media = KanbanMediaTransfer(this, preview, { name ->
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        try { zipDocumentPicker.launch(name) } catch (_: Exception) { nativeMedia?.backupDestination(null) }
+                    }
+                }
+            }) { sendKanbanEvent("kanbanMediaNativeResult", it) }
             nativeMedia = media
             WebViewCompat.addWebMessageListener(webView, "KanbanMedia", setOf(appOrigin)) {
                 view, message, sourceOrigin, isMainFrame, _ ->

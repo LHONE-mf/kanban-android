@@ -200,9 +200,9 @@ const mediaSteps = new Map();
 function mediaCommand(id, type, fields = {}) {
   globalThis.KanbanMedia.postMessage(JSON.stringify({ id, type, ...fields }));
 }
-function mediaStep(id, expected, send) {
+function mediaStep(id, expected, send, timeout = 20000) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => finish(null, new Error('Android не ответил')), 20000);
+    const timer = setTimeout(() => finish(null, new Error('Android не ответил')), timeout);
     function finish(event, error) {
       clearTimeout(timer);
       mediaSteps.delete(id);
@@ -212,6 +212,18 @@ function mediaStep(id, expected, send) {
     try { send(); } catch (error) { finish(null, error); }
   });
 }
+async function sendMediaChunks(id, blob, isCurrent = () => true) {
+  const chunkSize = 256 * 1024;
+  const header = new TextEncoder().encode(id);
+  for (let offset = 0; offset < blob.size; offset += chunkSize) {
+    const data = await blob.slice(offset, offset + chunkSize).arrayBuffer();
+    if (!isCurrent()) throw new Error('Передача отменена');
+    const frame = new Uint8Array(header.length + data.byteLength);
+    frame.set(header);
+    frame.set(new Uint8Array(data), header.length);
+    await mediaStep(id, 'chunk', () => globalThis.KanbanMedia.postMessage(frame.buffer));
+  }
+}
 function mediaDiscard(id) {
   mediaSteps.get(id)?.finish(null, new Error('Передача отменена'));
   try { mediaCommand(id, 'discard'); } catch (_) {}
@@ -219,19 +231,10 @@ function mediaDiscard(id) {
 let mediaQueue = Promise.resolve();
 function stageNativeMedia(id, blob, isCurrent, options = {}) {
   const transfer = mediaQueue.then(async () => {
-    const chunkSize = 256 * 1024;
-    const header = new TextEncoder().encode(id);
     if (!isCurrent()) throw new Error('Передача отменена');
     try {
       await mediaStep(id, 'begin', () => mediaCommand(id, 'begin', { size: blob.size, ...options }));
-      for (let offset = 0; offset < blob.size; offset += chunkSize) {
-        const data = await blob.slice(offset, offset + chunkSize).arrayBuffer();
-        if (!isCurrent()) throw new Error('Передача отменена');
-        const frame = new Uint8Array(header.length + data.byteLength);
-        frame.set(header);
-        frame.set(new Uint8Array(data), header.length);
-        await mediaStep(id, 'chunk', () => globalThis.KanbanMedia.postMessage(frame.buffer));
-      }
+      await sendMediaChunks(id, blob, isCurrent);
       return await mediaStep(id, 'loaded', () => mediaCommand(id, 'finish'));
     } catch (error) {
       mediaDiscard(id);
@@ -264,7 +267,8 @@ window.kanbanMediaNativeResult = raw => {
   let event;
   try { event = JSON.parse(raw); } catch (_) { return; }
   const step = mediaSteps.get(event.id);
-  if (step && (event.type === 'error' || event.type === step.expected)) {
+  if (step && (event.type === 'error' || event.type === step.expected ||
+      (Array.isArray(step.expected) && step.expected.includes(event.type)))) {
     step.finish(event, event.type === 'error' ? new Error(event.message) : null);
   } else if (event.id === AP.nativeId) {
     if (event.type === 'state') { AP.nativeState = event; apSync(); }
@@ -576,6 +580,13 @@ async function init() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   try { db = await openDB(); }
   catch (e) { console.error(e); alert('Не удалось открыть базу данных: ' + e.message); return; }
+
+  if (canUseZip()) {
+    try {
+      const pending = (await dbGetSettings())[ZIP_PROJECTION];
+      if (pending) { await projectZipState(pending); initTheme(); }
+    } catch (error) { alert('Восстановление настроек ZIP будет повторено при следующем запуске: ' + error.message); }
+  }
 
   await loadData();
   loadUIState();

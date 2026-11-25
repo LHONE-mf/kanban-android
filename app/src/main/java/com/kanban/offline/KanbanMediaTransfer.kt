@@ -1,6 +1,7 @@
 package com.kanban.offline
 
 import android.content.Context
+import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -12,7 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /** Bounded staging for operations whose source still lives in WebView's IndexedDB. */
 internal class KanbanMediaTransfer(
-    context: Context, private val gallery: KanbanGallery, private val emit: (JSONObject) -> Unit
+    context: Context, private val gallery: KanbanGallery, chooseBackup: (String) -> Unit,
+    private val emit: (JSONObject) -> Unit
 ) {
     companion object {
         const val MAX_CHUNK_BYTES = 256 * 1024
@@ -46,6 +48,7 @@ internal class KanbanMediaTransfer(
         }
     }
     private val audio = KanbanAudioPlayer(context, worker, ::send)
+    private val backup = KanbanZipBackup(context, worker, chooseBackup, ::send)
 
     private fun send(id: String, type: String, message: String? = null, state: JSONObject? = null) {
         val payload = state ?: JSONObject()
@@ -58,8 +61,10 @@ internal class KanbanMediaTransfer(
         val data = runCatching { JSONObject(raw) }.getOrNull() ?: return@dispatch
         val id = data.optString("id")
         if (!sessionId.matches(id)) return@dispatch
+        val action = data.optString("type")
+        if (action.startsWith("zip-")) { backup.command(id, action, data); return@dispatch }
         try {
-            when (val type = data.optString("type")) {
+            when (action) {
                 "begin" -> begin(id, data.optLong("size"), data.optString("operation", "audio"))
                 "finish" -> finish(id)
                 "discard" -> {
@@ -68,10 +73,10 @@ internal class KanbanMediaTransfer(
                     audio.command(id, "stop", data)
                 }
                 "play" -> {
-                    if (foreground) audio.command(id, type, data)
+                    if (foreground) audio.command(id, action, data)
                     else send(id, "unavailable", "Откройте Comrade для воспроизведения")
                 }
-                "pause", "seek", "rate", "stop" -> audio.command(id, type, data)
+                "pause", "seek", "rate", "stop" -> audio.command(id, action, data)
             }
         } catch (_: Exception) {
             if (upload?.id == id) abortUpload()
@@ -81,6 +86,7 @@ internal class KanbanMediaTransfer(
 
     fun chunk(bytes: ByteArray) = dispatch {
         val id = String(bytes, 0, ID_BYTES, Charsets.US_ASCII)
+        if (backup.chunk(id, bytes, ID_BYTES)) return@dispatch
         val current = upload?.takeIf { it.id == id } ?: return@dispatch
         val length = bytes.size - ID_BYTES
         try {
@@ -186,9 +192,14 @@ internal class KanbanMediaTransfer(
         worker.post {
             abortUpload()
             clearPhoto()
+            backup.clear()
             audio.reset()
         }
     }
+
+    fun backupResource(path: String) = backup.resource(path)
+
+    fun backupDestination(uri: Uri?) = dispatch { backup.destination(uri) }
 
     fun setForeground(visible: Boolean) {
         foreground = visible
@@ -200,6 +211,7 @@ internal class KanbanMediaTransfer(
         worker.post {
             abortUpload()
             clearPhoto()
+            backup.clear()
             audio.close()
             thread.quitSafely()
         }

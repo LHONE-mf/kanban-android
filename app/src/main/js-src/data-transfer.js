@@ -171,7 +171,244 @@ function saveBackupViaAndroid(blob, name) {
   });
 }
 
+const ZIP_PROJECTION = 'p19_zip_projection';
+const ZIP_IMPORTED = 'p19_zip_imported';
+const zipMime = /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i;
+const zipThumbMime = /^image\/(?:jpeg|png|webp)$/;
+const zipId = value => typeof value === 'string' && value.length > 0 && value.length <= 4096 && !value.includes('\0');
+const zipObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const zipWebKey = key => JAPANESE_BACKUP_KEYS.includes(key) || key === 'kanban_theme' || key === 'kanban_ui' ||
+  key.startsWith('kanban_collapsed_') || key.startsWith('kanban_mindmap_positions_');
+const canUseZip = () => !!(globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID);
+let zipActive = false;
+
+let pomoArchivePending = null;
+globalThis.kanbanPomoBackupResult = raw => {
+  let result;
+  try { result = JSON.parse(raw); } catch (_) { return; }
+  if (result.id === pomoArchivePending?.id) pomoArchivePending.finish(result);
+};
+function pomodoroArchive(type, state) {
+  return new Promise((resolve, reject) => {
+    if (pomoArchivePending || !globalThis.KanbanPomo?.postMessage) { reject(new Error('Android Pomodoro недоступен')); return; }
+    const id = generateId();
+    const finish = result => {
+      clearTimeout(timer);
+      pomoArchivePending = null;
+      if (result.error) reject(new Error(result.error)); else resolve(result.backup);
+    };
+    const timer = setTimeout(() => finish({ error: 'Pomodoro не ответил' }), 7000);
+    pomoArchivePending = { id, finish };
+    try { globalThis.KanbanPomo.postMessage(JSON.stringify({ id, type, state })); }
+    catch (error) { finish({ error: error.message }); }
+  });
+}
+function zipStep(id, command, expected, fields = {}, timeout) {
+  return mediaStep(id, expected, () => mediaCommand(id, command, fields), timeout);
+}
+function cancelZip(id) {
+  try { mediaCommand(id, 'zip-cancel'); } catch (_) {}
+}
+async function zipWrite(id, path, blob) {
+  await zipStep(id, 'zip-entry', 'entry', { path, size: blob.size });
+  await sendMediaChunks(id, blob);
+  await zipStep(id, 'zip-entry-end', 'entry-end');
+}
+async function exportZipData() {
+  if (zipActive || importInProgress || savingTask) { showToast('Дождитесь завершения текущей операции'); return; }
+  zipActive = true;
+  const id = crypto.randomUUID();
+  try {
+    const settings = await dbGetSettings();
+    if (settings[ZIP_PROJECTION]) throw new Error('Дождитесь завершения восстановления');
+    const settingsSnapshot = JSON.stringify(settings);
+    delete settings[ZIP_PROJECTION];
+    const taskSnapshot = JSON.stringify(await dbGetAllTasks());
+    const tasks = JSON.parse(taskSnapshot).map(sanitizeTask);
+    const boards = settings.boards;
+    const activeBoardId = settings.activeBoardId;
+    const media = [];
+    const web = {};
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (zipWebKey(key)) web[key] = localStorage.getItem(key);
+    }
+    const nativeJapanese = await nativeJapaneseCommand('read');
+    const pomo = await pomodoroArchive('backup-read');
+    const name = 'comrade-backup-' + todayISO() + '.zip';
+    await zipStep(id, 'zip-export', 'begin', { name });
+    const seen = new Set();
+    for (const task of tasks) for (const attachment of task.files || []) {
+      if (seen.has(attachment.id)) continue;
+      seen.add(attachment.id);
+      const record = await mediaGet(attachment.id);
+      if (!record?.full) throw new Error('Вложение отсутствует: ' + attachment.name);
+      const base = 'media/' + String(media.length).padStart(6, '0');
+      const mime = record.type || record.full.type || 'application/octet-stream';
+      const entry = { id: attachment.id, mime, path: base + '.bin', size: record.full.size };
+      await zipWrite(id, entry.path, record.full);
+      if (typeof record.thumb === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/.test(record.thumb)) {
+        const blob = await (await fetch(record.thumb)).blob();
+        entry.thumb = { mime: blob.type, path: base + '.thumb', size: blob.size };
+        await zipWrite(id, entry.thumb.path, blob);
+      }
+      media.push(entry);
+    }
+    if (taskSnapshot !== JSON.stringify(await dbGetAllTasks()) ||
+        settingsSnapshot !== JSON.stringify(await dbGetSettings())) {
+      throw new Error('Данные изменились во время экспорта. Запустите его ещё раз');
+    }
+    const snapshot = { version: 1, boards, activeBoardId, tasks, settings, media, web, nativeJapanese, pomo };
+    await zipWrite(id, 'state.json', new Blob([JSON.stringify(snapshot)], { type: 'application/json' }));
+    const result = await mediaStep(id, ['saved', 'cancelled'], () => mediaCommand(id, 'zip-seal'), 600000);
+    if (result.type === 'saved') showToast('ZIP-бэкап сохранён');
+  } catch (error) { showToast('Не удалось сохранить ZIP: ' + error.message, null, null, 6000); }
+  finally { cancelZip(id); zipActive = false; }
+}
+
+function validateZipState(data, entryNames) {
+  const requireValid = value => { if (!value) throw new Error('Повреждены метаданные ZIP'); };
+  requireValid(zipObject(data) && data.version === 1 && Array.isArray(data.boards) &&
+    data.boards.length > 0 && Array.isArray(data.tasks) && Array.isArray(data.media) &&
+    zipObject(data.settings) && zipObject(data.web));
+  const entries = new Set(entryNames);
+  requireValid(entries.size === entryNames.length && entries.delete('state.json'));
+  const media = new Map();
+  for (const file of data.media) {
+    requireValid(zipObject(file) && zipId(file.id) && !media.has(file.id) && zipMime.test(file.mime) &&
+      typeof file.path === 'string' && /^media\/[0-9]{6}\.bin$/.test(file.path) && entries.delete(file.path) &&
+      Number.isSafeInteger(file.size) && file.size >= 0 && file.size <= MAX_VIDEO_SIZE);
+    if (file.thumb != null) requireValid(zipObject(file.thumb) &&
+      file.thumb.path === file.path.replace(/\.bin$/, '.thumb') && entries.delete(file.thumb.path) &&
+      zipThumbMime.test(file.thumb.mime) && Number.isSafeInteger(file.thumb.size) && file.thumb.size > 0 && file.thumb.size <= 1048576);
+    media.set(file.id, file);
+  }
+  requireValid(entries.size === 0);
+  const columns = new Map();
+  for (const board of data.boards) {
+    requireValid(zipObject(board) && zipId(board.id) && !columns.has(board.id) &&
+      Array.isArray(board.columns) && board.columns.length > 0);
+    const ids = new Set();
+    for (const column of board.columns) {
+      requireValid(zipObject(column) && zipId(column.id) && !ids.has(column.id));
+      ids.add(column.id);
+    }
+    columns.set(board.id, ids);
+  }
+  requireValid(columns.has(data.activeBoardId));
+  const byId = new Map(), used = new Set();
+  const tasks = [];
+  for (const raw of data.tasks) {
+    requireValid(zipObject(raw) && zipId(raw.id) && !byId.has(raw.id) && columns.get(raw.boardId)?.has(raw.columnId) &&
+      typeof raw.parentId === 'string' && Array.isArray(raw.files) && typeof raw.deadline === 'string' &&
+      isValidISODate(raw.deadline));
+    const results = new Set(), checklist = new Set();
+    for (const result of raw.results || []) {
+      requireValid(zipObject(result) && zipId(result.id) && !results.has(result.id) && typeof result.text === 'string');
+      results.add(result.id);
+    }
+    for (const item of raw.checklist || []) {
+      requireValid(zipObject(item) && zipId(item.id) && !checklist.has(item.id) && typeof item.text === 'string');
+      checklist.add(item.id);
+    }
+    for (const file of raw.files) {
+      requireValid(zipObject(file) && media.has(file.id) && (!file.resultId || results.has(file.resultId)));
+      used.add(file.id);
+    }
+    const task = sanitizeTask(raw);
+    requireValid(task.files.length === raw.files.length && task.results.length === results.size &&
+      task.checklist.length === checklist.size);
+    byId.set(task.id, task);
+    tasks.push(task);
+  }
+  requireValid(used.size === media.size);
+  const checked = new Set();
+  for (const task of tasks) {
+    const path = new Set();
+    let node = task;
+    while (node && !checked.has(node.id)) {
+      requireValid(!path.has(node.id));
+      path.add(node.id);
+      if (!node.parentId) break;
+      const parent = byId.get(node.parentId);
+      requireValid(parent && parent.boardId === node.boardId && parent.columnId === node.columnId);
+      node = parent;
+    }
+    for (const id of path) checked.add(id);
+  }
+  for (const [key, value] of Object.entries(data.web)) {
+    requireValid(zipWebKey(key) && key.length <= 4096 && typeof value === 'string' && value.length <= 2_000_000);
+  }
+  validateJapaneseBackup(Object.fromEntries(Object.entries(data.web).filter(([key]) => JAPANESE_BACKUP_KEYS.includes(key))));
+  const nativeJapanese = validateNativeJapaneseBackup(data.nativeJapanese);
+  const pomo = data.pomo;
+  requireValid(zipObject(pomo) && ['focus', 'break'].includes(pomo.mode) && typeof pomo.running === 'boolean' &&
+    Number.isSafeInteger(pomo.remaining) && pomo.remaining >= 0 && pomo.remaining <= (pomo.mode === 'focus' ? 1500000 : 300000) &&
+    typeof pomo.day === 'string' && !!pomo.day && isValidISODate(pomo.day) && Number.isSafeInteger(pomo.sessions) &&
+    pomo.sessions >= 0 && Number.isSafeInteger(pomo.end) && pomo.end >= 0);
+  for (const key of Object.keys(data.settings)) requireValid(zipId(key) && ![ZIP_PROJECTION, '__proto__', 'prototype', 'constructor'].includes(key));
+  const settings = { ...data.settings, [ZIP_IMPORTED]: true };
+  if (settings.comrade_day_plan_v1 != null) {
+    const plan = settings.comrade_day_plan_v1;
+    requireValid(zipObject(plan) && typeof plan.date === 'string' && isValidISODate(plan.date) && Array.isArray(plan.ids));
+  }
+  return { boards: data.boards.map(sanitizeBoard), activeBoardId: data.activeBoardId, tasks, media, settings,
+    projection: { web: data.web, nativeJapanese, pomo } };
+}
+async function projectZipState(projection) {
+  if (!projection) return;
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (zipWebKey(key) && !Object.hasOwn(projection.web, key)) localStorage.removeItem(key);
+  }
+  for (const [key, value] of Object.entries(projection.web)) localStorage.setItem(key, value);
+  if (projection.nativeJapanese && await nativeJapaneseCommand('restore', projection.nativeJapanese) !== true)
+    throw new Error('Android не подтвердил восстановление японского');
+  await pomodoroArchive('backup-restore', projection.pomo);
+  await dbPutSettingsBulk([[ZIP_PROJECTION, null]]);
+}
+async function importZipData(file) {
+  if (!canUseZip() || zipActive) { showToast('Импорт ZIP доступен в Android и требует свободного приложения'); return; }
+  zipActive = true;
+  const id = crypto.randomUUID();
+  const read = async path => {
+    const response = await fetch('/native-backup/' + id + '/' + path, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Не удалось прочитать проверенный архив');
+    return response;
+  };
+  let committed = false;
+  try {
+    await zipStep(id, 'zip-import', 'begin', { size: file.size });
+    await sendMediaChunks(id, file);
+    const verified = await zipStep(id, 'zip-validate', 'verified', {}, 300000);
+    const plan = validateZipState(await (await read('state.json')).json(), verified.entries);
+    if (!await confirmDialog('Восстановить ZIP-бэкап',
+      `Текущие данные будут заменены на ${plan.boards.length} досок и ${plan.tasks.length} задач из файла.`)) return;
+    if (taskEditorBlocksImport()) throw new Error('Сначала завершите редактирование задачи');
+    const staged = Object.create(null);
+    for (const item of plan.media.values()) {
+      const full = await (await read(item.path)).blob();
+      if (full.size !== item.size) throw new Error('Вложение передано не полностью');
+      let thumb = null;
+      if (item.thumb) {
+        const preview = await (await read(item.thumb.path)).blob();
+        if (preview.size !== item.thumb.size) throw new Error('Миниатюра передана не полностью');
+        thumb = await blobToBase64(preview.slice(0, preview.size, item.thumb.mime));
+      }
+      staged[item.id] = { full: full.slice(0, full.size, item.mime), type: item.mime, thumb };
+    }
+    await dbReplaceAll({ ...plan, media: staged });
+    committed = true;
+    await projectZipState(plan.projection);
+    location.reload();
+  } catch (error) {
+    if (!committed) alert('Импорт ZIP отменён. Данные сохранены. ' + error.message);
+    else { alert('Данные ZIP сохранены. Приложение завершит восстановление настроек при запуске.'); location.reload(); }
+  } finally { cancelZip(id); zipActive = false; }
+}
+
 async function exportData() {
+  if (canUseZip()) return exportZipData();
   try {
     const allTasks = Object.values(state._tasksByBoard).flat();
     const settings = await dbGetSettings();
@@ -467,6 +704,7 @@ async function handleImport(file) {
   finally { importInProgress = false; }
 }
 async function importSingleFile(file) {
+  if (/\.zip$/i.test(file.name || '') || file.type === 'application/zip') return importZipData(file);
   let data;
   try { data = JSON.parse(await file.text()); }
   catch (e) { alert('Неверный JSON: ' + e.message); return; }
@@ -556,6 +794,7 @@ async function importSingleFile(file) {
   renderBoard();
   saveUIState();
 
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
   const suffix = totalWarn ? ` (${totalWarn} предупр.)` : '';
   showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`,
     null, null, 5500);

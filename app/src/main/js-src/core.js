@@ -488,6 +488,12 @@ async function dbReplaceAll(plan) {
       ss.put({ key: 'boards', value: plan.boards });
       ss.put({ key: 'activeBoardId', value: plan.activeBoardId });
       if (plan.dayPlan) ss.put({ key: 'comrade_day_plan_v1', value: plan.dayPlan });
+      if (plan.settings) {
+        for (const [key, value] of Object.entries(plan.settings)) {
+          if (key !== 'boards' && key !== 'activeBoardId') ss.put({ key, value });
+        }
+      }
+      if (plan.projection) ss.put({ key: ZIP_PROJECTION, value: plan.projection });
       for (const [id, m] of Object.entries(plan.media)) {
         ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
       }
@@ -795,7 +801,7 @@ async function loadData() {
       boards = [sanitizeBoard({ id: 'board_main', name: 'Моя доска' })];
     }
 
-    if (rawTasks.length === 0) {
+    if (rawTasks.length === 0 && !settings.p19_zip_imported) {
       const legacy = tryLoadLegacyTasks();
       if (legacy && legacy.length) {
         const fallbackBoard = boards[0];

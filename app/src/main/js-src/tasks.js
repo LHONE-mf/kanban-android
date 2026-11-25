@@ -126,7 +126,7 @@ function renderTaskResults() {
     remove.textContent = 'Удалить';
     remove.setAttribute('aria-label', 'Удалить результат ' + (index + 1));
     remove.onclick = () => {
-      if (savingTask || rec.mr || rec.starting || rec.finishing) return;
+      if (savingTask || rec.id) return;
       tempResults.splice(index, 1);
       tempFiles = tempFiles.filter(f => f.resultId !== entry.id);
       newFiles = newFiles.filter(f => f._resultId !== entry.id);
@@ -175,7 +175,7 @@ function renderTaskResults() {
   }
 }
 function addTaskResult() {
-  if (savingTask || rec.mr || rec.starting || rec.finishing) return;
+  if (savingTask || rec.id) return;
   const now = Date.now();
   tempResults.push({ id: 'result_' + generateId(), text: '', createdAt: now, updatedAt: now });
   renderTaskResults();
@@ -467,8 +467,7 @@ async function _saveTask() {
   const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
 
   if (rec.starting) { showToast('Дождитесь доступа к микрофону'); return; }
-  if (rec.mr) await recStop();
-  else if (rec.finishing) await rec.done;
+  if (rec.id && !(await recStop())) return;
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }
   catch (e) {
@@ -517,7 +516,7 @@ async function _saveTask() {
   if (existing && typeof offerTaskResult === 'function') offerTaskResult(candidate.id, existing.columnId);
 }
 
-function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || !!rec.starting || !!rec.finishing || modalInitialSnapshot !== captureModalSnapshot()); }
+function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.id || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
   if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {

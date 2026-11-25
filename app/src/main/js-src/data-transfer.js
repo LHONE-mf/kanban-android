@@ -176,7 +176,7 @@ async function exportData() {
     const allTasks = Object.values(state._tasksByBoard).flat();
     const settings = await dbGetSettings();
     const nativeJapanese = await nativeJapaneseCommand('read');
-    const version = allTasks.some(t => t.results?.length) ? 7 : 6;
+    const version = allTasks.some(t => t.files.some(f => f.resultId)) ? 8 : allTasks.some(t => t.results?.length) ? 7 : 6;
     const parts = ['{"version":' + version + ',"app":"comrade","exportedAt":' + JSON.stringify(new Date().toISOString())
       + ',"activeBoardId":' + JSON.stringify(state.activeBoardId) + ',"boards":' + JSON.stringify(state.boards)
       + ',"tasks":' + JSON.stringify(allTasks)
@@ -282,7 +282,7 @@ async function buildImportPlan(data) {
   // archive could silently replace a real board with an empty one.
   if (!Array.isArray(data) && data && Object.prototype.hasOwnProperty.call(data, 'version')) {
     const version = Number(data.version);
-    if (!Number.isInteger(version) || version < 1 || version > 7)
+    if (!Number.isInteger(version) || version < 1 || version > 8)
       throw new Error('Неподдерживаемая версия архива');
     if (version >= 5 && (!Array.isArray(data.boards) || !Array.isArray(data.tasks)))
       throw new Error('Архив неполный: отсутствуют доски или задачи');

@@ -15,7 +15,8 @@ async function scenario(failAt, withAttachments = true) {
       {id: 'original-1', name: 'one.png', type: 'image/png'},
       {id: 'original-2', name: 'two.png', type: 'image/png'}
     ] : [],
-    tags: ['important'], checklist: [], order: 0
+    tags: ['important'], checklist: [], order: 0,
+    results:[{id:'r',text:'Original result',createdAt:1,updatedAt:1}]
   };
   const state = {activeBoardId: 'board-a', tasks: [original]};
   const stored = new Set(original.files.map(f => f.id));
@@ -72,6 +73,8 @@ async function scenario(failAt, withAttachments = true) {
   assert.equal(ok.stored.size, 4, 'normal duplication keeps both original and copied blobs');
   assert.equal(ok.deleted.length, 0, 'normal duplication does not clean up successful copies');
   assert.equal(ok.state.tasks[1].files.length, 2, 'new task references its copied files');
+  assert.equal(ok.state.tasks[1].results.length,0,'copy starts with no prior execution results');
+  assert.equal(ok.state.tasks[0].results[0].text,'Original result');
   const empty = await scenario(null, false);
   assert.equal(empty.state.tasks.length, 2, 'no-attachment duplication still works');
   assert.equal(empty.stored.size, 0);

@@ -165,7 +165,10 @@ class MainActivity : ComponentActivity() {
         if (!session.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return
         when (action) {
             "start" -> {
-                if (pendingVoicePermission != null) {
+                if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                    voiceEvent(JSONObject().put("id", session).put("type", "error")
+                        .put("message", "Откройте Comrade для записи"))
+                } else if (pendingVoicePermission != null) {
                     voiceEvent(JSONObject().put("id", session).put("type", "error")
                         .put("message", "Запрос микрофона уже открыт"))
                 } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
@@ -240,6 +243,13 @@ class MainActivity : ComponentActivity() {
                 override fun shouldInterceptRequest(
                     view: WebView, request: WebResourceRequest
                 ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    if (!url.endsWith("/assets/kanban.html")) {
+                        pendingVoicePermission = null
+                        voiceRecorder.cancelForNavigation()
+                    }
+                }
 
                 override fun onPageFinished(view: WebView, url: String) {
                     if (::japaneseButton.isInitialized) {

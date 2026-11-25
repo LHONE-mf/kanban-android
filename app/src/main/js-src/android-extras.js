@@ -99,6 +99,93 @@ function initNativePomo() {
 }
 
 // ============================================================
+// TASK REMINDERS
+// ============================================================
+function taskReminderRows() {
+  const rows = [];
+  const validId = id => typeof id === 'string' && id.length >= 1 && id.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(id);
+  for (const board of state.boards) {
+    if (!validId(board.id)) continue;
+    const done = new Set(board.columns.filter(column => column.isDone).map(column => column.id));
+    for (const task of state._tasksByBoard[board.id] || []) {
+      if (!task.reminderTime || !task.deadline || !isValidISODate(task.deadline) || !validId(task.id) || done.has(task.columnId)) continue;
+      rows.push({ task: task.id, board: board.id, title: task.title.slice(0, 200), date: task.deadline, time: task.reminderTime });
+    }
+  }
+  return rows;
+}
+
+const reminderSync = { timer: null, outstanding: null, confirmed: null, waiting: false, askPermission: false };
+function queueTaskReminders(askPermission = false) {
+  reminderSync.waiting = true;
+  reminderSync.askPermission ||= askPermission;
+  if (reminderSync.outstanding || reminderSync.timer != null) return;
+  reminderSync.timer = setTimeout(syncTaskReminders, 0);
+}
+function syncTaskReminders() {
+  reminderSync.timer = null;
+  reminderSync.waiting = false;
+  const rows = taskReminderRows();
+  const snapshot = JSON.stringify(rows);
+  const askPermission = reminderSync.askPermission;
+  reminderSync.askPermission = false;
+  if (snapshot === reminderSync.confirmed && !askPermission) return;
+  const id = generateId();
+  const raw = JSON.stringify({ id, rows, askPermission });
+  if (rows.length > 1500 || raw.length > 512 * 1024) {
+    showToast('Слишком много напоминаний для Android');
+    return;
+  }
+  const finish = ok => {
+    clearTimeout(reminderSync.outstanding?.timeout);
+    reminderSync.outstanding = null;
+    if (ok) reminderSync.confirmed = snapshot;
+    else showToast('Не удалось обновить напоминания Android');
+    if (reminderSync.waiting) queueTaskReminders();
+  };
+  reminderSync.outstanding = { id, finish, timeout: setTimeout(() => finish(false), 10000) };
+  try { globalThis.KanbanTaskReminders.postMessage(raw); } catch (_) { finish(false); }
+}
+window.kanbanTaskRemindersResult = raw => {
+  let result;
+  try { result = JSON.parse(raw); } catch (_) { return; }
+  if (result.id === reminderSync.outstanding?.id) reminderSync.outstanding.finish(result.ok);
+};
+
+let reminderTarget = null, reminderUiReady = false;
+async function openReminderTask() {
+  const target = reminderTarget;
+  if (!reminderUiReady || !target) return;
+  reminderTarget = null;
+  if (savingTask || importInProgress || drag || switchingBoard) {
+    showToast('Завершите текущее действие, чтобы открыть задачу', 'Открыть', () => {
+      reminderTarget = target; void openReminderTask();
+    }, 10000);
+    return;
+  }
+  if (!state._tasksByBoard[target.board]?.some(task => task.id === target.task)) {
+    showToast('Задача из напоминания удалена или перемещена');
+    return;
+  }
+  if (state.activeBoardId !== target.board && !(await switchBoard(target.board))) return;
+  if ($('#taskModal').classList.contains('open')) {
+    if (editingTaskId === target.task) return;
+    await tryCloseTaskModal();
+    if ($('#taskModal').classList.contains('open')) return;
+  }
+  if (state.activeBoardId !== target.board || !state.tasks.some(task => task.id === target.task)) return;
+  switchView('kanban');
+  openTaskModal(target.task);
+}
+window.kanbanOpenReminder = raw => {
+  let target;
+  try { target = JSON.parse(raw); } catch (_) { return; }
+  if (typeof target.board !== 'string' || typeof target.task !== 'string') return;
+  reminderTarget = target;
+  void openReminderTask();
+};
+
+// ============================================================
 // SERVICE WORKER
 // ============================================================
 // ============================================================
@@ -507,6 +594,8 @@ async function init() {
   setupBroadcast();
   switchView(currentView || 'kanban');
   updateStorageInfo();
+  reminderUiReady = true;
+  void openReminderTask();
 
   setInterval(updateStorageInfo, 15000);
   setInterval(() => {

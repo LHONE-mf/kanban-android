@@ -38,7 +38,8 @@ function captureModalSnapshot() {
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
     deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
     results: tempResults,
-    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || ''])
+    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || '']),
+    reminder: globalThis.KanbanTaskReminders && $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : ''
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
@@ -58,6 +59,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const colIdEl = $('#taskColumnId');
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
+  let reminder = '';
 
   titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; tagsEl.value = '';
   fileInput.value = '';
@@ -74,6 +76,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
     tempResults = (task.results || []).map(r => ({ ...r }));
+    reminder = task.reminderTime || '';
     fillParentSelect(task, task.columnId);
     renderNestedNodes(task.id);
     deleteBtn.style.display = 'inline-flex';
@@ -87,6 +90,15 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     renderNestedNodes(null);
     deleteBtn.style.display = 'none';
     $('#dupTaskBtn').style.display = 'none';
+  }
+
+  if (globalThis.KanbanTaskReminders) {
+    const enabled = $('#taskReminderEnabled'), time = $('#taskReminderTime');
+    $('#taskReminderField').hidden = false;
+    enabled.checked = !!reminder;
+    time.value = reminder || '09:00';
+    enabled.onchange = () => { time.hidden = !enabled.checked; };
+    enabled.onchange();
   }
 
   renderTaskResults();
@@ -472,6 +484,14 @@ async function _saveTask() {
   if (parentId && !par) { showToast('Родитель не найден'); return; }
   const columnId = par ? par.columnId : pv.slice(4);
   const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
+  let reminderTime = existing?.reminderTime || '';
+  if (globalThis.KanbanTaskReminders) {
+    reminderTime = $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : '';
+    if ($('#taskReminderEnabled').checked && (!deadline || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(reminderTime))) {
+      showToast('Укажите срок и время напоминания');
+      return;
+    }
+  }
 
   if (rec.starting) { showToast('Дождитесь доступа к микрофону'); return; }
   if (rec.id && !(await recStop())) return;
@@ -491,6 +511,7 @@ async function _saveTask() {
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, files,
+    ...(reminderTime ? { reminderTime } : {}),
     results: tempResults.filter(r => r.text.trim() || attachedResults.has(r.id)).map(r => ({ ...r, text: r.text.trim() })),
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
@@ -515,6 +536,7 @@ async function _saveTask() {
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   closeModal('taskModal'); notifyOtherTabs();
+  if (globalThis.KanbanTaskReminders && reminderTime && reminderTime !== existing?.reminderTime) queueTaskReminders(true);
   if (existing && !existing.parentId && !candidate.parentId &&
       existing.columnId !== candidate.columnId)
     renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
@@ -562,6 +584,7 @@ async function duplicateTask(taskId) {
     order: maxOrder + 1, createdAt: Date.now(), updatedAt: Date.now(),
     boardId: src.boardId || state.activeBoardId
   };
+  delete copy.reminderTime;
   try { await dbPutTask(copy); }
   catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);

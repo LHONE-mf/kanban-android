@@ -67,6 +67,8 @@ class MainActivity : ComponentActivity() {
     private var nativeMedia: KanbanMediaTransfer? = null
     private var pendingVoicePermission: String? = null
     private var voicePermissionInFlight = false
+    private var pendingReminder: JSONObject? = null
+    private var kanbanLoaded = false
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
     private var editingDigest: String? = null
@@ -165,6 +167,43 @@ class MainActivity : ComponentActivity() {
                 if (result.optBoolean("started") && webView.url == kanbanUrl) offerNotificationPermission()
             }
         }
+    }
+
+    private fun reminderCommand(raw: String) {
+        val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val id = data.optString("id")
+        val rows = data.optJSONArray("rows") ?: return
+        if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return
+        KanbanTaskReminders.run(this, rows) { ok ->
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                sendKanbanEvent("kanbanTaskRemindersResult", JSONObject().put("id", id).put("ok", ok))
+                if (ok && data.optBoolean("askPermission") && webView.url == kanbanUrl) offerNotificationPermission()
+            }
+        }
+    }
+
+    private fun readReminderIntent(intent: Intent) {
+        if (intent.action != KanbanTaskReminders.OPEN) return
+        val uri = intent.data ?: return
+        if (uri.scheme != "comrade" || uri.authority != "reminder" || uri.pathSegments.size != 2) return
+        val (board, task) = uri.pathSegments
+        if (!KanbanTaskReminders.validId(board) || !KanbanTaskReminders.validId(task)) return
+        pendingReminder = JSONObject().put(KanbanTaskReminders.BOARD, board).put(KanbanTaskReminders.TASK, task)
+    }
+
+    private fun deliverReminder() {
+        if (!kanbanLoaded || webView.url != kanbanUrl) return
+        val target = pendingReminder ?: return
+        pendingReminder = null
+        sendKanbanEvent("kanbanOpenReminder", target)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        readReminderIntent(intent)
+        if (pendingReminder == null) return
+        if (webView.url != kanbanUrl) webView.loadUrl(kanbanUrl) else deliverReminder()
     }
 
     private fun voiceEvent(event: JSONObject) {
@@ -288,12 +327,17 @@ class MainActivity : ComponentActivity() {
                 ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
 
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    kanbanLoaded = false
                     pendingVoicePermission = null
                     voiceRecorder.cancelForNavigation()
                     nativeMedia?.reset()
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
+                    if (url == kanbanUrl && view.url == kanbanUrl) {
+                        kanbanLoaded = true
+                        deliverReminder()
+                    }
                     if (::japaneseButton.isInitialized) {
                         japaneseButton.text = if (url.endsWith("/japanese.html")) "← Comrade" else "日本語 · Учить"
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
@@ -323,6 +367,12 @@ class MainActivity : ComponentActivity() {
 
         // The bridge accepts commands only from the local Kanban main frame.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanTaskReminders", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                message.data?.takeIf { it.length <= 512 * 1024 }?.let(::reminderCommand)
+            }
             WebViewCompat.addWebMessageListener(webView, "KanbanPomo", setOf(appOrigin)) {
                 view, message, sourceOrigin, isMainFrame, _ ->
                 if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
@@ -588,6 +638,7 @@ class MainActivity : ComponentActivity() {
         setContentView(root)
         applyMiniTheme(true)
         ViewCompat.requestApplyInsets(root)
+        readReminderIntent(intent)
         webView.loadUrl("$appOrigin/assets/kanban.html")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

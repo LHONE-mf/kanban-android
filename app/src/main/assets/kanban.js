@@ -580,7 +580,10 @@ function consumeUndo(id) {
 // ============================================================
 // CROSS-TAB SYNC
 // ============================================================
-function notifyOtherTabs() { if (broadcast) broadcast.postMessage({ type: 'changed', at: Date.now() }); }
+function notifyOtherTabs() {
+  if (broadcast) broadcast.postMessage({ type: 'changed', at: Date.now() });
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
+}
 let syncReloadTimer = null;
 function setupBroadcast() {
   if (!broadcast) return;
@@ -662,6 +665,7 @@ function sanitizeTask(t) {
     tags: Array.isArray(t.tags) ? t.tags.map(String).filter(Boolean) : [],
     priority: PRIORITY_LABELS[t.priority] ? t.priority : 'none',
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
+    ...(/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t.reminderTime) ? { reminderTime: t.reminderTime } : {}),
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
       ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(resultIds.has(f.resultId) ? { resultId: f.resultId } : {}), ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
@@ -839,6 +843,7 @@ async function loadData() {
     }
 
     applyActiveBoard();
+    if (globalThis.KanbanTaskReminders) queueTaskReminders();
   } catch (e) {
     console.error('loadData', e);
     showToast('Не удалось загрузить данные: ' + (e.message || ''));
@@ -859,6 +864,7 @@ async function reloadFromDb() {
   applyActiveBoard();
   thumbCache.clear();
   renderBoard();
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
 }
 
 // ============================================================
@@ -2064,7 +2070,8 @@ function captureModalSnapshot() {
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
     deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
     results: tempResults,
-    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || ''])
+    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || '']),
+    reminder: globalThis.KanbanTaskReminders && $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : ''
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
@@ -2084,6 +2091,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const colIdEl = $('#taskColumnId');
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
+  let reminder = '';
 
   titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; tagsEl.value = '';
   fileInput.value = '';
@@ -2100,6 +2108,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
     tempResults = (task.results || []).map(r => ({ ...r }));
+    reminder = task.reminderTime || '';
     fillParentSelect(task, task.columnId);
     renderNestedNodes(task.id);
     deleteBtn.style.display = 'inline-flex';
@@ -2113,6 +2122,15 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     renderNestedNodes(null);
     deleteBtn.style.display = 'none';
     $('#dupTaskBtn').style.display = 'none';
+  }
+
+  if (globalThis.KanbanTaskReminders) {
+    const enabled = $('#taskReminderEnabled'), time = $('#taskReminderTime');
+    $('#taskReminderField').hidden = false;
+    enabled.checked = !!reminder;
+    time.value = reminder || '09:00';
+    enabled.onchange = () => { time.hidden = !enabled.checked; };
+    enabled.onchange();
   }
 
   renderTaskResults();
@@ -2498,6 +2516,14 @@ async function _saveTask() {
   if (parentId && !par) { showToast('Родитель не найден'); return; }
   const columnId = par ? par.columnId : pv.slice(4);
   const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
+  let reminderTime = existing?.reminderTime || '';
+  if (globalThis.KanbanTaskReminders) {
+    reminderTime = $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : '';
+    if ($('#taskReminderEnabled').checked && (!deadline || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(reminderTime))) {
+      showToast('Укажите срок и время напоминания');
+      return;
+    }
+  }
 
   if (rec.starting) { showToast('Дождитесь доступа к микрофону'); return; }
   if (rec.id && !(await recStop())) return;
@@ -2517,6 +2543,7 @@ async function _saveTask() {
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, files,
+    ...(reminderTime ? { reminderTime } : {}),
     results: tempResults.filter(r => r.text.trim() || attachedResults.has(r.id)).map(r => ({ ...r, text: r.text.trim() })),
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
@@ -2541,6 +2568,7 @@ async function _saveTask() {
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   closeModal('taskModal'); notifyOtherTabs();
+  if (globalThis.KanbanTaskReminders && reminderTime && reminderTime !== existing?.reminderTime) queueTaskReminders(true);
   if (existing && !existing.parentId && !candidate.parentId &&
       existing.columnId !== candidate.columnId)
     renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
@@ -2588,6 +2616,7 @@ async function duplicateTask(taskId) {
     order: maxOrder + 1, createdAt: Date.now(), updatedAt: Date.now(),
     boardId: src.boardId || state.activeBoardId
   };
+  delete copy.reminderTime;
   try { await dbPutTask(copy); }
   catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
@@ -4426,6 +4455,93 @@ function initNativePomo() {
 }
 
 // ============================================================
+// TASK REMINDERS
+// ============================================================
+function taskReminderRows() {
+  const rows = [];
+  const validId = id => typeof id === 'string' && id.length >= 1 && id.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(id);
+  for (const board of state.boards) {
+    if (!validId(board.id)) continue;
+    const done = new Set(board.columns.filter(column => column.isDone).map(column => column.id));
+    for (const task of state._tasksByBoard[board.id] || []) {
+      if (!task.reminderTime || !task.deadline || !isValidISODate(task.deadline) || !validId(task.id) || done.has(task.columnId)) continue;
+      rows.push({ task: task.id, board: board.id, title: task.title.slice(0, 200), date: task.deadline, time: task.reminderTime });
+    }
+  }
+  return rows;
+}
+
+const reminderSync = { timer: null, outstanding: null, confirmed: null, waiting: false, askPermission: false };
+function queueTaskReminders(askPermission = false) {
+  reminderSync.waiting = true;
+  reminderSync.askPermission ||= askPermission;
+  if (reminderSync.outstanding || reminderSync.timer != null) return;
+  reminderSync.timer = setTimeout(syncTaskReminders, 0);
+}
+function syncTaskReminders() {
+  reminderSync.timer = null;
+  reminderSync.waiting = false;
+  const rows = taskReminderRows();
+  const snapshot = JSON.stringify(rows);
+  const askPermission = reminderSync.askPermission;
+  reminderSync.askPermission = false;
+  if (snapshot === reminderSync.confirmed && !askPermission) return;
+  const id = generateId();
+  const raw = JSON.stringify({ id, rows, askPermission });
+  if (rows.length > 1500 || raw.length > 512 * 1024) {
+    showToast('Слишком много напоминаний для Android');
+    return;
+  }
+  const finish = ok => {
+    clearTimeout(reminderSync.outstanding?.timeout);
+    reminderSync.outstanding = null;
+    if (ok) reminderSync.confirmed = snapshot;
+    else showToast('Не удалось обновить напоминания Android');
+    if (reminderSync.waiting) queueTaskReminders();
+  };
+  reminderSync.outstanding = { id, finish, timeout: setTimeout(() => finish(false), 10000) };
+  try { globalThis.KanbanTaskReminders.postMessage(raw); } catch (_) { finish(false); }
+}
+window.kanbanTaskRemindersResult = raw => {
+  let result;
+  try { result = JSON.parse(raw); } catch (_) { return; }
+  if (result.id === reminderSync.outstanding?.id) reminderSync.outstanding.finish(result.ok);
+};
+
+let reminderTarget = null, reminderUiReady = false;
+async function openReminderTask() {
+  const target = reminderTarget;
+  if (!reminderUiReady || !target) return;
+  reminderTarget = null;
+  if (savingTask || importInProgress || drag || switchingBoard) {
+    showToast('Завершите текущее действие, чтобы открыть задачу', 'Открыть', () => {
+      reminderTarget = target; void openReminderTask();
+    }, 10000);
+    return;
+  }
+  if (!state._tasksByBoard[target.board]?.some(task => task.id === target.task)) {
+    showToast('Задача из напоминания удалена или перемещена');
+    return;
+  }
+  if (state.activeBoardId !== target.board && !(await switchBoard(target.board))) return;
+  if ($('#taskModal').classList.contains('open')) {
+    if (editingTaskId === target.task) return;
+    await tryCloseTaskModal();
+    if ($('#taskModal').classList.contains('open')) return;
+  }
+  if (state.activeBoardId !== target.board || !state.tasks.some(task => task.id === target.task)) return;
+  switchView('kanban');
+  openTaskModal(target.task);
+}
+window.kanbanOpenReminder = raw => {
+  let target;
+  try { target = JSON.parse(raw); } catch (_) { return; }
+  if (typeof target.board !== 'string' || typeof target.task !== 'string') return;
+  reminderTarget = target;
+  void openReminderTask();
+};
+
+// ============================================================
 // SERVICE WORKER
 // ============================================================
 // ============================================================
@@ -4834,6 +4950,8 @@ async function init() {
   setupBroadcast();
   switchView(currentView || 'kanban');
   updateStorageInfo();
+  reminderUiReady = true;
+  void openReminderTask();
 
   setInterval(updateStorageInfo, 15000);
   setInterval(() => {

@@ -580,7 +580,10 @@ function consumeUndo(id) {
 // ============================================================
 // CROSS-TAB SYNC
 // ============================================================
-function notifyOtherTabs() { if (broadcast) broadcast.postMessage({ type: 'changed', at: Date.now() }); }
+function notifyOtherTabs() {
+  if (broadcast) broadcast.postMessage({ type: 'changed', at: Date.now() });
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
+}
 let syncReloadTimer = null;
 function setupBroadcast() {
   if (!broadcast) return;
@@ -662,6 +665,7 @@ function sanitizeTask(t) {
     tags: Array.isArray(t.tags) ? t.tags.map(String).filter(Boolean) : [],
     priority: PRIORITY_LABELS[t.priority] ? t.priority : 'none',
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
+    ...(/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t.reminderTime) ? { reminderTime: t.reminderTime } : {}),
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
       ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(resultIds.has(f.resultId) ? { resultId: f.resultId } : {}), ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
@@ -839,6 +843,7 @@ async function loadData() {
     }
 
     applyActiveBoard();
+    if (globalThis.KanbanTaskReminders) queueTaskReminders();
   } catch (e) {
     console.error('loadData', e);
     showToast('Не удалось загрузить данные: ' + (e.message || ''));
@@ -859,6 +864,7 @@ async function reloadFromDb() {
   applyActiveBoard();
   thumbCache.clear();
   renderBoard();
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
 }
 
 // ============================================================

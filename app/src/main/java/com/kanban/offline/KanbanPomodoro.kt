@@ -17,6 +17,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONObject
 
 internal object KanbanPomodoro {
@@ -137,6 +138,11 @@ internal object KanbanPomodoro {
 
 class KanbanAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == KanbanTaskReminders.ALARM) {
+            val pending = goAsync()
+            KanbanTaskReminders.run(context) { pending.finish() }
+            return
+        }
         val action = when (intent.action) {
             KanbanPomodoro.ALARM -> "alarm"
             Intent.ACTION_BOOT_COMPLETED -> "reboot"
@@ -144,6 +150,9 @@ class KanbanAlarmReceiver : BroadcastReceiver() {
             else -> return
         }
         val pending = goAsync()
-        KanbanPomodoro.run(context, action) { pending.finish() }
+        val operations = AtomicInteger(if (action == "alarm") 1 else 2)
+        val finish = { if (operations.decrementAndGet() == 0) pending.finish() }
+        KanbanPomodoro.run(context, action) { finish() }
+        if (action != "alarm") KanbanTaskReminders.run(context) { finish() }
     }
 }

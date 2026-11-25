@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const js = fs.readFileSync('app/src/main/js-src/android-extras.js', 'utf8');
-const segment = js.slice(js.indexOf('const POMO_LEN'), js.indexOf('// SERVICE WORKER'));
+const segment = js.slice(js.indexOf('const POMO_LEN'), js.indexOf('// TASK REMINDERS'));
 const buttons = new Map(), events = new Map(), requests = [], scheduled = new Map(), notices = [];
 const legacy = { mode: 'focus', left: 900, running: false, sessions: 2, day: '2026-11-25' };
 let now = 0, serial = 0;

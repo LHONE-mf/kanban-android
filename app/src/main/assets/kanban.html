@@ -188,6 +188,10 @@
           <label class="label" for="taskDeadline">Срок</label>
           <input type="date" id="taskDeadline">
           <div class="field-error" id="taskDeadlineError" hidden>Некорректная дата</div>
+          <div id="taskReminderField" hidden>
+            <label class="label"><input type="checkbox" id="taskReminderEnabled"> Напомнить в день срока</label>
+            <input type="time" id="taskReminderTime" aria-label="Время напоминания" hidden>
+          </div>
         </div>
         <div class="field">
           <label class="label">Приоритет</label>

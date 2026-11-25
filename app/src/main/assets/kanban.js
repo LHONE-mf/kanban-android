@@ -4332,8 +4332,8 @@ const POMO_LEN = { focus: 1500, break: 300 };
 const pomo = { mode: 'focus', left: POMO_LEN.focus, end: 0, running: false, sessions: 0 };
 const mmss = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 function pomoSave() { try { localStorage.setItem('kanban_pomo', JSON.stringify({ day: todayISO(), sessions: pomo.sessions, mode: pomo.mode, left: pomo.left, end: pomo.end, running: pomo.running })); } catch (_) {} }
-function pomoRender() {
-  const left = pomo.running ? Math.max(0, Math.ceil((pomo.end - Date.now()) / 1000)) : pomo.left;
+function pomoRender(now = Date.now()) {
+  const left = pomo.running ? Math.max(0, Math.ceil((pomo.end - now) / 1000)) : pomo.left;
   $('#pomoTime').textContent = mmss(left);
   $('#pomoMode').textContent = (pomo.mode === 'focus' ? 'Фокус' : 'Перерыв') + ' · 🍅 сегодня: ' + pomo.sessions;
   $('#pomoToggle').textContent = pomo.running ? '⏸' : '▶';
@@ -4351,8 +4351,9 @@ function pomoBeep() {
 }
 function pomoSwitch() { pomo.running = false; pomo.mode = pomo.mode === 'focus' ? 'break' : 'focus'; pomo.left = POMO_LEN[pomo.mode]; pomoSave(); pomoRender(); }
 function initPomo() {
-  try { const s = JSON.parse(localStorage.getItem('kanban_pomo') || '{}'); if (s.day === todayISO()) pomo.sessions = s.sessions | 0; if (['focus','break'].includes(s.mode)) { pomo.mode = s.mode; pomo.left = Math.max(0, Math.min(86400, Number(s.left) || POMO_LEN[pomo.mode])); if (s.running && Number.isFinite(s.end)) { pomo.end = s.end; pomo.running = s.end > Date.now(); if (!pomo.running) pomo.left = 0; } } } catch (_) {}
   $('#focusBtn').onclick = () => { $('#pomo').hidden = !$('#pomo').hidden; };
+  if (globalThis.KanbanPomo?.postMessage) { initNativePomo(); return; }
+  try { const s = JSON.parse(localStorage.getItem('kanban_pomo') || '{}'); if (s.day === todayISO()) pomo.sessions = s.sessions | 0; if (['focus','break'].includes(s.mode)) { pomo.mode = s.mode; pomo.left = Math.max(0, Math.min(86400, Number(s.left) || POMO_LEN[pomo.mode])); if (s.running && Number.isFinite(s.end)) { pomo.end = s.end; pomo.running = s.end > Date.now(); if (!pomo.running) pomo.left = 0; } } } catch (_) {}
   $('#pomoToggle').onclick = () => {
     if (pomo.running) { pomo.left = Math.max(0, Math.ceil((pomo.end - Date.now()) / 1000)); pomo.running = false; }
     else { pomo.end = Date.now() + pomo.left * 1000; pomo.running = true; }
@@ -4368,6 +4369,60 @@ function initPomo() {
     showToast(wasFocus ? 'Сессия завершена — перерыв 5 мин' : 'Перерыв окончен — за работу!', null, null, 6000);
   }, 500);
   pomoRender();
+}
+
+function initNativePomo() {
+  const buttons = ['#pomoToggle', '#pomoReset', '#pomoSkip'].map(selector => $(selector));
+  let pending = null, ticker = null, initialized = false;
+  let legacy;
+  try { legacy = JSON.parse(localStorage.getItem('kanban_pomo') || 'null'); } catch (_) {}
+  function unlock() {
+    clearTimeout(pending?.timeout);
+    pending = null;
+    for (const button of buttons) button.disabled = false;
+  }
+  function request(type) {
+    if (pending) return;
+    const id = generateId();
+    for (const button of buttons) button.disabled = true;
+    pending = { id, timeout: setTimeout(() => {
+      unlock(); showToast('Pomodoro не получил ответ от Android');
+    }, 5000) };
+    try { globalThis.KanbanPomo.postMessage(JSON.stringify({ id, type, legacy: initialized ? undefined : legacy })); }
+    catch (_) { unlock(); showToast('Pomodoro не удалось связаться с Android'); }
+  }
+  function tick() {
+    clearTimeout(ticker);
+    const left = pomoRender(performance.now());
+    if (!pomo.running || document.hidden) return;
+    if (left === 0) request('read');
+    else ticker = setTimeout(tick, 250);
+  }
+  window.kanbanPomoResult = raw => {
+    let state;
+    try { state = JSON.parse(raw); } catch (_) { return; }
+    if (state.id !== pending?.id) return;
+    unlock();
+    if (state.error) { showToast(state.error); return; }
+    initialized = true;
+    pomo.mode = state.mode;
+    pomo.running = state.running;
+    pomo.left = Math.ceil(state.ms / 1000);
+    pomo.end = performance.now() + state.ms;
+    pomo.sessions = state.sessions;
+    $('#pomoStatus').textContent = state.notificationsAllowed ? 'Android может задерживать уведомления' : 'Уведомления выключены';
+    if (state.completed) showToast(state.completed === 'focus' ? 'Сессия завершена — перерыв 5 мин' : 'Перерыв окончен');
+    tick();
+  };
+  window.kanbanNotificationPermissionResult = () => request('read');
+  buttons[0].onclick = () => request('toggle');
+  buttons[1].onclick = () => request('reset');
+  buttons[2].onclick = () => request('skip');
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimeout(ticker);
+    else request('read');
+  });
+  request('read');
 }
 
 // ============================================================

@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import android.os.Bundle
+import android.os.Build
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -137,6 +138,33 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
         if (::backupSaver.isInitialized) backupSaver.onDestinationPicked(uri)
+    }
+
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        sendKanbanEvent("kanbanNotificationPermissionResult", JSONObject())
+    }
+
+    private fun offerNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33 || !hasWindowFocus() ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences("comrade_notification_permission", MODE_PRIVATE)
+        if (prefs.getBoolean("asked", false)) return
+        prefs.edit().putBoolean("asked", true).apply()
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun pomoCommand(raw: String) {
+        val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val id = data.optString("id")
+        val action = data.optString("type")
+        if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}")) || action !in setOf("read", "toggle", "reset", "skip")) return
+        KanbanPomodoro.run(this, action, data.optJSONObject("legacy")) { result ->
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                sendKanbanEvent("kanbanPomoResult", result.put("id", id))
+                if (result.optBoolean("started") && webView.url == kanbanUrl) offerNotificationPermission()
+            }
+        }
     }
 
     private fun voiceEvent(event: JSONObject) {
@@ -295,6 +323,12 @@ class MainActivity : ComponentActivity() {
 
         // The bridge accepts commands only from the local Kanban main frame.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanPomo", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                message.data?.takeIf { it.length <= 2048 }?.let(::pomoCommand)
+            }
             WebViewCompat.addWebMessageListener(webView, "KanbanHaptics", setOf(appOrigin)) {
                 view, message, sourceOrigin, isMainFrame, _ ->
                 if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||

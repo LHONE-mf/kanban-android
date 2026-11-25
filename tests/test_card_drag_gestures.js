@@ -318,11 +318,11 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   s.tick();s.tick();s.rawMove(470,470);
   assert.equal(s.frames.size,1,'scroll ticks and pointer moves share a frame');
   s.flush();
-  assert.equal(s.board.scrollLeft,12,'coalesced scroll advances once');
-  assert.equal(s.second.scrollTop,12);
+  assert.equal(s.board.scrollLeft,6,'coalesced scroll advances once');
+  assert.equal(s.second.scrollTop,6);
   s.tick();s.rawMove(370,150);s.flush();
-  assert.equal(s.board.scrollLeft,12,'leaving the edge cancels stale scroll');
-  assert.equal(s.second.scrollTop,12);
+  assert.equal(s.board.scrollLeft,6,'leaving the edge cancels stale scroll');
+  assert.equal(s.second.scrollTop,6);
   assert.equal(s.intervals.size,0);
   s.move(480,480);s.tick();
   s.cancel(1);

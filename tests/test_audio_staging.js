@@ -29,6 +29,23 @@ function fixture(reject) {
   assert.equal(saved.peaks.length,2);
   assert.equal(saved.resultId,'result1','recorded or selected audio keeps result association');
   const extras=fs.readFileSync('app/src/main/js-src/android-extras.js','utf8');
+  const manifest=fs.readFileSync('app/src/main/AndroidManifest.xml','utf8');
+  assert.match(manifest,/android:name="android\.permission\.RECORD_AUDIO"/);
+  assert.match(manifest,/android:name="android\.permission\.MODIFY_AUDIO_SETTINGS"/);
+  const micSrc=extras.slice(extras.indexOf('function micErrorMessage('),extras.indexOf('async function recStart('));
+  const mic={};vm.createContext(mic);vm.runInContext(micSrc,mic);
+  const calls=[],stream={};
+  const device={getUserMedia:async c=>{calls.push(c);if(calls.length===1)throw Object.assign(new Error('capture'),{name:'NotReadableError'});return stream;}};
+  assert.equal(await mic.requestMicStream(device,()=>true),stream);
+  assert.equal(calls.length,2);
+  assert.equal(calls[1].audio,true);
+  for(const [name,active] of [['NotAllowedError',true],['NotReadableError',false]]) {
+    let count=0;
+    await assert.rejects(mic.requestMicStream({getUserMedia:async()=>{count++;throw Object.assign(new Error('capture'),{name});}},()=>active));
+    assert.equal(count,1,'no retry after denied permission or closed editor');
+  }
+  assert.match(mic.micErrorMessage({name:'NotReadableError'}),/NotReadableError/);
+  assert.match(mic.micErrorMessage({name:'NotAllowedError'}),/Android/);
   const recSrc=extras.slice(extras.indexOf('async function recFinish()'),extras.indexOf('async function registerServiceWorker()'));
   const session=[{id:'r1'}], files=[];
   const env={tempResults:session,newFiles:files,rec:{mr:{mimeType:'audio/webm'},acc:1000,cancel:false,chunks:[new Blob(['audio'])],session,resultId:'r1',stream:{getTracks:()=>[{stop(){}}]}},

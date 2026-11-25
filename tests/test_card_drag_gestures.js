@@ -7,8 +7,10 @@ const begin = source.indexOf('function setupDragAndDrop() {');
 const end = source.indexOf('// ============================================================\n// EVENT BINDINGS', begin);
 assert.ok(begin >= 0 && end > begin);
 
-function scenario({withDescendants = false, failWrite = false} = {}) {
+function scenario({withDescendants = false, failWrite = false, allowScroll = false} = {}) {
   const timers = [];
+  const frames = new Map(), intervals = new Map();
+  let nextFrame = 0, nextInterval = 0;
   const writes = [];
   const toasts = [];
   const hover = {adds:0, removes:0, hits:0};
@@ -25,6 +27,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const card = {dataset:{taskId:'task1'},classList:makeClassList('task-card'),parentElement:null};
   const list = id => ({
     dataset: {columnId:id}, children:[], classList:makeClassList('task-list'),
+    scrollTop:0, scrollHeight:allowScroll?1000:500, clientHeight:500,
     get lastElementChild() {return this.children.at(-1) || null;},
     querySelectorAll(sel) {
       if (sel === '.task-card:not(.dragging)') {
@@ -46,7 +49,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const first=list('col_a'),second=list('col_b');
   first.appendChild(card);
   const board = {
-    classList:makeClassList('board'),scrollLeft:0,scrollWidth:500,clientWidth:500,
+    classList:makeClassList('board'),scrollLeft:0,scrollWidth:allowScroll?1000:500,clientWidth:500,
     getBoundingClientRect(){return{left:0,right:500,top:0,bottom:500};},
     setPointerCapture(id){captured=id;},
     addEventListener(){}
@@ -78,8 +81,13 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
       sel==='.task-list.drag-over'?[first,second].filter(el=>el.classList.contains('drag-over')):[],
     setTimeout:fn=>{const id={fn,cancelled:false};timers.push(id);return id;},
     clearTimeout:id=>{if(id)id.cancelled=true;},
-    setInterval:()=>{throw Error('unexpected auto-scroll');},
-    clearInterval(){},
+    requestAnimationFrame:fn=>{const id=nextFrame++;frames.set(id,fn);return id;},
+    cancelAnimationFrame:id=>frames.delete(id),
+    setInterval:fn=>{
+      if(!allowScroll)throw Error('unexpected auto-scroll');
+      const id=++nextInterval;intervals.set(id,fn);return id;
+    },
+    clearInterval:id=>intervals.delete(id),
     applyColumnChange:(task,colId)=>({...task,columnId:colId}),
     dbPutTasks:async candidates=>{
       writes.push(candidates.map(x=>({...x})));
@@ -107,13 +115,20 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
     target:{closest:selector=>selector==='.task-card'?card:
       grip && (selector==='[data-drag-handle]' || selector.includes('button')) ? {dragGrip:true}:null}
   });
-  const move = (x,y,pointerId=1)=>sandbox.onPointerMove({
+  const rawMove = (x,y,pointerId=1)=>sandbox.onPointerMove({
     pointerId,clientX:x,clientY:y,cancelable:true,preventDefault(){prevented++;}
   });
+  const flush = ()=>{
+    for(const [id,fn] of [...frames]){
+      if(frames.delete(id))fn(16);
+    }
+  };
+  const move = (...args)=>{rawMove(...args);flush();};
+  const tick = ()=>{for(const fn of [...intervals.values()])fn();};
   const activate = ()=>{const timer=timers.at(-1);assert.ok(timer&&!timer.cancelled);timer.fn();};
   const up = async(x,y,pointerId=1)=>sandbox.onPointerUp({pointerId,clientX:x,clientY:y});
   const cancel = pointerId=>sandbox.onPointerCancel({pointerId});
-  return {sandbox,board,card,first,second,writes,toasts,hover,down,move,activate,up,cancel,
+  return {sandbox,board,card,first,second,writes,toasts,hover,down,move,rawMove,flush,tick,frames,intervals,activate,up,cancel,
     get renders(){return renders;},get partialMoves(){return partialMoves;},get prevented(){return prevented;},
     get downPrevented(){return downPrevented;},get captured(){return captured;},timers};
 }
@@ -255,6 +270,62 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const tie={getBoundingClientRect:()=>({top:0,height:20})};
   assert.equal(s.sandbox.getAfterElement({querySelectorAll:()=>[a,tie]},0),a);
   assert.equal(s.sandbox.getAfterElement({querySelectorAll:()=>[]},0),null);
+
+  // P17.4: bursts share a frame, use the latest pointer, and never save a hover.
+  s=scenario();
+  s.down();s.activate();
+  const initialHits=s.hover.hits, initialPrevented=s.prevented;
+  for(let i=0;i<20;i++)s.rawMove(i%2?370:110,150+i);
+  assert.equal(s.frames.size,1,'one pending frame, including a valid frame ID of zero');
+  assert.equal(s.hover.hits,initialHits,'no hit-tests during the event burst');
+  assert.equal(s.prevented-initialPrevented,20,'preventDefault stays synchronous');
+  s.flush();
+  assert.equal(s.hover.hits-initialHits,2,'one placement and one scroll hit-test');
+  assert.equal(s.card.parentElement,s.second,'latest pointer wins');
+  assert.equal(s.writes.length,0);
+  s.rawMove(110,150);
+  const stale=[...s.frames.values()][0];
+  await s.up(370,150);
+  assert.equal(s.frames.size,0,'release cancels the pending frame');
+  assert.equal(s.writes[0][0].columnId,'col_b','release uses its own coordinates');
+  const releasedHits=s.hover.hits;
+  stale(16);
+  assert.equal(s.hover.hits,releasedHits,'obsolete callback cannot mutate the released drag');
+
+  s=scenario();
+  s.down();s.activate();s.rawMove(370,150);
+  const oldFrame=[...s.frames.values()][0];
+  s.cancel(2);
+  assert.equal(s.frames.size,1,'unrelated cancellation leaves the frame alone');
+  s.cancel(1);
+  assert.equal(s.frames.size,0);
+  assert.equal(s.writes.length,0);
+  s.down();s.activate();s.rawMove(370,150);
+  const nextHits=s.hover.hits;
+  oldFrame(16);
+  assert.equal(s.hover.hits,nextHits,'old callback cannot affect the next gesture');
+  s.flush();
+  assert.equal(s.card.parentElement,s.second);
+  s.cancel(1);
+
+  s=scenario({allowScroll:true});
+  s.down(1,true);s.move(480,480);
+  assert.equal(s.intervals.size,1,'edge gesture starts scrolling');
+  s.tick();s.tick();s.rawMove(470,470);
+  assert.equal(s.frames.size,1,'scroll ticks and pointer moves share a frame');
+  s.flush();
+  assert.equal(s.board.scrollLeft,12,'coalesced scroll advances once');
+  assert.equal(s.second.scrollTop,12);
+  s.tick();s.rawMove(370,150);s.flush();
+  assert.equal(s.board.scrollLeft,12,'leaving the edge cancels stale scroll');
+  assert.equal(s.second.scrollTop,12);
+  assert.equal(s.intervals.size,0);
+  s.move(480,480);s.tick();
+  s.cancel(1);
+  assert.equal(s.intervals.size,0,'cancel stops scrolling');
+  assert.equal(s.frames.size,0,'cancel stops scroll frame');
+  s.flush();
+  assert.equal(s.writes.length,0);
 
   const views=fs.readFileSync('app/src/main/js-src/views.js','utf8');
   assert.match(views,/data-drag-handle="1"/,'drag grip exists on every card');

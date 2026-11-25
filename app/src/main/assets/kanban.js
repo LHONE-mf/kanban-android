@@ -3637,16 +3637,18 @@ function cleanupDragListeners() {
 }
 function getAfterElement(container, y) {
   const cards = container.querySelectorAll('.task-card:not(.dragging)');
-  let closestOffset = -Infinity, closest = null;
-  for (const child of cards) {
-    const box = child.getBoundingClientRect();
-    const offset = y - box.top - box.height / 2;
-    if (offset < 0 && offset > closestOffset) {
-      closestOffset = offset;
-      closest = child;
-    }
+  // Kanban lists are vertical, non-wrapping flex columns. Card padding,
+  // borders and gap keep their midpoints ordered even with the small
+  // cardIn/hover translations. Search the first midpoint strictly below y
+  // on the screen (greater clientY), reading fresh rectangles on each call.
+  let low = 0, high = cards.length;
+  while (low < high) {
+    const mid = low + Math.floor((high - low) / 2);
+    const box = cards[mid].getBoundingClientRect();
+    if (y - box.top - box.height / 2 < 0) high = mid;
+    else low = mid + 1;
   }
-  return closest;
+  return cards[low] || null;
 }
 function getDropListAt(x, y) {
   const rect = $('#board').getBoundingClientRect();

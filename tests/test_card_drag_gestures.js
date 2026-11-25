@@ -380,6 +380,55 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   assert.equal(replacement[2].columnId,'col_b');
   assert.equal(replacement.length,3,'missing tasks are not resurrected');
 
+  // P17.6: compare the binary hit-test with the former exhaustive search
+  // for ordered, unequal-height cards, subpixels, ties and changing geometry.
+  let reads=0, scrollOffset=0, position=0;
+  const geometry=Array.from({length:1000},(_,i)=>{
+    const height=22+(i%19)*7.25;
+    const top=position+(i%3)*2;
+    position+=height+6;
+    return {top,height};
+  });
+  const ordered=geometry.map(box=>({
+    getBoundingClientRect(){
+      reads++;
+      return {top:box.top-scrollOffset,height:box.height};
+    }
+  }));
+  const orderedList={querySelectorAll:()=>ordered};
+  const reference=y=>{
+    let closest=null, best=-Infinity;
+    for(let i=0;i<geometry.length;i++){
+      const box=geometry[i];
+      const offset=y-(box.top-scrollOffset)-box.height/2;
+      if(offset<0&&offset>best){best=offset;closest=ordered[i];}
+    }
+    return closest;
+  };
+  for(const scroll of [0,5678.25,position-500]){
+    scrollOffset=scroll;
+    const samples=[-100000,100000,0,150,499.5];
+    for(const i of [0,1,17,499,500,998,999]){
+      const middle=geometry[i].top-scrollOffset+geometry[i].height/2;
+      samples.push(middle-0.125,middle,middle+0.125);
+    }
+    for(const y of samples){
+      reads=0;
+      assert.equal(s.sandbox.getAfterElement(orderedList,y),reference(y),
+        'binary hit-test matches exhaustive reference');
+      assert.ok(reads<=10,'1000 cards require at most ten rectangle reads');
+    }
+  }
+  // Insert/remove/reorder the live card list: no stored rectangles or NodeList.
+  const live=[ordered[0],ordered[1],ordered[2]];
+  scrollOffset=0;
+  const liveList={querySelectorAll:()=>live};
+  assert.equal(s.sandbox.getAfterElement(liveList,0),ordered[0]);
+  live.shift();
+  assert.equal(s.sandbox.getAfterElement(liveList,0),ordered[1]);
+  live.unshift(ordered[0]);
+  assert.equal(s.sandbox.getAfterElement(liveList,0),ordered[0]);
+
   const views=fs.readFileSync('app/src/main/js-src/views.js','utf8');
   assert.match(views,/data-drag-handle="1"/,'drag grip exists on every card');
   assert.match(views,/dragHandle\.onkeydown/,'grip has keyboard move support');

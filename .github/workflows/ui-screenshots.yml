@@ -4,11 +4,21 @@ name: Android UI Smoke Tests and Screenshots
 # Emulator boot is significantly slower than normal CI checks.
 on:
   workflow_dispatch:
+    inputs:
+      p19_baseline_run:
+        description: 'Android APK run ID for the installed baseline'
+        type: string
+      p19_candidate_run:
+        description: 'Android APK run ID for the P19 update'
+        type: string
 
 jobs:
   screenshots:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -33,21 +43,46 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py' -v
           python3 tools/build_kanban_js.py --check
           gradle :app:assembleDebug --no-daemon
+      - name: Download signed baseline APK
+        if: inputs.p19_baseline_run != '' && inputs.p19_candidate_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: kanban-debug-apk
+          path: p19-artifacts/baseline
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.p19_baseline_run }}
+      - name: Download signed candidate APK
+        if: inputs.p19_baseline_run != '' && inputs.p19_candidate_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: kanban-debug-apk
+          path: p19-artifacts/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.p19_candidate_run }}
+      - uses: actions/setup-node@v4
+        if: inputs.p19_baseline_run != '' && inputs.p19_candidate_run != ''
+        with:
+          node-version: '22'
       - name: Install Maestro UI test runner
         run: |
           curl -fsSL https://get.maestro.mobile.dev | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Run Android UI interactions and screenshots
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_I_WANT_MY_TCG: 'yes'
+          P19_BASELINE_RUN: ${{ inputs.p19_baseline_run }}
+          P19_CANDIDATE_RUN: ${{ inputs.p19_candidate_run }}
         with:
           api-level: 35
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          emulator-boot-timeout: 900
           script: |
             mkdir -p ui-screenshots
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            if [ -n "$P19_BASELINE_RUN" ] && [ -n "$P19_CANDIDATE_RUN" ]; then bash tools/verify_p19_android_upgrade.sh p19-artifacts/baseline/app-debug.apk p19-artifacts/candidate/app-debug.apk; else adb install -r app/build/outputs/apk/debug/app-debug.apk; fi
             "$HOME/.maestro/bin/maestro" test .maestro/smoke.yaml --debug-output ui-screenshots/maestro-debug
       - name: Upload screenshots and Maestro diagnostics
         if: always()

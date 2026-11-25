@@ -171,82 +171,152 @@ function renderAudioList() {
   });
 }
 
-const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null, starting: false, finishing: false, session: null, resultId: '' };
-function bindAudio() { $('#recStartBtn').onclick = () => recStart(); $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
-function micErrorMessage(error) {
-  const name = error?.name || 'UnknownError';
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Нет доступа к микрофону. Проверьте разрешения Comrade в настройках Android (' + name + ')';
-  if (name === 'NotFoundError') return 'Микрофон не найден (' + name + ')';
-  if (name === 'NotReadableError' || name === 'AbortError') return 'Не удалось запустить микрофон. Проверьте системный доступ к микрофону и закройте другие приложения записи (' + name + ')';
-  return 'Не удалось включить микрофон (' + name + ')';
+// Android owns microphone capture. WebView only controls and receives the final file.
+const rec = { id: null, session: null, resultId: '', starting: false, active: false,
+  finishing: false, paused: false, ready: null, done: null, resolve: null, lv: [] };
+function bindAudio() {
+  $('#recStartBtn').onclick = () => recStart();
+  $('#recStop').onclick = () => recStop();
+  $('#recCancel').onclick = recAbort;
+  $('#recPause').onclick = recPause;
 }
-async function requestMicStream(devices, stillActive) {
+function voiceCommand(id, type) {
+  try { window.KanbanVoice.postMessage(JSON.stringify({ id, type })); return true; }
+  catch (_) { return false; }
+}
+function voicePromise() {
+  if (!rec.done) rec.done = new Promise(resolve => { rec.resolve = resolve; });
+  return rec.done;
+}
+function voiceResolve(ok) {
+  const resolve = rec.resolve;
+  rec.done = rec.resolve = null;
+  if (resolve) resolve(ok);
+}
+function voicePanel() {
+  $('#recPanel').hidden = !rec.id;
+  $('#recStartBtn').hidden = !!rec.id;
+  $('#recPause').disabled = !rec.active || rec.finishing;
+  $('#recPause').textContent = rec.paused ? 'Продолжить' : 'Пауза';
+  $('#recStop').disabled = rec.starting || rec.finishing;
+  $('#recStop').textContent = rec.ready && !rec.finishing ? 'Повторить' : rec.finishing ? 'Сохранение…' : 'Готово';
+}
+function voiceReset(ok) {
+  voiceResolve(ok);
+  Object.assign(rec, { id: null, session: null, resultId: '', starting: false,
+    active: false, finishing: false, paused: false, ready: null, lv: [] });
+  voicePanel();
+}
+function voiceStillInEditor(id) {
+  return rec.id === id && rec.session === tempResults && $('#taskModal').classList.contains('open') &&
+    (!rec.resultId || tempResults.some(r => r.id === rec.resultId));
+}
+function recStart(resultId = '') {
+  if (rec.id || savingTask) return;
+  if (resultId && !tempResults.some(r => r.id === resultId)) return;
+  if (!window.KanbanVoice?.postMessage) { showToast('Нативная запись недоступна в этой сборке'); return; }
+  apStop();
+  const id = 'voice_' + generateId();
+  Object.assign(rec, { id, session: tempResults, resultId, starting: true, lv: [] });
+  $('#recTime').textContent = '0:00';
+  $('#recLevels').replaceChildren();
+  voicePanel();
+  if (resultId) $('#recPanel').scrollIntoView({ block: 'nearest' });
+  if (!voiceCommand(id, 'start')) { voiceReset(false); showToast('Не удалось запустить диктофон Android'); }
+}
+function recPause() {
+  if (!rec.active || rec.finishing) return;
+  if (!voiceCommand(rec.id, rec.paused ? 'resume' : 'pause')) showToast('Не удалось переключить паузу');
+}
+function recStop() {
+  if (!rec.id) return Promise.resolve(true);
+  if (rec.starting) return Promise.resolve(false);
+  if (rec.finishing) return voicePromise();
+  const pending = voicePromise();
+  rec.finishing = true;
+  voicePanel();
+  if (rec.ready) void receiveVoiceFile(rec.id);
+  else if (!voiceCommand(rec.id, 'stop')) {
+    rec.finishing = false; voicePanel(); voiceResolve(false);
+    showToast('Не удалось остановить диктофон');
+  }
+  return pending;
+}
+function recAbort() {
+  if (!rec.id) return;
+  voiceCommand(rec.id, 'cancel');
+  voiceReset(false);
+}
+function voiceLevel(ms, level) {
+  $('#recTime').textContent = fmtDur(ms / 1000);
+  if (rec.paused) return;
+  const n = 40, box = $('#recLevels');
+  rec.lv.push(Math.min(1, Math.max(0, Number(level) || 0)));
+  if (rec.lv.length > n) rec.lv.shift();
+  if (box.children.length !== n) box.innerHTML = '<i></i>'.repeat(n);
+  const last = rec.lv;
+  [...box.children].forEach((el, i) => {
+    const v = last[i - (n - last.length)];
+    el.style.height = (v == null ? 6 : Math.max(8, Math.sqrt(v) * 100)) + '%';
+  });
+}
+async function receiveVoiceFile(id) {
+  const ready = rec.ready;
+  if (!ready || !voiceStillInEditor(id)) return;
   try {
-    return await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const response = await fetch('/voice-capture/' + encodeURIComponent(ready.token), { cache: 'no-store' });
+    if (!response.ok) throw new Error('Файл записи недоступен');
+    const blob = await response.blob();
+    if (blob.size !== ready.size || blob.size === 0 || blob.size > MAX_VIDEO_SIZE) throw new Error('Запись передана не полностью');
+    if (!voiceStillInEditor(id)) return;
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const file = new File([blob], `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.m4a`, { type: 'audio/mp4' });
+    file._dur = ready.ms / 1000;
+    file._meta = { dur: file._dur, peaks: ready.peaks || [] };
+    if (rec.resultId) file._resultId = rec.resultId;
+    newFiles.push(file);
+    // Acknowledge only after the complete attachment is staged in this editor.
+    voiceCommand(id, 'ack');
+    voiceReset(true);
+    renderFiles();
   } catch (error) {
-    // Some WebViews cannot start the processed audio source. Retry once with
-    // plain capture, but never retry a denied permission or a closed editor.
-    if (!['NotReadableError', 'AbortError', 'OverconstrainedError', 'NotSupportedError'].includes(error?.name) || !stillActive()) throw error;
-    return devices.getUserMedia({ audio: true });
+    if (!voiceStillInEditor(id)) return;
+    rec.finishing = false;
+    voiceResolve(false);
+    voicePanel();
+    showToast('Не удалось получить запись. Нажмите «Повторить»: ' + error.message, null, null, 7000);
   }
 }
-async function recStart(resultId = '') {
-  if (rec.mr || rec.starting || rec.finishing || savingTask) return;
-  const session = tempResults;
-  if (resultId && !session.some(r => r.id === resultId)) return;
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { showToast('Запись звука недоступна: обновите Android System WebView'); return; }
-  let stream;
-  rec.starting = true;
-  const stillActive = () => tempResults === session && $('#taskModal').classList.contains('open') && !savingTask;
-  try { stream = await requestMicStream(navigator.mediaDevices, stillActive); }
-  catch (e) { if (stillActive()) showToast(micErrorMessage(e), null, null, 7000); return; }
-  finally { rec.starting = false; }
-  if (tempResults !== session || !$('#taskModal').classList.contains('open') || savingTask) { stream.getTracks().forEach(t => t.stop()); return; }
-  apStop();
-  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
-  let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); } catch (_) { stream.getTracks().forEach(t => t.stop()); showToast('Не удалось начать запись'); return; }
-  Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now(), session, resultId }); $('#recPause').textContent = 'Пауза';
-  mr.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
-  rec.done = new Promise(res => { mr.onstop = async () => { rec.finishing = true; try { await recFinish(); } finally { rec.finishing = false; res(); } }; });
-  try { rec.ctx = new (window.AudioContext || window.webkitAudioContext)(); rec.ctx.resume?.(); rec.an = rec.ctx.createAnalyser(); rec.an.fftSize = 256; rec.ctx.createMediaStreamSource(stream).connect(rec.an); } catch (_) { rec.an = null; }
-  mr.start(1000);
-  $('#recPanel').hidden = false; $('#recStartBtn').hidden = true;
-  if (resultId) { showToast('Запись для результата начата'); $('#recPanel').scrollIntoView({ block: 'nearest' }); }
-  rec.tick = setInterval(recTick, 80);
-}
-function recElapsed() { return (rec.acc + (rec.mr && rec.mr.state === 'recording' ? Date.now() - rec.seg : 0)) / 1000; }
-function recPause() {
-  if (!rec.mr) return;
-  if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.mr.pause(); $('#recPause').textContent = 'Продолжить'; }
-  else if (rec.mr.state === 'paused') { rec.seg = Date.now(); rec.mr.resume(); $('#recPause').textContent = 'Пауза'; }
-}
-function recTick() {
-  const s = recElapsed(); $('#recTime').textContent = fmtDur(s);
-  let lvl = 0.05;
-  if (rec.an) { const d = new Uint8Array(rec.an.fftSize); rec.an.getByteTimeDomainData(d); let sum = 0; for (const v of d) sum += (v - 128) ** 2; lvl = Math.min(1, Math.sqrt(sum / d.length) / 40); }
-  if (rec.mr.state !== 'recording') return;
-  rec.lv.push(lvl);
-  const box = $('#recLevels'), n = 40, last = rec.lv.slice(-n);
-  if (box.children.length !== n) box.innerHTML = '<i></i>'.repeat(n);
-  [...box.children].forEach((el, i) => { const v = last[i - (n - last.length)]; el.style.height = (v == null ? 6 : Math.max(8, v * 100)) + '%'; });
-  if (s >= 1200) recStop();
-}
-function recStop() { if (!rec.mr) return Promise.resolve(); if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.seg = Date.now(); } try { if (rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {} return rec.done; }
-function recAbort() { if (!rec.mr) return; rec.cancel = true; recStop(); }
-async function recFinish() {
-  const dur = rec.acc / 1000, type = (rec.mr.mimeType || 'audio/webm').split(';')[0], cancel = rec.cancel, chunks = rec.chunks, session = rec.session, resultId = rec.resultId;
-  clearInterval(rec.tick); rec.stream.getTracks().forEach(t => t.stop()); try { rec.ctx && rec.ctx.close(); } catch (_) {}
-  rec.mr = null; rec.stream = null; rec.ctx = null; rec.an = null;
-  $('#recPanel').hidden = true; $('#recStartBtn').hidden = false;
-  if (cancel || !chunks.length) return;
-  const d = new Date(), p = n => String(n).padStart(2, '0'), ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
-  const file = new File(chunks, `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.${ext}`, { type });
-  file._dur = dur;
-  if (resultId) file._resultId = resultId;
-  await prepAudio(file);
-  if (tempResults !== session || !$('#taskModal').classList.contains('open') || (resultId && !session.some(r => r.id === resultId))) return;
-  newFiles.push(file); renderFiles();
-}
+window.kanbanVoiceNativeResult = function(payload) {
+  let event;
+  try { event = JSON.parse(payload); } catch (_) { return; }
+  if (event.id !== rec.id) return;
+  if (!voiceStillInEditor(event.id)) { recAbort(); return; }
+  switch (event.type) {
+    case 'started':
+      rec.starting = false; rec.active = true; voicePanel(); break;
+    case 'paused':
+    case 'resumed':
+      rec.paused = event.type === 'paused';
+      voiceLevel(event.ms, 0); voicePanel(); break;
+    case 'level':
+      voiceLevel(event.ms, event.level); break;
+    case 'ready':
+      if (rec.ready) return;
+      if (!/^[a-f0-9-]{36}$/.test(event.token) || !Number.isSafeInteger(event.size) ||
+          event.size <= 0 || event.size > MAX_VIDEO_SIZE || !Number.isFinite(event.ms)) {
+        recAbort(); showToast('Некорректный файл записи'); return;
+      }
+      rec.starting = rec.active = rec.paused = false;
+      rec.ready = event;
+      rec.finishing = true; voicePromise(); voicePanel();
+      void receiveVoiceFile(event.id); break;
+    case 'cancelled':
+      voiceReset(false); break;
+    case 'error':
+      voiceReset(false); showToast(event.message || 'Ошибка диктофона Android', null, null, 7000); break;
+  }
+};
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;

@@ -2473,7 +2473,8 @@ function openFileViaAndroid(blob, file) {
 }
 async function openFile(f, title) {
   if (/^(image|video)\//.test(f.type)) {
-    const galleryFiles = tempFiles.some(file => file.id === f.id) ? tempFiles : [f];
+    const galleryFiles = tempFiles.some(file => file.id === f.id)
+      ? tempFiles.filter(file => (file.resultId || '') === (f.resultId || '')) : [f];
     return openLightbox({ title, files: galleryFiles }, f);
   }
   const m = await mediaGet(f.id).catch(() => null);
@@ -2756,6 +2757,53 @@ const lightboxGallery = {
   files: [], title: '', index: 0, zoom: 1, panX: 0, panY: 0,
   pointers: new Map(), gesture: null
 };
+let nativeGallery = null;
+
+async function fallbackGallery(gallery, index) {
+  if (nativeGallery !== gallery) return;
+  clearTimeout(gallery.timer);
+  if (gallery.request) mediaDiscard(gallery.request);
+  nativeGallery = null;
+  try { globalThis.KanbanGallery.postMessage(JSON.stringify({ id: gallery.id, type: 'close' })); } catch (_) {}
+  lightboxGallery.index = index;
+  await showLightboxItem();
+}
+
+globalThis.kanbanGalleryResult = async raw => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const gallery = nativeGallery;
+  if (!gallery || gallery.id !== event.id) return;
+  clearTimeout(gallery.timer);
+  if (event.type === 'closed') {
+    if (gallery.request) mediaDiscard(gallery.request);
+    nativeGallery = null;
+    return;
+  }
+  const file = gallery.files[event.index];
+  if (!Number.isInteger(event.index) || !file) return;
+  if (event.type === 'fallback') { await fallbackGallery(gallery, event.index); return; }
+  if (event.type === 'external') {
+    try {
+      const blob = (await mediaGet(file.id))?.full;
+      if (!blob) throw new Error('Файл не найден');
+      if (nativeGallery === gallery) await openFileViaAndroid(blob, file);
+    } catch (error) { showToast('Не удалось открыть файл: ' + error.message); }
+    return;
+  }
+  if (event.type !== 'request' || typeof event.request !== 'string') return;
+  if (gallery.request) mediaDiscard(gallery.request);
+  const request = gallery.request = event.request;
+  const current = () => nativeGallery === gallery && gallery.request === request;
+  try {
+    const blob = (await mediaGet(file.id))?.full;
+    if (!current()) return;
+    if (!blob) throw new Error('Файл не найден');
+    await stageNativeMedia(request, blob, current, {
+      operation: file.type.startsWith('video/') ? 'gallery-video' : 'gallery-image'
+    });
+  } catch (_) { if (current()) await fallbackGallery(gallery, event.index); }
+};
 
 async function openLightbox(task, selected) {
   const files = (task.files || []).filter(f => /^(image|video)\//.test(f.type));
@@ -2764,6 +2812,19 @@ async function openLightbox(task, selected) {
   lightboxGallery.files = files.some(f => f.id === file.id) ? files : [file];
   lightboxGallery.index = Math.max(0, lightboxGallery.files.findIndex(f => f.id === file.id));
   lightboxGallery.title = task.title || '';
+  const bridge = globalThis.KanbanGallery;
+  if (bridge?.postMessage && lightboxGallery.files.length <= 5000) {
+    apStop();
+    const id = generateId(), index = lightboxGallery.index;
+    const gallery = { id, files: lightboxGallery.files, request: null };
+    nativeGallery = gallery;
+    gallery.timer = setTimeout(() => void fallbackGallery(gallery, index), 3000);
+    try {
+      bridge.postMessage(JSON.stringify({ id, type: 'open', index, size: gallery.files.length,
+        title: lightboxGallery.title.slice(0, 200) }));
+      return;
+    } catch (_) { await fallbackGallery(gallery, index); return; }
+  }
   await showLightboxItem();
 }
 

@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var attachmentOpener: KanbanAttachmentOpener
     private lateinit var voiceRecorder: KanbanVoiceRecorder
     private var nativeMedia: KanbanMediaTransfer? = null
+    private var gallery: KanbanGallery? = null
     private var pendingVoicePermission: String? = null
     private var voicePermissionInFlight = false
     private var pendingReminder: JSONObject? = null
@@ -330,6 +331,7 @@ class MainActivity : ComponentActivity() {
                     kanbanLoaded = false
                     pendingVoicePermission = null
                     voiceRecorder.cancelForNavigation()
+                    gallery?.close()
                     nativeMedia?.reset()
                 }
 
@@ -349,7 +351,9 @@ class MainActivity : ComponentActivity() {
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
             WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_ARRAY_BUFFER)) {
-            val media = KanbanMediaTransfer(this) { sendKanbanEvent("kanbanMediaNativeResult", it) }
+            val preview = KanbanGallery(this) { sendKanbanEvent("kanbanGalleryResult", it) }
+            gallery = preview
+            val media = KanbanMediaTransfer(this, preview) { sendKanbanEvent("kanbanMediaNativeResult", it) }
             nativeMedia = media
             WebViewCompat.addWebMessageListener(webView, "KanbanMedia", setOf(appOrigin)) {
                 view, message, sourceOrigin, isMainFrame, _ ->
@@ -361,6 +365,25 @@ class MainActivity : ComponentActivity() {
                         it.size in (KanbanMediaTransfer.ID_BYTES + 1)..
                             (KanbanMediaTransfer.ID_BYTES + KanbanMediaTransfer.MAX_CHUNK_BYTES)
                     }?.let(media::chunk)
+                }
+            }
+            WebViewCompat.addWebMessageListener(webView, "KanbanGallery", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                val raw = message.data?.takeIf { it.length <= 4096 } ?: return@addWebMessageListener
+                val command = runCatching { JSONObject(raw) }.getOrNull() ?: return@addWebMessageListener
+                val id = command.optString("id")
+                if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return@addWebMessageListener
+                when (command.optString("type")) {
+                    "close" -> preview.close(id)
+                    "open" -> {
+                        if (!view.hasWindowFocus()) return@addWebMessageListener
+                        val size = command.optInt("size")
+                        val index = command.optInt("index", -1)
+                        if (size !in 1..5000 || index !in 0 until size) return@addWebMessageListener
+                        preview.open(id, size, index, command.optString("title").take(200))
+                    }
                 }
             }
         }
@@ -985,12 +1008,14 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         nativeMedia?.setForeground(true)
+        gallery?.setForeground(true)
     }
 
     override fun onStop() {
         // Finish active recording when the application leaves the foreground.
         if (::voiceRecorder.isInitialized) voiceRecorder.stopInBackground()
         nativeMedia?.setForeground(false)
+        gallery?.setForeground(false)
         super.onStop()
     }
 
@@ -999,6 +1024,7 @@ class MainActivity : ComponentActivity() {
         if (::attachmentOpener.isInitialized) attachmentOpener.close()
         pendingVoicePermission = null
         if (::voiceRecorder.isInitialized) voiceRecorder.close()
+        gallery?.close()
         nativeMedia?.close()
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null

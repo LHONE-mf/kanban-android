@@ -441,7 +441,8 @@ function openFileViaAndroid(blob, file) {
 }
 async function openFile(f, title) {
   if (/^(image|video)\//.test(f.type)) {
-    const galleryFiles = tempFiles.some(file => file.id === f.id) ? tempFiles : [f];
+    const galleryFiles = tempFiles.some(file => file.id === f.id)
+      ? tempFiles.filter(file => (file.resultId || '') === (f.resultId || '')) : [f];
     return openLightbox({ title, files: galleryFiles }, f);
   }
   const m = await mediaGet(f.id).catch(() => null);

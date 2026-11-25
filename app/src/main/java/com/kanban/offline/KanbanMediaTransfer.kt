@@ -11,7 +11,9 @@ import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Bounded staging for operations whose source still lives in WebView's IndexedDB. */
-internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObject) -> Unit) {
+internal class KanbanMediaTransfer(
+    context: Context, private val gallery: KanbanGallery, private val emit: (JSONObject) -> Unit
+) {
     companion object {
         const val MAX_CHUNK_BYTES = 256 * 1024
         const val ID_BYTES = 36
@@ -94,7 +96,9 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
     }
 
     private fun begin(id: String, size: Long, operation: String) {
-        check(size in 1..MAX_FILE_BYTES && upload == null && operation in setOf("audio", "photo"))
+        check(size in 1..MAX_FILE_BYTES && upload == null)
+        check(operation == "audio" || operation == "photo" ||
+            (operation in setOf("gallery-image", "gallery-video") && gallery.accepts(id)))
         check(cache.isDirectory || cache.mkdirs())
         val file = File.createTempFile("media-", ".tmp", cache)
         try {
@@ -115,6 +119,11 @@ internal class KanbanMediaTransfer(context: Context, private val emit: (JSONObje
         worker.removeCallbacks(uploadTimeout)
         if (current.operation == "audio") {
             audio.load(id, current.file)
+            return
+        }
+        if (current.operation != "photo") {
+            gallery.decode(id, current.file, current.operation == "gallery-video")
+            send(id, "loaded")
             return
         }
         try {

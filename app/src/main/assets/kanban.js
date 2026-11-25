@@ -1002,6 +1002,77 @@ function renderBoard() {
   else if (currentView === 'calendar') renderCalendar();
 }
 
+function renderFilteredBoard() {
+  const board = $('#board');
+  if (!board || board.dataset.boardId !== state.activeBoardId ||
+      currentView !== 'kanban' || (drag && drag.active) ||
+      board.children.length !== state.columns.length) {
+    renderBoard();
+    return;
+  }
+  updateTagFilter();
+  const byColumn = new Map(state.columns.map(col => [col.id, []]));
+  for (const task of getVisibleTasks()) {
+    if (byColumn.has(task.columnId)) byColumn.get(task.columnId).push(task);
+  }
+  const columns = [];
+  const newTasks = [];
+  const knownIds = new Set(state.tasks.map(t => t.id));
+  for (const column of state.columns) {
+    const node = [...board.children].find(el => el.dataset.columnId === column.id);
+    const list = node && node.querySelector('.task-list');
+    const header = node && node.querySelector('.column-header');
+    const count = header && header.querySelector('.column-count');
+    if (!list || !header || !count) { renderBoard(); return; }
+    const cards = new Map();
+    for (const child of [...list.children]) {
+      if (child.classList.contains('empty-hint')) continue;
+      if (!child.classList.contains('task-card') ||
+          !knownIds.has(child.dataset.taskId) || cards.has(child.dataset.taskId)) {
+        renderBoard();
+        return;
+      }
+      cards.set(child.dataset.taskId, child);
+    }
+    const ordered = sortTasks(byColumn.get(column.id));
+    for (const task of ordered) if (!cards.has(task.id)) newTasks.push(task);
+    columns.push({column,list,header,count,cards,ordered,scroll:list.scrollTop});
+  }
+  const descendantCounts = newTasks.length
+    ? countVisibleDescendants(state.tasks, newTasks) : null;
+  const boardScroll = board.scrollLeft;
+  for (const entry of columns) {
+    const {column,list,header,count,cards,ordered} = entry;
+    const wanted = new Set(ordered.map(t => t.id));
+    for (const child of [...list.children]) {
+      if (child.classList.contains('empty-hint') || !wanted.has(child.dataset.taskId))
+        child.remove();
+    }
+    let anchor = null;
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      const task = ordered[i];
+      const card = cards.get(task.id) || createTaskCard(task,column,descendantCounts);
+      if (card.parentElement !== list || card.nextElementSibling !== anchor)
+        list.insertBefore(card,anchor);
+      anchor = card;
+    }
+    const total = state.tasks.filter(t => t.columnId === column.id && !t.parentId).length;
+    if (!ordered.length) {
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = total ? 'Ничего не найдено' : 'Нет задач';
+      list.appendChild(hint);
+    }
+    const limit = column.wipLimit || 0;
+    header.classList.toggle('wip-exceeded', !!limit && total > limit);
+    header.classList.toggle('wip-warning', !!limit && total === limit);
+    count.textContent = String(total) + (limit ? '/' + limit : '');
+  }
+  for (const entry of columns) entry.list.scrollTop = entry.scroll;
+  board.scrollLeft = boardScroll;
+  updateStorageInfo();
+}
+
 // P16.1: replace only the edited card when its place and visibility are stable.
 // Other cases deliberately use the established full-render path.
 function renderSavedTaskCard(previous, task) {
@@ -1127,6 +1198,89 @@ function renderTaskCollectionChange(task, removed, rootBeforeRemoval = null) {
   header.classList.toggle('wip-exceeded', !!limit && total > limit);
   header.classList.toggle('wip-warning', !!limit && total === limit);
   countNode.textContent = String(total) + (limit ? '/' + limit : '');
+  updateTagFilter();
+  updateStorageInfo();
+}
+
+// P16.3: reconcile only columns touched by a move or cancelled drag.
+// Existing unrelated cards retain their DOM nodes, media players and scroll state.
+function renderMovedTaskColumns(columnIds, refreshTaskIds = []) {
+  const ids = [...new Set(columnIds.filter(Boolean))];
+  const board = $('#board');
+  if (!ids.length || !board || board.dataset.boardId !== state.activeBoardId ||
+      currentView !== 'kanban' || searchQuery.trim() ||
+      filterTag || filterPriority || filterDeadline) {
+    renderBoard();
+    return;
+  }
+  const visible = getVisibleTasks();
+  const columns = [];
+  const currentCards = new Map();
+  for (const id of ids) {
+    const column = state.columns.find(col => col.id === id);
+    const node = [...board.children].find(el => el.dataset.columnId === id);
+    const list = node && node.querySelector('.task-list');
+    const header = node && node.querySelector('.column-header');
+    const count = header && header.querySelector('.column-count');
+    if (!column || !list || !header || !count) { renderBoard(); return; }
+    const ordered = sortTasks(visible.filter(t => t.columnId === id));
+    for (const element of [...list.children]) {
+      if (element.classList.contains('empty-hint')) continue;
+      if (!element.classList.contains('task-card') ||
+          currentCards.has(element.dataset.taskId)) { renderBoard(); return; }
+      currentCards.set(element.dataset.taskId, element);
+    }
+    columns.push({ column, list, header, count, ordered, scroll: list.scrollTop });
+  }
+  // A drag can put a card in another list before it reaches IndexedDB.
+  // Require a complete, unique set across the touched columns.
+  const expected = columns.flatMap(entry => entry.ordered.map(task => task.id));
+  if (expected.length !== currentCards.size ||
+      expected.some(id => !currentCards.has(id))) { renderBoard(); return; }
+
+  const focusedId = [...currentCards.entries()].find(([, el]) =>
+    el === document.activeElement || el.contains(document.activeElement))?.[0];
+  const refresh = new Set(refreshTaskIds);
+  const replacements = new Map();
+  for (const entry of columns) {
+    for (const task of entry.ordered) {
+      if (refresh.has(task.id)) {
+        const old = currentCards.get(task.id);
+        const replacement = createTaskCard(task, entry.column);
+        old.replaceWith(replacement);
+        replacements.set(task.id, replacement);
+      }
+    }
+  }
+  for (const entry of columns) {
+    const { list, ordered, column, header, count } = entry;
+    list.classList.remove('drag-over');
+    for (const hint of [...list.children]) {
+      if (hint.classList.contains('empty-hint')) hint.remove();
+    }
+    let anchor = null;
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      const task = ordered[i];
+      const card = replacements.get(task.id) || currentCards.get(task.id);
+      if (card.parentElement !== list || card.nextElementSibling !== anchor)
+        list.insertBefore(card, anchor);
+      anchor = card;
+    }
+    const total = state.tasks.filter(t => t.columnId === column.id && !t.parentId).length;
+    if (!ordered.length) {
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = total ? 'Ничего не найдено' : 'Нет задач';
+      list.appendChild(hint);
+    }
+    const limit = column.wipLimit || 0;
+    header.classList.toggle('wip-exceeded', !!limit && total > limit);
+    header.classList.toggle('wip-warning', !!limit && total === limit);
+    count.textContent = String(total) + (limit ? '/' + limit : '');
+  }
+  for (const entry of columns) entry.list.scrollTop = entry.scroll;
+  if (focusedId && replacements.has(focusedId))
+    replacements.get(focusedId).focus({ preventScroll: true });
   updateTagFilter();
   updateStorageInfo();
 }
@@ -1257,13 +1411,14 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   if (stateIdx !== -1) state.tasks[stateIdx] = candidate;
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
-  renderBoard();
+  renderMovedTaskColumns([task.columnId, targetCol.id], [task.id]);
 }
 async function markTaskDone(taskId) {
   const doneCol = state.columns.find(c => c.isDone);
   if (!doneCol) { showToast('Нет колонки «Готово»'); return; }
   const idx = state.tasks.findIndex(t => t.id === taskId);
   if (idx === -1 || state.tasks[idx].columnId === doneCol.id) return;
+  const taskColumnId = state.tasks[idx].columnId;
   const candidate = applyColumnChange(state.tasks[idx], doneCol.id);
   candidate.order = topOrder(doneCol.id);
   try { await dbPutTask(candidate); }
@@ -1271,7 +1426,7 @@ async function markTaskDone(taskId) {
   state.tasks[idx] = candidate;
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
-  renderBoard();
+  renderMovedTaskColumns([taskColumnId, doneCol.id], [taskId]);
 }
 
 function updateTagFilter() {
@@ -2206,7 +2361,10 @@ async function _saveTask() {
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   closeModal('taskModal'); notifyOtherTabs();
-  if (existing) renderSavedTaskCard(existing, candidate);
+  if (existing && !existing.parentId && !candidate.parentId &&
+      existing.columnId !== candidate.columnId)
+    renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
+  else if (existing) renderSavedTaskCard(existing, candidate);
   else renderTaskCollectionChange(candidate, false);
 }
 
@@ -3260,7 +3418,8 @@ function onPointerDown(e) {
   if (!grip && e.target.closest('[data-delete], [data-media], [data-move-next], [data-move-done], button, input, .ap')) return;
   if (!isDragAllowed()) return;
   drag = {
-    card, taskId: card.dataset.taskId, pointerId: e.pointerId,
+    card, taskId: card.dataset.taskId, sourceColumnId: card.parentElement?.dataset.columnId,
+    pointerId: e.pointerId,
     startX: e.clientX, startY: e.clientY, startTime: Date.now(),
     isTouch: e.pointerType !== 'mouse', fromGrip: !!grip, active: false, timer: null
   };
@@ -3317,6 +3476,8 @@ async function onPointerUp(e) {
   if (!drag || e.pointerId !== drag.pointerId) return;
   const wasActive = drag.active;
   const card = drag.card;
+  const taskId = drag.taskId;
+  const sourceColumnId = drag.sourceColumnId;
   cleanupDragListeners();
   clearTimeout(drag.timer);
   stopAutoScroll();
@@ -3328,6 +3489,7 @@ async function onPointerUp(e) {
     document.body.style.userSelect = '';
     $('#board').classList.remove('is-dragging');
     const list = dropList && card.parentElement === dropList ? dropList : null;
+    const touched = [sourceColumnId, card.parentElement?.dataset.columnId];
     drag = null;
     if (list) {
       const newColId = list.dataset.columnId;
@@ -3363,7 +3525,7 @@ async function onPointerUp(e) {
         notifyOtherTabs();
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
-    renderBoard();
+    renderMovedTaskColumns(touched, list ? [taskId] : []);
   } else {
     drag = null;
   }
@@ -3371,10 +3533,11 @@ async function onPointerUp(e) {
 function onPointerCancel(e) {
   if (!drag || e.pointerId !== drag.pointerId) return;
   const wasActive = drag.active;
+  const touched = [drag.sourceColumnId, drag.card.parentElement?.dataset.columnId];
   cleanupDragWithoutRerender();
   if (wasActive) {
     lastDragEndTime = Date.now();
-    renderBoard(); // restore DOM after a cancelled drag; storage was never changed
+    renderMovedTaskColumns(touched); // restore only affected columns after cancellation
   }
 }
 function cleanupDragListeners() {
@@ -3526,12 +3689,12 @@ function bindEvents() {
   let searchTimer = null;
   $('#searchInput').oninput = (e) => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderBoard(); }, 150);
+    searchTimer = setTimeout(() => { searchQuery = e.target.value.trim(); renderFilteredBoard(); }, 150);
   };
-  $('#tagFilter').onchange = (e) => { filterTag = e.target.value; saveUIState(); renderBoard(); };
-  $('#priorityFilter').onchange = (e) => { filterPriority = e.target.value; saveUIState(); renderBoard(); };
-  $('#deadlineFilter').onchange = (e) => { filterDeadline = e.target.value; saveUIState(); renderBoard(); };
-  $('#sortSelect').onchange = (e) => { sortMode = e.target.value; saveUIState(); renderBoard(); };
+  $('#tagFilter').onchange = (e) => { filterTag = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#priorityFilter').onchange = (e) => { filterPriority = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#deadlineFilter').onchange = (e) => { filterDeadline = e.target.value; saveUIState(); renderFilteredBoard(); };
+  $('#sortSelect').onchange = (e) => { sortMode = e.target.value; saveUIState(); renderFilteredBoard(); };
 
   $$('#priorityChips .chip').forEach(chip => chip.onclick = () => setPriorityChips(chip.dataset.priority));
   $('#addChecklistBtn').onclick = addChecklistItem;

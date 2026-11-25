@@ -49,6 +49,8 @@ jobs:
         run: node tests/test_partial_task_render.js
       - name: Verify partial creation, deletion, nested counts and undo rendering
         run: node tests/test_partial_task_collection.js
+      - name: Verify incremental search, filters and sorting
+        run: node tests/test_incremental_filters.js
       - name: Test indexed nested-task counts on large boards
         run: node tests/test_large_board_descendant_counts.js
       - name: Test all-board Comrade daily planning
@@ -75,6 +77,8 @@ jobs:
         run: node tests/test_column_scroll_state.js
       - name: Test mobile long-press drag, cancellation and safe drops
         run: node tests/test_card_drag_gestures.js
+      - name: Verify partial move reconciliation across columns
+        run: node tests/test_partial_move.js
       - name: Verify backup completeness, daily plan, and Japanese progress
         run: node tests/test_backup_integrity.js
       - name: Verify import preserves boards and Japanese progress on failures

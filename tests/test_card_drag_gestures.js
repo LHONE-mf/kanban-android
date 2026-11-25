@@ -11,7 +11,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const timers = [];
   const writes = [];
   const toasts = [];
-  let renders = 0;
+  let renders = 0, partialMoves = [];
   let prevented = 0, downPrevented = 0, captured = null;
   const makeClassList = (...initial) => {
     const names = new Set(initial);
@@ -96,6 +96,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
     },
     notifyOtherTabs(){},
     renderBoard:()=>{renders++;},
+    renderMovedTaskColumns:(ids,refresh=[])=>partialMoves.push({ids:Array.from(ids),refresh:Array.from(refresh)}),
     showToast:msg=>{toasts.push(msg);}
   };
   vm.runInNewContext(source.slice(begin,end),sandbox);
@@ -112,7 +113,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const up = async(x,y,pointerId=1)=>sandbox.onPointerUp({pointerId,clientX:x,clientY:y});
   const cancel = pointerId=>sandbox.onPointerCancel({pointerId});
   return {sandbox,board,card,first,second,writes,toasts,down,move,activate,up,cancel,
-    get renders(){return renders;},get prevented(){return prevented;},
+    get renders(){return renders;},get partialMoves(){return partialMoves;},get prevented(){return prevented;},
     get downPrevented(){return downPrevented;},get captured(){return captured;},timers};
 }
 
@@ -134,14 +135,16 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   assert.ok(s.sandbox.drag?.active,'unrelated pointercancel must not cancel the drag');
   s.cancel(1);
   assert.equal(s.sandbox.drag,null);
-  assert.equal(s.renders,1,'cancelled active drag rerenders original order');
+  assert.equal(s.renders,0,'cancelled drag must not rebuild entire board');
+  assert.equal(s.partialMoves.length,1,'cancelled drag reconciles touched columns');
   assert.equal(s.writes.length,0,'cancelled drag must never write to storage');
 
   s=scenario();
   s.down();s.activate();s.move(370,150);
   await s.up(650,150); // released outside the board after hovering over col_b
   assert.equal(s.writes.length,0,'dropping outside board must not commit a prior hover');
-  assert.equal(s.renders,1,'invalid drop restores the actual stored order');
+  assert.equal(s.renders,0,'invalid drop does not rebuild entire board');
+  assert.equal(s.partialMoves.length,1,'invalid drop reconciles the touched columns');
 
   s=scenario();
   s.down();s.activate();s.move(370,150);
@@ -150,7 +153,8 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   assert.equal(s.writes[0].length,1);
   assert.equal(s.writes[0][0].columnId,'col_b');
   assert.equal(s.sandbox.state.tasks[0].columnId,'col_b');
-  assert.equal(s.renders,1);
+  assert.equal(s.renders,0);
+  assert.equal(s.partialMoves.length,1);
 
   s=scenario({withDescendants:true});
   s.down();s.activate();s.move(370,150);
@@ -170,7 +174,8 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
     'failed transaction leaves parent and children unchanged in memory');
   assert.ok(s.toasts.some(message=>message.includes('disk full')),
     'failed transaction reports an error');
-  assert.equal(s.renders,1,'failed drop restores the board from unchanged state');
+  assert.equal(s.renders,0,'failed drop only reconciles touched columns');
+  assert.equal(s.partialMoves.length,1);
 
   s=scenario({withDescendants:true});
   s.down();s.activate();s.move(370,150);s.cancel(1);
@@ -198,7 +203,8 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   await s.up(370,150);
   assert.equal(s.writes.length,1,'tablet grip drop persists movement');
   assert.equal(s.sandbox.state.tasks[0].columnId,'col_b');
-  assert.equal(s.renders,1);
+  assert.equal(s.renders,0);
+  assert.equal(s.partialMoves.length,1);
 
   s=scenario();
   s.down(1,true);

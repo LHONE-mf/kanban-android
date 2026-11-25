@@ -410,7 +410,10 @@ async function _saveTask() {
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   closeModal('taskModal'); notifyOtherTabs();
-  if (existing) renderSavedTaskCard(existing, candidate);
+  if (existing && !existing.parentId && !candidate.parentId &&
+      existing.columnId !== candidate.columnId)
+    renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
+  else if (existing) renderSavedTaskCard(existing, candidate);
   else renderTaskCollectionChange(candidate, false);
 }
 

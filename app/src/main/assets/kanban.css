@@ -955,3 +955,8 @@ button { font-family: inherit; }
 .task-result-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--text-muted); }
 .result-hint { font-size: 12px; color: var(--text-muted); }
 .task-result-button { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-size: 11px; padding: 4px 6px; min-height: 30px; cursor: pointer; }
+
+.result-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+.result-controls button { min-height: 40px; }
+.result-file-list { display: flex; flex-direction: column; gap: 6px; }
+.result-file-list:empty, .result-audio-list:empty { display: none; }

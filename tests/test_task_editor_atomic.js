@@ -23,7 +23,8 @@ const context = {
   showToast:s=>result.notices.push(s),mediaDelete:async()=>{},scheduleMediaDelete(){},
   closeModal:()=>result.closed++,notifyOtherTabs(){},renderBoard(){},
   renderSavedTaskCard:(before,after)=>result.partial.push({before,after}),
-  renderMovedTaskColumns:(columns,ids)=>result.moved.push({columns,ids}),Date,console
+  renderMovedTaskColumns:(columns,ids)=>result.moved.push({columns,ids}),Date,console,
+  storeFile:async f=>({id:'file1',name:f.name,type:f.type,size:f.size,resultId:f._resultId})
 };
 vm.createContext(context);
 vm.runInContext(source.slice(start,end)+'\nthis.save=_saveTask;',context);
@@ -38,10 +39,14 @@ vm.runInContext(source.slice(start,end)+'\nthis.save=_saveTask;',context);
   assert.equal(result.moved.length,0,'failed write cannot move any card');
   assert.ok(result.notices.some(s=>s.includes('Не удалось сохранить')));
   failWrite=false;
+  context.tempResults.push({id:'r2',text:'',createdAt:3,updatedAt:3});
+  context.newFiles.push({name:'report.pdf',type:'application/pdf',size:10,_resultId:'r2'});
   await context.save();
   assert.equal(result.writes.length,2);
   assert.equal(state.tasks[0].columnId,'progress');
   assert.equal(state.tasks[0].results[0].text,'Measured result','result saves on non-done column');
+  assert.equal(state.tasks[0].results[1].id,'r2','file-only result survives save');
+  assert.equal(state.tasks[0].files[0].resultId,'r2');
   assert.equal(state.tasks[1].columnId,'progress');
   assert.equal(result.closed,1);
   assert.equal(result.partial.length,0,'column change uses targeted move instead of edit refresh');

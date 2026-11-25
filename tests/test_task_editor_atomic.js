@@ -16,7 +16,7 @@ const result = { writes:[],closed:0,notices:[],partial:[],moved:[] };
 let failWrite = true;
 const context = {
   $:selector => ({value:fields[selector.slice(1)] || '',hidden:false,focus(){}}),
-  state, editingTaskId:'p',editingPriority:'none',tempFiles:[],newFiles:[],tempChecklist:[],
+  state, editingTaskId:'p',editingPriority:'none',tempFiles:[],newFiles:[],tempChecklist:[],tempResults:[{id:'r1',text:'Measured result',createdAt:1,updatedAt:2}],
   rec:{mr:null},isValidISODate:()=>true,subtree:id=>id==='p'?[state.tasks[1]]:[],
   applyColumnChange:(task,col)=>({...task,columnId:col}),computeCompletedAt:()=>null,
   dbPutTasks:async list=>{result.writes.push(list);if(failWrite)throw Error('disk');},
@@ -41,6 +41,7 @@ vm.runInContext(source.slice(start,end)+'\nthis.save=_saveTask;',context);
   await context.save();
   assert.equal(result.writes.length,2);
   assert.equal(state.tasks[0].columnId,'progress');
+  assert.equal(state.tasks[0].results[0].text,'Measured result','result saves on non-done column');
   assert.equal(state.tasks[1].columnId,'progress');
   assert.equal(result.closed,1);
   assert.equal(result.partial.length,0,'column change uses targeted move instead of edit refresh');

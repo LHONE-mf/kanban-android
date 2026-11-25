@@ -173,15 +173,33 @@ function renderAudioList() {
 
 const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null, starting: false, finishing: false, session: null, resultId: '' };
 function bindAudio() { $('#recStartBtn').onclick = () => recStart(); $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
+function micErrorMessage(error) {
+  const name = error?.name || 'UnknownError';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Нет доступа к микрофону. Проверьте разрешения Comrade в настройках Android (' + name + ')';
+  if (name === 'NotFoundError') return 'Микрофон не найден (' + name + ')';
+  if (name === 'NotReadableError' || name === 'AbortError') return 'Не удалось запустить микрофон. Проверьте системный доступ к микрофону и закройте другие приложения записи (' + name + ')';
+  return 'Не удалось включить микрофон (' + name + ')';
+}
+async function requestMicStream(devices, stillActive) {
+  try {
+    return await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (error) {
+    // Some WebViews cannot start the processed audio source. Retry once with
+    // plain capture, but never retry a denied permission or a closed editor.
+    if (!['NotReadableError', 'AbortError', 'OverconstrainedError', 'NotSupportedError'].includes(error?.name) || !stillActive()) throw error;
+    return devices.getUserMedia({ audio: true });
+  }
+}
 async function recStart(resultId = '') {
   if (rec.mr || rec.starting || rec.finishing || savingTask) return;
   const session = tempResults;
   if (resultId && !session.some(r => r.id === resultId)) return;
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { showToast('Запись звука не поддерживается в этом браузере'); return; }
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { showToast('Запись звука недоступна: обновите Android System WebView'); return; }
   let stream;
   rec.starting = true;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
-  catch (e) { showToast(e.name === 'NotAllowedError' ? 'Нет доступа к микрофону — разрешите его в настройках браузера' : e.name === 'NotFoundError' ? 'Микрофон не найден' : 'Не удалось включить микрофон'); return; }
+  const stillActive = () => tempResults === session && $('#taskModal').classList.contains('open') && !savingTask;
+  try { stream = await requestMicStream(navigator.mediaDevices, stillActive); }
+  catch (e) { if (stillActive()) showToast(micErrorMessage(e), null, null, 7000); return; }
   finally { rec.starting = false; }
   if (tempResults !== session || !$('#taskModal').classList.contains('open') || savingTask) { stream.getTracks().forEach(t => t.stop()); return; }
   apStop();

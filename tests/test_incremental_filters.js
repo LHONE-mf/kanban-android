@@ -85,6 +85,13 @@ context.filterDeadline='';context.filter();
 assert.deepEqual(ids(a.list),['t1','t2']);assert.deepEqual(ids(b.list),['t3']);
 assert.deepEqual(ids(empty.list),['hint']);
 assert.equal(empty.list.children[0].textContent,'Нет задач');
+t2.results=[{text:'Итог эксперимента 123'}];
+t3.files=[{name:'protocol.pdf',resultId:'r1'}];
+context.searchQuery='ЭКСПЕРИМЕНТА';context.filter();
+assert.deepEqual(ids(a.list),['t2']);assert.deepEqual(ids(b.list),['hint']);
+context.searchQuery='protocol.pdf';context.filter();
+assert.deepEqual(ids(a.list),['hint']);assert.deepEqual(ids(b.list),['t3']);
+context.searchQuery='';context.filter();
 assert.ok(tags>=6&&storage>=6);assert.ok(counts>0);
 assert.equal(renders,0,'filter changes never recreate board');
 function fallback(callback){

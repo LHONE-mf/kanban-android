@@ -19,6 +19,7 @@ async function scenario(failAt, withAttachments = true) {
     results:[{id:'r',text:'Original result',createdAt:1,updatedAt:1}]
   };
   const state = {activeBoardId: 'board-a', tasks: [original]};
+  if(withAttachments) original.files.push({id:'result-only',name:'report.pdf',type:'application/pdf',resultId:'r'});
   const stored = new Set(original.files.map(f => f.id));
   const deleted = [], saved = [], toasts = [], events = [];
   let idSequence = 0;
@@ -56,7 +57,7 @@ async function scenario(failAt, withAttachments = true) {
     const r = await scenario(failure);
     assert.equal(r.state.tasks.length, 1, failure + ': original task remains sole task');
     assert.equal(r.saved.length, 0, failure + ': no new task committed');
-    assert.deepEqual([...r.stored].sort(), ['original-1', 'original-2'],
+    assert.deepEqual([...r.stored].sort(), ['original-1', 'original-2', 'result-only'],
       failure + ': all copied blobs must be removed before duplication resolves');
     assert.equal(r.deleted.length, failure === 'media' ? 1 : 2,
       failure + ': clean up only successfully copied media');
@@ -70,7 +71,7 @@ async function scenario(failAt, withAttachments = true) {
   const ok = await scenario(null);
   assert.equal(ok.state.tasks.length, 2, 'normal duplication adds one task');
   assert.equal(ok.saved.length, 1, 'normal duplication saves one new task');
-  assert.equal(ok.stored.size, 4, 'normal duplication keeps both original and copied blobs');
+  assert.equal(ok.stored.size, 5, 'normal duplication keeps both original and copied blobs');
   assert.equal(ok.deleted.length, 0, 'normal duplication does not clean up successful copies');
   assert.equal(ok.state.tasks[1].files.length, 2, 'new task references its copied files');
   assert.equal(ok.state.tasks[1].results.length,0,'copy starts with no prior execution results');

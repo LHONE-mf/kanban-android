@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const src = fs.readFileSync('app/src/main/js-src/data-transfer.js', 'utf8');
 const prefix = src.slice(src.indexOf('const JAPANESE_BACKUP_KEYS'), src.indexOf('function blobToBase64('));
-const planSource = src.slice(src.indexOf('async function buildImportPlan('), src.indexOf('async function handleImport('));
+const planSource = src.slice(src.indexOf('function base64ToBlob('), src.indexOf('async function handleImport('));
 assert.ok(prefix.startsWith('const JAPANESE_BACKUP_KEYS'));
 const day = {date:'2026-11-20', ids:['t1'], updatedAt:100};
 const task = {id:'t1', boardId:'b', columnId:'todo', title:'Photo', parentId:'',
@@ -37,7 +37,7 @@ const context = {
   todayISO:()=> '2026-11-20',
   showToast:message=>notices.push(message),
   sanitizeBoard:b=>b,
-  sanitizeTask:t=>({...t,files:t.files||[]}),
+  PRIORITY_LABELS:{none:'Без'},
   normalizeTree(){},
   DEFAULT_COLUMNS:()=>[{id:'todo'}],
   generateId:()=> 'generated',
@@ -45,7 +45,9 @@ const context = {
   MAX_VIDEO_SIZE:50*1048576
 };
 vm.createContext(context);
-vm.runInContext(prefix+'\n'+planSource,context);
+const actualCore=fs.readFileSync('app/src/main/js-src/core.js','utf8');
+const sanitizer=actualCore.slice(actualCore.indexOf('function sanitizeTask('),actualCore.indexOf('function sanitizeColumn('));
+vm.runInContext(sanitizer+'\n'+prefix+'\n'+planSource,context);
 async function attempt(value) {
   lookup = value;
   created.length = 0; downloads = 0; notices.length = 0;
@@ -83,6 +85,23 @@ async function attempt(value) {
   assert.deepEqual(resultArchive.tasks[0].results,[record]);
   const resultPlan=await context.buildImportPlan({...resultArchive,tasks:[{...task,files:[]}]});
   assert.equal(resultPlan.tasks[0].results[0].text,record.text);
+  task.results=[{...record,text:''}];
+  task.files[0].resultId=record.id;
+  const linked=await attempt(async()=>({full:new Blob(['PNG'],{type:'image/png'}),thumb:null,type:'image/png'}));
+  const linkedArchive=JSON.parse(await linked.created[0].text());
+  assert.equal(linkedArchive.version,8);
+  assert.equal(linkedArchive.tasks[0].files[0].resultId,record.id);
+  assert.ok(linkedArchive.media.f1);
+  // Import a real base64 payload with the actual task sanitizer.
+  linkedArchive.media.f1.data='data:image/png;base64,UE5H';
+  context.atob=atob;
+  const linkedPlan=await context.buildImportPlan(linkedArchive);
+  assert.equal(linkedPlan.tasks[0].results[0].id,record.id);
+  assert.equal(linkedPlan.tasks[0].results[0].text,'');
+  assert.equal(linkedPlan.tasks[0].files[0].resultId,record.id);
+  assert.equal(linkedPlan.media.f1.full.size,3);
+  await assert.rejects(context.buildImportPlan({...linkedArchive,media:{}}),/Архив неполный/);
+  delete task.files[0].resultId;
   delete task.results;
   const importData = {version:5,boards:context.state.boards,
     activeBoardId:'b',tasks:[{...task,files:[]}],media:{},japanese:archive.japanese,

@@ -646,6 +646,13 @@ async function updateStorageInfo() {
 // ============================================================
 function sanitizeTask(t) {
   if (!t || typeof t !== 'object') return null;
+  const attachedResults = new Set((Array.isArray(t.files) ? t.files : []).map(f => f?.resultId).filter(Boolean));
+  const results = Array.isArray(t.results) ? t.results.filter(r => r && typeof r.text === 'string' && (r.text.trim() || attachedResults.has(r.id))).map(r => ({
+    id: String(r.id || 'result_' + generateId()), text: r.text,
+    createdAt: Number.isFinite(r.createdAt) ? r.createdAt : Date.now(),
+    updatedAt: Number.isFinite(r.updatedAt) ? r.updatedAt : (Number.isFinite(r.createdAt) ? r.createdAt : Date.now())
+  })) : [];
+  const resultIds = new Set(results.map(r => r.id));
   return {
     id: String(t.id || generateId()),
     boardId: typeof t.boardId === 'string' ? t.boardId : '',
@@ -657,7 +664,7 @@ function sanitizeTask(t) {
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
-      ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
+      ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(resultIds.has(f.resultId) ? { resultId: f.resultId } : {}), ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
       : (typeof t.mediaId === 'string' ? [{ id: t.mediaId, name: 'Вложение', type: String(t.mediaType || ''), size: 0 }] : []),
     checklist: Array.isArray(t.checklist)
       ? t.checklist.map(c => c && typeof c === 'object' ? {
@@ -666,12 +673,7 @@ function sanitizeTask(t) {
           checked: !!(c.checked || c.done)
         } : null).filter(c => c && c.text)
       : [],
-    results: Array.isArray(t.results) ? t.results.filter(r => r && typeof r.text === 'string' && r.text.trim()).map(r => ({
-      id: String(r.id || 'result_' + generateId()),
-      text: r.text,
-      createdAt: Number.isFinite(r.createdAt) ? r.createdAt : Date.now(),
-      updatedAt: Number.isFinite(r.updatedAt) ? r.updatedAt : (Number.isFinite(r.createdAt) ? r.createdAt : Date.now())
-    })) : [],
+    results,
     order: typeof t.order === 'number' ? t.order : 0,
     createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
     updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : Date.now(),
@@ -886,7 +888,8 @@ function getVisibleTasks() {
     if (q) {
       const checklistText = t.checklist.map(c => c.text).join(' ');
       const hay = (t.title + ' ' + t.desc + ' ' + t.tags.join(' ') + ' ' + checklistText).toLowerCase();
-      if (!hay.includes(q)) return false;
+      if (!hay.includes(q) && !(t.results || []).some(r => r.text.toLowerCase().includes(q)) &&
+          !(t.files || []).some(f => f.resultId && f.name.toLowerCase().includes(q))) return false;
     }
     return true;
   });

@@ -88,7 +88,7 @@ internal class KanbanVoiceRecorder(
             paused = false
             send(session, "started")
             worker.post(tick)
-        } catch (e: Exception) { fail(session, "Не удалось начать запись: " + (e.message ?: e.javaClass.simpleName)) }
+        } catch (_: Exception) { fail(session, "Не удалось начать запись на Android") }
     }
 
     fun command(session: String, action: String) = enqueue {
@@ -119,7 +119,7 @@ internal class KanbanVoiceRecorder(
                 }
                 "stop" -> finish(session)
             }
-        } catch (e: Exception) { fail(session, "Ошибка записи: " + (e.message ?: e.javaClass.simpleName)) }
+        } catch (_: Exception) { fail(session, "Ошибка записи на Android") }
     }
 
     private fun finish(session: String) {
@@ -142,9 +142,9 @@ internal class KanbanVoiceRecorder(
             }
             send(session, "ready", JSONObject().put("token", result.token).put("ms", ms)
                 .put("size", target.length()).put("peaks", peaks))
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             target.delete()
-            fail(session, "Не удалось сохранить запись: " + (e.message ?: e.javaClass.simpleName))
+            fail(session, "Не удалось сохранить запись. Проверьте свободное место и попробуйте снова")
         }
     }
     private fun fail(session: String, message: String) {

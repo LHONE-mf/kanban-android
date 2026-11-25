@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var attachmentOpener: KanbanAttachmentOpener
     private lateinit var voiceRecorder: KanbanVoiceRecorder
     private var pendingVoicePermission: String? = null
+    private var voicePermissionInFlight = false
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
     private var editingDigest: String? = null
@@ -137,7 +138,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun voiceEvent(event: JSONObject) {
-        if (::webView.isInitialized && webView.url?.endsWith("/assets/kanban.html") == true) {
+        if (::webView.isInitialized && webView.url == kanbanUrl) {
             webView.evaluateJavascript(
                 "window.kanbanVoiceNativeResult && window.kanbanVoiceNativeResult(" +
                     JSONObject.quote(event.toString()) + ")", null
@@ -148,10 +149,12 @@ class MainActivity : ComponentActivity() {
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        voicePermissionInFlight = false
         val session = pendingVoicePermission
         pendingVoicePermission = null
         if (session != null) {
-            if (granted && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            if (granted && webView.url == kanbanUrl &&
+                lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                 voiceRecorder.start(session)
             } else {
                 voiceEvent(JSONObject().put("id", session).put("type", "error")
@@ -170,7 +173,7 @@ class MainActivity : ComponentActivity() {
                 if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                     voiceEvent(JSONObject().put("id", session).put("type", "error")
                         .put("message", "Откройте Comrade для записи"))
-                } else if (pendingVoicePermission != null) {
+                } else if (voicePermissionInFlight) {
                     voiceEvent(JSONObject().put("id", session).put("type", "error")
                         .put("message", "Запрос микрофона уже открыт"))
                 } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
@@ -178,9 +181,11 @@ class MainActivity : ComponentActivity() {
                     voiceRecorder.start(session)
                 } else {
                     pendingVoicePermission = session
+                    voicePermissionInFlight = true
                     try { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
                     catch (_: Exception) {
                         pendingVoicePermission = null
+                        voicePermissionInFlight = false
                         voiceEvent(JSONObject().put("id", session).put("type", "error")
                             .put("message", "Не удалось запросить разрешение микрофона"))
                     }
@@ -247,10 +252,8 @@ class MainActivity : ComponentActivity() {
                 ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
 
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                    if (!url.endsWith("/assets/kanban.html")) {
-                        pendingVoicePermission = null
-                        voiceRecorder.cancelForNavigation()
-                    }
+                    pendingVoicePermission = null
+                    voiceRecorder.cancelForNavigation()
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
@@ -280,7 +283,7 @@ class MainActivity : ComponentActivity() {
             WebViewCompat.addWebMessageListener(webView, "KanbanVoice", setOf(appOrigin)) {
                 _, message, sourceOrigin, isMainFrame, _ ->
                 if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
-                    webView.url?.endsWith("/assets/kanban.html") != true) return@addWebMessageListener
+                    webView.url != kanbanUrl) return@addWebMessageListener
                 val raw = message.data ?: return@addWebMessageListener
                 if (raw.length <= 1024) runOnUiThread { handleVoiceCommand(raw) }
             }

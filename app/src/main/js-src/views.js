@@ -527,6 +527,7 @@ async function moveCardToAdjacentColumn(taskId, delta) {
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderMovedTaskColumns([task.columnId, targetCol.id], [task.id]);
+  offerTaskResult(task.id, task.columnId);
 }
 async function markTaskDone(taskId) {
   const doneCol = state.columns.find(c => c.isDone);
@@ -542,6 +543,17 @@ async function markTaskDone(taskId) {
   await syncKids(candidate).catch(() => {});
   notifyOtherTabs();
   renderMovedTaskColumns([taskColumnId, doneCol.id], [taskId]);
+  offerTaskResult(taskId, taskColumnId);
+}
+function offerTaskResult(taskId, oldColumnId) {
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task || task.columnId === oldColumnId || state.columns.find(c => c.id === oldColumnId)?.isDone ||
+      !state.columns.find(c => c.id === task.columnId)?.isDone) return;
+  const boardId = state.activeBoardId;
+  showToast('Задача выполнена. Записать результат?', 'Результат', () => {
+    if (state.activeBoardId !== boardId || $('#taskModal').classList.contains('open') || drag || savingTask || importInProgress) return;
+    if (state.tasks.some(t => t.id === taskId)) openTaskModal(taskId, null, { results: true });
+  }, 6500);
 }
 
 function updateTagFilter() {

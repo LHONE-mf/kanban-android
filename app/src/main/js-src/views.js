@@ -44,10 +44,22 @@ function renderBoard() {
   board.dataset.boardId = state.activeBoardId;
   const visible = getVisibleTasks();
   const descendantCounts = visible.length ? countVisibleDescendants(state.tasks, visible) : null;
+  // Group visible roots and count all roots once, rather than scanning tasks
+  // separately for each column. Count remains independent of active filters.
+  const byColumn = new Map(state.columns.map(col => [col.id, []]));
+  const rootCounts = new Map(state.columns.map(col => [col.id, 0]));
+  for (const task of state.tasks) {
+    if (task.parentId || !rootCounts.has(task.columnId)) continue;
+    rootCounts.set(task.columnId, rootCounts.get(task.columnId) + 1);
+  }
+  for (const task of visible) {
+    const bucket = byColumn.get(task.columnId);
+    if (bucket) bucket.push(task);
+  }
 
   state.columns.forEach(col => {
-    const colTasks = sortTasks(visible.filter(t => t.columnId === col.id));
-    const totalCount = state.tasks.filter(t => t.columnId === col.id && !t.parentId).length;
+    const colTasks = sortTasks(byColumn.get(col.id));
+    const totalCount = rootCounts.get(col.id);
 
     const colDiv = document.createElement('div');
     colDiv.className = 'column';

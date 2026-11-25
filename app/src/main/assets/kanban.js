@@ -92,7 +92,38 @@ function getActiveBoard() { return getBoard(state.activeBoardId); }
 const cardsOnly = () => state.tasks.filter(t => !t.parentId);
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + ' МБ' : Math.max(1, Math.round(n / 1024)) + ' КБ';
 const kids = (pid, colId) => state.tasks.filter(t => t.parentId === pid && (pid || t.columnId === colId)).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-function subtree(id) { const out = []; (function walk(p) { state.tasks.forEach(t => { if (t.parentId === p) { out.push(t); walk(t.id); } }); })(id); return out; }
+// Construct a local parent index from the current task array, without caching.
+// Each invocation sees deletes, restores, board switches and committed edits.
+function subtree(id) {
+  const children = new Map();
+  for (const task of state.tasks) {
+    const parentId = task.parentId;
+    if (!parentId) continue;
+    let siblings = children.get(parentId);
+    if (!siblings) {
+      siblings = [];
+      children.set(parentId, siblings);
+    }
+    siblings.push(task);
+  }
+  // Reverse pushes preserve the old depth-first order of the original array.
+  const stack = [];
+  const roots = children.get(id) || [];
+  for (let i = roots.length - 1; i >= 0; i--) stack.push(roots[i]);
+  const seen = new Set([id]);
+  const result = [];
+  while (stack.length) {
+    const task = stack.pop();
+    if (seen.has(task.id)) continue;
+    seen.add(task.id);
+    result.push(task);
+    const descendants = children.get(task.id);
+    if (descendants) {
+      for (let i = descendants.length - 1; i >= 0; i--) stack.push(descendants[i]);
+    }
+  }
+  return result;
+}
 function normalizeTree(tasks) {
   const byId = new Map(tasks.map(t => [t.id, t])), fix = [];
   for (const t of tasks) {
@@ -947,10 +978,22 @@ function renderBoard() {
   board.dataset.boardId = state.activeBoardId;
   const visible = getVisibleTasks();
   const descendantCounts = visible.length ? countVisibleDescendants(state.tasks, visible) : null;
+  // Group visible roots and count all roots once, rather than scanning tasks
+  // separately for each column. Count remains independent of active filters.
+  const byColumn = new Map(state.columns.map(col => [col.id, []]));
+  const rootCounts = new Map(state.columns.map(col => [col.id, 0]));
+  for (const task of state.tasks) {
+    if (task.parentId || !rootCounts.has(task.columnId)) continue;
+    rootCounts.set(task.columnId, rootCounts.get(task.columnId) + 1);
+  }
+  for (const task of visible) {
+    const bucket = byColumn.get(task.columnId);
+    if (bucket) bucket.push(task);
+  }
 
   state.columns.forEach(col => {
-    const colTasks = sortTasks(visible.filter(t => t.columnId === col.id));
-    const totalCount = state.tasks.filter(t => t.columnId === col.id && !t.parentId).length;
+    const colTasks = sortTasks(byColumn.get(col.id));
+    const totalCount = rootCounts.get(col.id);
 
     const colDiv = document.createElement('div');
     colDiv.className = 'column';

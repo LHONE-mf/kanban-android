@@ -15,8 +15,7 @@ const functions=[
   extract(views,'function countVisibleDescendants(','function renderFilteredBoard('),
   extract(interactions,'function getAfterElement(','function getDropListAt(')
 ].join('\n');
-const subtree=core.split('\n').find(line=>line.startsWith('function subtree(id)'));
-assert.ok(subtree,'Missing subtree implementation');
+const subtree=extract(core,'function subtree(id) {','function normalizeTree(');
 function element(){
   const el={className:'',dataset:{},children:[],scrollTop:0,scrollLeft:0,
     appendChild(child){this.children.push(child);child.parentElement=this;return child;}};

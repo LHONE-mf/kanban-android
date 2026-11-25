@@ -16,7 +16,7 @@ function fixture(reject) {
   return {context,writes};
 }
 (async()=>{
-  const file={name:'audio.ogg',type:'audio/ogg',size:100};
+  const file={name:'audio.ogg',type:'audio/ogg',size:100,_resultId:'result1'};
   const fail=fixture(true);
   await assert.rejects(fail.context.storeFile(file),/cannot decode audio/);
   assert.equal(fail.writes.length,0);
@@ -27,5 +27,6 @@ function fixture(reject) {
   assert.equal(saved.dur,12);
   assert.equal(saved.name,'audio.ogg');
   assert.equal(saved.peaks.length,2);
+  assert.equal(saved.resultId,'result1','recorded or selected audio keeps result association');
   console.log('Audio: successful save keeps metadata, failed decoding never writes.');
 })().catch(e=>{console.error(e);process.exitCode=1});

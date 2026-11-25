@@ -4466,12 +4466,21 @@ function micErrorMessage(error) {
 }
 async function requestMicStream(devices, stillActive) {
   try {
-    return await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    return await devices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: { ideal: 48000 }, channelCount: { ideal: 1 } } });
   } catch (error) {
-    // Some WebViews cannot start the processed audio source. Retry once with
+    // Some WebViews cannot start the requested audio source. Retry once with
     // plain capture, but never retry a denied permission or a closed editor.
     if (!['NotReadableError', 'AbortError', 'OverconstrainedError', 'NotSupportedError'].includes(error?.name) || !stillActive()) throw error;
     return devices.getUserMedia({ audio: true });
+  }
+}
+function createVoiceRecorder(stream, mime, Recorder = MediaRecorder) {
+  const options = { audioBitsPerSecond: 128000 };
+  if (mime) options.mimeType = mime;
+  try { return new Recorder(stream, options); }
+  catch (error) {
+    if (error.name !== 'NotSupportedError' && error.name !== 'TypeError') throw error;
+    return new Recorder(stream, mime ? { mimeType: mime } : undefined);
   }
 }
 async function recStart(resultId = '') {
@@ -4488,7 +4497,7 @@ async function recStart(resultId = '') {
   if (tempResults !== session || !$('#taskModal').classList.contains('open') || savingTask) { stream.getTracks().forEach(t => t.stop()); return; }
   apStop();
   const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
-  let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); } catch (_) { stream.getTracks().forEach(t => t.stop()); showToast('Не удалось начать запись'); return; }
+  let mr; try { mr = createVoiceRecorder(stream, mime); } catch (_) { stream.getTracks().forEach(t => t.stop()); showToast('Не удалось начать запись'); return; }
   Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now(), session, resultId }); $('#recPause').textContent = 'Пауза';
   mr.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
   rec.done = new Promise(res => { mr.onstop = async () => { rec.finishing = true; try { await recFinish(); } finally { rec.finishing = false; res(); } }; });

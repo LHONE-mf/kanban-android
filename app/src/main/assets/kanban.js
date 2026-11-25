@@ -97,11 +97,12 @@ const kids = (pid, colId) => state.tasks.filter(t => t.parentId === pid && (pid 
 function subtree(id) {
   const children = new Map();
   for (const task of state.tasks) {
-    if (!task.parentId) continue;
-    let siblings = children.get(task.parentId);
+    const parentId = task.parentId;
+    if (!parentId) continue;
+    let siblings = children.get(parentId);
     if (!siblings) {
       siblings = [];
-      children.set(task.parentId, siblings);
+      children.set(parentId, siblings);
     }
     siblings.push(task);
   }

@@ -57,6 +57,10 @@ jobs:
         run: node tests/test_incremental_filters.js
       - name: Test indexed nested-task counts on large boards
         run: node tests/test_large_board_descendant_counts.js
+      - name: Check P17.2 indexed subtree semantics and live state
+        run: node tests/test_subtree_index.js
+      - name: Check P17.2 single-pass column grouping and WIP counts
+        run: node tests/test_render_board_single_pass.js
       - name: Test all-board Comrade daily planning
         run: node tests/test_daily_plan.js
       - name: Verify atomic editor save and failure handling

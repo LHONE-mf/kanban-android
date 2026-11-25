@@ -3464,7 +3464,8 @@ function onPointerDown(e) {
     card, taskId: card.dataset.taskId, sourceColumnId: card.parentElement?.dataset.columnId,
     pointerId: e.pointerId,
     startX: e.clientX, startY: e.clientY, startTime: Date.now(),
-    isTouch: e.pointerType !== 'mouse', fromGrip: !!grip, active: false, timer: null
+    isTouch: e.pointerType !== 'mouse', fromGrip: !!grip, active: false, timer: null,
+    frame: null, scrollPending: false
   };
   lastPointer = { x: e.clientX, y: e.clientY };
   // Capture on a stationary parent: a card may move between columns during drag.
@@ -3503,9 +3504,36 @@ function onPointerMove(e) {
     else { if (dist < 5) return; startDrag(); }
   }
   if (e.cancelable) e.preventDefault();
-  // startDrag already updates the target on the activation event.
-  if (wasActive) updateDropTarget(e.clientX, e.clientY);
-  updateAutoScroll(e.clientX, e.clientY);
+  // Activation remains immediate; subsequent moves share the next frame.
+  if (wasActive) queueDragFrame();
+  else updateAutoScroll(e.clientX, e.clientY);
+}
+function queueDragFrame(scroll = false) {
+  if (!drag || !drag.active) return;
+  if (scroll) drag.scrollPending = true;
+  if (drag.frame !== null) return;
+  const activeDrag = drag;
+  activeDrag.frame = requestAnimationFrame(() => {
+    activeDrag.frame = null;
+    if (drag !== activeDrag || !activeDrag.active) return;
+    const { x, y } = lastPointer;
+    const scrollNow = activeDrag.scrollPending;
+    activeDrag.scrollPending = false;
+    if (scrollNow) {
+      // A newer pointer event can change the scroll direction before this frame.
+      updateAutoScroll(x, y);
+      if (autoScrollInterval) {
+        const board = $('#board');
+        if (autoScrollDir.x !== 0) board.scrollLeft += autoScrollDir.x * 12;
+        if (autoScrollDir.y !== 0) {
+          const list = document.elementFromPoint(x, y)?.closest('.task-list');
+          if (list) list.scrollTop += autoScrollDir.y * 12;
+        }
+      }
+    }
+    updateDropTarget(x, y);
+    if (!scrollNow) updateAutoScroll(x, y);
+  });
 }
 function cleanupDragWithoutRerender() {
   if (!drag) return;
@@ -3585,6 +3613,11 @@ function onPointerCancel(e) {
   }
 }
 function cleanupDragListeners() {
+  if (drag && drag.frame !== null) {
+    cancelAnimationFrame(drag.frame);
+    drag.frame = null;
+    drag.scrollPending = false;
+  }
   window.removeEventListener('pointermove', onPointerMove);
   window.removeEventListener('pointerup', onPointerUp);
   window.removeEventListener('pointercancel', onPointerCancel);
@@ -3646,13 +3679,7 @@ function updateAutoScroll(x, y) {
   if (!autoScrollInterval) {
     autoScrollInterval = setInterval(() => {
       if (!drag || !drag.active) { stopAutoScroll(); return; }
-      const b = $('#board');
-      if (autoScrollDir.x !== 0) b.scrollLeft += autoScrollDir.x * 12;
-      if (autoScrollDir.y !== 0) {
-        const l = document.elementFromPoint(lastPointer.x, lastPointer.y)?.closest('.task-list');
-        if (l) l.scrollTop += autoScrollDir.y * 12;
-      }
-      updateDropTarget(lastPointer.x, lastPointer.y);
+      queueDragFrame(true);
     }, 16);
   }
 }

@@ -47,14 +47,16 @@ function preventTouch(e) { if (drag && drag.active) e.preventDefault(); }
 function onPointerMove(e) {
   if (!drag || e.pointerId !== drag.pointerId) return;
   lastPointer = { x: e.clientX, y: e.clientY };
-  if (!drag.active) {
+  const wasActive = drag.active;
+  if (!wasActive) {
     const dist = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
     if (drag.fromGrip) { if (dist < 5) return; startDrag(); }
     else if (drag.isTouch) { if (dist > 10) { cleanupDragWithoutRerender(); return; } }
     else { if (dist < 5) return; startDrag(); }
   }
   if (e.cancelable) e.preventDefault();
-  updateDropTarget(e.clientX, e.clientY);
+  // startDrag already updates the target on the activation event.
+  if (wasActive) updateDropTarget(e.clientX, e.clientY);
   updateAutoScroll(e.clientX, e.clientY);
 }
 function cleanupDragWithoutRerender() {
@@ -77,8 +79,7 @@ async function onPointerUp(e) {
   clearTimeout(drag.timer);
   stopAutoScroll();
   if (wasActive) {
-    const dropList = getDropListAt(e.clientX, e.clientY);
-    if (dropList) updateDropTarget(e.clientX, e.clientY);
+    const dropList = updateDropTarget(e.clientX, e.clientY);
     lastDragEndTime = Date.now();
     card.classList.remove('dragging');
     document.body.style.userSelect = '';
@@ -142,14 +143,17 @@ function cleanupDragListeners() {
   document.removeEventListener('touchmove', preventTouch);
 }
 function getAfterElement(container, y) {
-  const cards = [...container.querySelectorAll('.task-card:not(.dragging)')];
-  let closest = { offset: -Infinity, element: null };
+  const cards = container.querySelectorAll('.task-card:not(.dragging)');
+  let closestOffset = -Infinity, closest = null;
   for (const child of cards) {
     const box = child.getBoundingClientRect();
     const offset = y - box.top - box.height / 2;
-    if (offset < 0 && offset > closest.offset) closest = { offset, element: child };
+    if (offset < 0 && offset > closestOffset) {
+      closestOffset = offset;
+      closest = child;
+    }
   }
-  return closest.element;
+  return closest;
 }
 function getDropListAt(x, y) {
   const rect = $('#board').getBoundingClientRect();
@@ -159,16 +163,21 @@ function getDropListAt(x, y) {
   return el.closest('.task-list') || el.closest('.column')?.querySelector('.task-list') || null;
 }
 function updateDropTarget(x, y) {
-  if (!drag || !drag.active) return;
-  $$('.task-list.drag-over').forEach(el => el.classList.remove('drag-over'));
+  if (!drag || !drag.active) return null;
   const list = getDropListAt(x, y);
-  if (!list) return;
-  list.classList.add('drag-over');
+  // Keep an unchanged highlight; avoid repeated style mutations on each move.
+  $$('.task-list.drag-over').forEach(el => {
+    if (el !== list) el.classList.remove('drag-over');
+  });
+  if (!list) return null;
+  if (!list.classList.contains('drag-over')) list.classList.add('drag-over');
   const after = getAfterElement(list, y);
   const card = drag.card;
-  if (after === card) return;
-  if (after == null) { if (list.lastElementChild !== card) list.appendChild(card); }
-  else { if (after.previousSibling !== card) list.insertBefore(card, after); }
+  if (after !== card) {
+    if (after == null) { if (list.lastElementChild !== card) list.appendChild(card); }
+    else { if (after.previousSibling !== card) list.insertBefore(card, after); }
+  }
+  return list;
 }
 function updateAutoScroll(x, y) {
   if (!drag || !drag.active) return;

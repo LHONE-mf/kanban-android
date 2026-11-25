@@ -11,13 +11,14 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const timers = [];
   const writes = [];
   const toasts = [];
+  const hover = {adds:0, removes:0, hits:0};
   let renders = 0, partialMoves = [];
   let prevented = 0, downPrevented = 0, captured = null;
   const makeClassList = (...initial) => {
     const names = new Set(initial);
     return {
-      add: name => names.add(name),
-      remove: name => names.delete(name),
+      add: name => {if(name==='drag-over')hover.adds++;names.add(name);},
+      remove: name => {if(name==='drag-over')hover.removes++;names.delete(name);},
       contains: name => names.has(name)
     };
   };
@@ -57,7 +58,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   };
   const document={
     body:{style:{userSelect:''}},
-    elementFromPoint:target,
+    elementFromPoint:(x,y)=>{hover.hits++;return target(x,y);},
     addEventListener(){},removeEventListener(){}
   };
   const window={addEventListener(){},removeEventListener(){}};
@@ -112,7 +113,7 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   const activate = ()=>{const timer=timers.at(-1);assert.ok(timer&&!timer.cancelled);timer.fn();};
   const up = async(x,y,pointerId=1)=>sandbox.onPointerUp({pointerId,clientX:x,clientY:y});
   const cancel = pointerId=>sandbox.onPointerCancel({pointerId});
-  return {sandbox,board,card,first,second,writes,toasts,down,move,activate,up,cancel,
+  return {sandbox,board,card,first,second,writes,toasts,hover,down,move,activate,up,cancel,
     get renders(){return renders;},get partialMoves(){return partialMoves;},get prevented(){return prevented;},
     get downPrevented(){return downPrevented;},get captured(){return captured;},timers};
 }
@@ -211,6 +212,49 @@ function scenario({withDescendants = false, failWrite = false} = {}) {
   await s.up(110,150);
   assert.equal(s.renders,0,'tapping the grip does not flash/rebuild the board');
   assert.equal(s.writes.length,0,'tapping the grip does not move or save');
+
+  // P17.3: unchanged hover is read-only; activation and release hit-test once
+  // for placement (activation also needs the independent auto-scroll hit-test).
+  s=scenario();
+  s.down(1,true);
+  s.move(370,150);
+  assert.equal(s.hover.hits,2,'one placement and one auto-scroll hit-test');
+  assert.equal(s.hover.adds,1);
+  for(let i=0;i<20;i++)s.move(370,150+i);
+  assert.equal(s.hover.adds,1,'same-column hover never reapplies its class');
+  assert.equal(s.hover.removes,0,'same-column hover never removes its class');
+  s.move(110,150);
+  assert.equal(s.hover.adds,2);
+  assert.equal(s.hover.removes,1,'crossing a column clears the old highlight');
+  assert.equal(s.first.classList.contains('drag-over'),true);
+  assert.equal(s.second.classList.contains('drag-over'),false);
+  const beforeRelease=s.hover.hits;
+  await s.up(370,150);
+  assert.equal(s.hover.hits-beforeRelease,1,'release uses a fresh single hit-test');
+  assert.equal(s.writes[0][0].columnId,'col_b','release uses final coordinates, not previous hover');
+
+  s=scenario();
+  s.down();s.activate();s.move(370,150);s.move(650,150);
+  assert.equal(s.second.classList.contains('drag-over'),false,'outside board removes hover');
+  await s.up(650,150);
+  assert.equal(s.writes.length,0,'outside board remains a cancelled drop');
+
+  // Real hit-test must preserve strict midpoint, ties, variable card heights
+  // and live geometry after scroll (no long-lived rectangle cache).
+  const a={getBoundingClientRect:()=>({top:0,height:20})};
+  let top=20;
+  const b={getBoundingClientRect:()=>({top,height:80})};
+  const c={getBoundingClientRect:()=>({top:100,height:20})};
+  const container={querySelectorAll:()=>[a,b,c]};
+  assert.equal(s.sandbox.getAfterElement(container,9),a);
+  assert.equal(s.sandbox.getAfterElement(container,10),b);
+  assert.equal(s.sandbox.getAfterElement(container,60),c);
+  assert.equal(s.sandbox.getAfterElement(container,110),null);
+  top=0;
+  assert.equal(s.sandbox.getAfterElement(container,41),c,'changed geometry is read immediately');
+  const tie={getBoundingClientRect:()=>({top:0,height:20})};
+  assert.equal(s.sandbox.getAfterElement({querySelectorAll:()=>[a,tie]},0),a);
+  assert.equal(s.sandbox.getAfterElement({querySelectorAll:()=>[]},0),null);
 
   const views=fs.readFileSync('app/src/main/js-src/views.js','utf8');
   assert.match(views,/data-drag-handle="1"/,'drag grip exists on every card');

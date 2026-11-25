@@ -4341,8 +4341,54 @@ function initPomo() {
 // ============================================================
 const fmtDur = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
 const isAudio = f => !!f && String(f.type || '').startsWith('audio/');
-const AP = { el: new Audio(), id: null, scope: '', url: null, rate: 1, uis: new Set(), tok: 0 };
+const AP = { el: new Audio(), id: null, scope: '', url: null, rate: 1, uis: new Set(), tok: 0, nativeId: null, nativeState: null };
 AP.el.preload = 'metadata';
+
+const mediaSteps = new Map();
+function mediaCommand(id, type, fields = {}) {
+  globalThis.KanbanMedia.postMessage(JSON.stringify({ id, type, ...fields }));
+}
+function mediaStep(id, expected, send) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => finish(null, new Error('Android не ответил')), 20000);
+    function finish(event, error) {
+      clearTimeout(timer);
+      mediaSteps.delete(id);
+      if (error) reject(error); else resolve(event);
+    }
+    mediaSteps.set(id, { expected, finish });
+    try { send(); } catch (error) { finish(null, error); }
+  });
+}
+function mediaDiscard(id) {
+  mediaSteps.get(id)?.finish(null, new Error('Передача отменена'));
+  try { mediaCommand(id, 'discard'); } catch (_) {}
+}
+let mediaQueue = Promise.resolve();
+function stageNativeMedia(id, blob, isCurrent, options = {}) {
+  const transfer = mediaQueue.then(async () => {
+    const chunkSize = 256 * 1024;
+    const header = new TextEncoder().encode(id);
+    if (!isCurrent()) throw new Error('Передача отменена');
+    try {
+      await mediaStep(id, 'begin', () => mediaCommand(id, 'begin', { size: blob.size, ...options }));
+      for (let offset = 0; offset < blob.size; offset += chunkSize) {
+        const data = await blob.slice(offset, offset + chunkSize).arrayBuffer();
+        if (!isCurrent()) throw new Error('Передача отменена');
+        const frame = new Uint8Array(header.length + data.byteLength);
+        frame.set(header);
+        frame.set(new Uint8Array(data), header.length);
+        await mediaStep(id, 'chunk', () => globalThis.KanbanMedia.postMessage(frame.buffer));
+      }
+      return await mediaStep(id, 'loaded', () => mediaCommand(id, 'finish'));
+    } catch (error) {
+      mediaDiscard(id);
+      throw error;
+    }
+  });
+  mediaQueue = transfer.catch(() => {});
+  return transfer;
+}
 
 async function prepAudio(file) {
   if (file._meta) return file._meta;
@@ -4362,7 +4408,24 @@ async function prepAudio(file) {
   return file._meta = m;
 }
 
-function apState(ui) { const a = AP.el; return AP.id === ui.key ? { playing: !a.paused && !a.ended, t: a.currentTime, dur: isFinite(a.duration) ? a.duration : 0 } : null; }
+window.kanbanMediaNativeResult = raw => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const step = mediaSteps.get(event.id);
+  if (step && (event.type === 'error' || event.type === step.expected)) {
+    step.finish(event, event.type === 'error' ? new Error(event.message) : null);
+  } else if (event.id === AP.nativeId) {
+    if (event.type === 'state') { AP.nativeState = event; apSync(); }
+    if (event.type === 'unavailable') showToast(event.message);
+    if (event.type === 'error') { apStop(); showToast(event.message); }
+  }
+};
+function apState(ui) {
+  if (AP.id !== ui.key) return null;
+  if (AP.nativeId) return AP.nativeState;
+  const a = AP.el;
+  return { playing: !a.paused && !a.ended, t: a.currentTime, dur: isFinite(a.duration) ? a.duration : 0 };
+}
 function apSync() {
   for (const ui of AP.uis) {
     if (!ui.root.isConnected) { if (ui.seen) AP.uis.delete(ui); continue; }
@@ -4373,12 +4436,29 @@ function apSync() {
 AP.el.addEventListener('ended', () => { AP.el.currentTime = 0; });
 
 async function apLoad(ui) {
-  const tok = ++AP.tok, a = AP.el;
+  apStop();
+  AP.scope = ui.scope;
+  const tok = AP.tok, a = AP.el;
   let blob = null; try { blob = await ui.getBlob(); } catch (_) {}
   if (tok !== AP.tok) return false;
   if (!blob) { showToast('Файл не найден'); return false; }
-  a.pause(); if (AP.url) revokeTrackedURL(AP.url);
-  AP.url = createTrackedURL(blob); AP.id = ui.key; AP.scope = ui.scope;
+  if (globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID) {
+    const id = AP.nativeId = crypto.randomUUID();
+    try {
+      const result = await stageNativeMedia(id, blob, () => AP.tok === tok);
+      if (tok !== AP.tok) return false;
+      if (result.dur <= 0) throw new Error('Длительность записи неизвестна');
+      AP.id = ui.key;
+      AP.nativeState = result;
+      apSync();
+      return true;
+    } catch (_) {
+      if (tok !== AP.tok) return false;
+      mediaDiscard(id);
+      AP.nativeId = null;
+    }
+  }
+  AP.url = createTrackedURL(blob); AP.id = ui.key;
   a.src = AP.url; a.defaultPlaybackRate = a.playbackRate = AP.rate;
   await new Promise(res => { const d = () => { a.removeEventListener('loadedmetadata', d); a.removeEventListener('error', d); res(); }; a.addEventListener('loadedmetadata', d); a.addEventListener('error', d); setTimeout(d, 4000); });
   if (tok !== AP.tok) return false;
@@ -4393,14 +4473,24 @@ async function apLoad(ui) {
 }
 async function apPlay(ui, fr) {
   const a = AP.el;
-  if (AP.id !== ui.key || !a.src) { ui.root.classList.add('loading'); const ok = await apLoad(ui); ui.root.classList.remove('loading'); if (!ok) return; }
+  if (AP.id !== ui.key || (!AP.nativeId && !a.src)) { ui.root.classList.add('loading'); const ok = await apLoad(ui); ui.root.classList.remove('loading'); if (!ok) return; }
+  if (AP.nativeId) {
+    try { mediaCommand(AP.nativeId, 'play', { fraction: fr, rate: AP.rate }); }
+    catch (_) { showToast('Не удалось воспроизвести запись'); }
+    return;
+  }
   const d = isFinite(a.duration) ? a.duration : ui.dur;
   if (fr != null && d) a.currentTime = fr * d;
   try { await a.play(); } catch (_) { showToast('Не удалось воспроизвести запись'); }
 }
-function apToggle(ui) { const a = AP.el; if (AP.id === ui.key && a.src) { a.paused ? apPlay(ui) : a.pause(); } else apPlay(ui); }
+function apToggle(ui) {
+  if (AP.id !== ui.key || !apState(ui)?.playing) { void apPlay(ui); return; }
+  if (AP.nativeId) mediaCommand(AP.nativeId, 'pause'); else AP.el.pause();
+}
 function apStop(scope) {
   if (scope && AP.scope !== scope) return;
+  if (AP.nativeId) mediaDiscard(AP.nativeId);
+  AP.nativeId = AP.nativeState = null;
   const a = AP.el; AP.tok++; a.pause(); a.removeAttribute('src'); a.load();
   if (AP.url) revokeTrackedURL(AP.url);
   AP.url = null; AP.id = null; apSync();
@@ -4430,11 +4520,22 @@ function createAudioPlayer(f, o = {}) {
   w.onpointerup = e => { if (ui.scrub == null) return; const fr = frac(e); ui.scrub = null; apPlay(ui, fr); };
   w.onpointercancel = () => { ui.scrub = null; apSync(); };
   w.onkeydown = e => {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); if (AP.id === key) AP.el.currentTime = Math.max(0, AP.el.currentTime + (e.key === 'ArrowRight' ? 5 : -5)); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (AP.id !== key) return;
+      const offset = e.key === 'ArrowRight' ? 5 : -5;
+      if (AP.nativeId) mediaCommand(AP.nativeId, 'seek', { offset: offset * 1000 });
+      else AP.el.currentTime = Math.max(0, AP.el.currentTime + offset);
+    }
     else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); apToggle(ui); }
   };
   const nm = root.querySelector('.ap-name'); if (nm && o.onRename) { nm.style.cursor = 'pointer'; nm.title = 'Переименовать'; nm.onclick = o.onRename; }
-  if (sp) sp.onclick = () => { AP.rate = AP.rate === 1 ? 1.5 : AP.rate === 1.5 ? 2 : 1; AP.el.defaultPlaybackRate = AP.el.playbackRate = AP.rate; apSync(); };
+  if (sp) sp.onclick = () => {
+    AP.rate = AP.rate === 1 ? 1.5 : AP.rate === 1.5 ? 2 : 1;
+    if (AP.nativeId && AP.nativeState) mediaCommand(AP.nativeId, 'rate', { rate: AP.rate });
+    else AP.el.defaultPlaybackRate = AP.el.playbackRate = AP.rate;
+    apSync();
+  };
   AP.uis.add(ui); ui.render(apState(ui));
   return root;
 }

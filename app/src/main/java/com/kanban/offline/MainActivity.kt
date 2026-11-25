@@ -28,6 +28,7 @@ import android.speech.tts.TextToSpeech
 import java.util.Locale
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import androidx.webkit.WebMessageCompat
 import android.view.Gravity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var backupSaver: KanbanBackupSaver
     private lateinit var attachmentOpener: KanbanAttachmentOpener
     private lateinit var voiceRecorder: KanbanVoiceRecorder
+    private var nativeMedia: KanbanMediaTransfer? = null
     private var pendingVoicePermission: String? = null
     private var voicePermissionInFlight = false
     private var editingAttachmentId: String? = null
@@ -138,10 +140,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun voiceEvent(event: JSONObject) {
+        sendKanbanEvent("kanbanVoiceNativeResult", event)
+    }
+
+    private fun sendKanbanEvent(callback: String, event: JSONObject) {
         if (::webView.isInitialized && webView.url == kanbanUrl) {
             webView.evaluateJavascript(
-                "window.kanbanVoiceNativeResult && window.kanbanVoiceNativeResult(" +
-                    JSONObject.quote(event.toString()) + ")", null
+                "window.$callback?.(" + JSONObject.quote(event.toString()) + ")", null
             )
         }
     }
@@ -254,6 +259,7 @@ class MainActivity : ComponentActivity() {
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
                     pendingVoicePermission = null
                     voiceRecorder.cancelForNavigation()
+                    nativeMedia?.reset()
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
@@ -262,6 +268,24 @@ class MainActivity : ComponentActivity() {
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }
+                }
+            }
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_ARRAY_BUFFER)) {
+            val media = KanbanMediaTransfer(this) { sendKanbanEvent("kanbanMediaNativeResult", it) }
+            nativeMedia = media
+            WebViewCompat.addWebMessageListener(webView, "KanbanMedia", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                when (message.type) {
+                    WebMessageCompat.TYPE_STRING -> message.data?.takeIf { it.length <= 1024 }?.let(media::command)
+                    WebMessageCompat.TYPE_ARRAY_BUFFER -> message.arrayBuffer?.takeIf {
+                        it.size in (KanbanMediaTransfer.ID_BYTES + 1)..
+                            (KanbanMediaTransfer.ID_BYTES + KanbanMediaTransfer.MAX_CHUNK_BYTES)
+                    }?.let(media::chunk)
                 }
             }
         }
@@ -870,9 +894,15 @@ class MainActivity : ComponentActivity() {
         return panel
     }
 
+    override fun onStart() {
+        super.onStart()
+        nativeMedia?.setForeground(true)
+    }
+
     override fun onStop() {
         // Finish active recording when the application leaves the foreground.
         if (::voiceRecorder.isInitialized) voiceRecorder.stopInBackground()
+        nativeMedia?.setForeground(false)
         super.onStop()
     }
 
@@ -881,6 +911,7 @@ class MainActivity : ComponentActivity() {
         if (::attachmentOpener.isInitialized) attachmentOpener.close()
         pendingVoicePermission = null
         if (::voiceRecorder.isInitialized) voiceRecorder.close()
+        nativeMedia?.close()
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null
         webView.destroy()

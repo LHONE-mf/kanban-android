@@ -100,3 +100,87 @@ function fixture(reject) {
   assert.equal(files.length,2,'different editor cannot receive old recording');
   console.log('Native voice: session identity, retry, cancel, result association and capture contract verified.');
 })().catch(e=>{console.error(e);process.exitCode=1});
+
+(async () => {
+  const extras = fs.readFileSync('app/src/main/js-src/android-extras.js', 'utf8');
+  const audio = extras.slice(extras.indexOf('const fmtDur'), extras.indexOf('function createAudioPlayer'));
+  const messages = [], states = [], notices = [];
+  const id = 'aaa00000-0000-4000-8000-000000000000';
+  let blockChunk = false, rejectFormat = false;
+  class TestAudio extends EventTarget {
+    paused = true;
+    ended = false;
+    duration = 12;
+    currentTime = 0;
+    get src() { return this.url || ''; }
+    set src(value) {
+      this.url = value;
+      queueMicrotask(() => this.dispatchEvent(new Event('loadedmetadata')));
+    }
+    async play() { this.paused = false; }
+    pause() { this.paused = true; }
+    removeAttribute() { this.url = ''; }
+    load() {}
+  }
+  const env = {
+    Audio: TestAudio, TextEncoder, window: {}, navigator: {},
+    crypto: { randomUUID: () => id }, setTimeout: (fn, ms) => setTimeout(fn, ms).unref(), clearTimeout,
+    createTrackedURL: () => 'blob:fallback', revokeTrackedURL() {}, showToast: text => notices.push(text)
+  };
+  function event(type, fields = {}) {
+    env.window.kanbanMediaNativeResult(JSON.stringify({ id, type, ...fields }));
+  }
+  env.KanbanMedia = { postMessage(raw) {
+    if (typeof raw === 'string') {
+      const data = JSON.parse(raw);
+      messages.push(data);
+      assert.equal(data.id, id);
+      if (data.type === 'begin') event('begin');
+      if (data.type === 'finish') {
+        if (rejectFormat) event('error', { message: 'unknown codec' });
+        else event('loaded', { dur: 12, t: 0, playing: false });
+      }
+    } else {
+      const frame = Buffer.from(raw);
+      assert.equal(frame.subarray(0, 36).toString(), id);
+      messages.push(frame.length - 36);
+      if (!blockChunk) event('chunk');
+    }
+  } };
+  vm.runInNewContext(audio + '\nthis.player = AP;', env);
+
+  const ui = {
+    key: 'media1', scope: 'modal', getBlob: async () => new Blob([Buffer.alloc(300000)]),
+    root: { isConnected: true, classList: { add() {}, remove() {} } },
+    render: state => states.push(state)
+  };
+  env.player.uis.add(ui);
+  await env.apPlay(ui, 0.5);
+  assert.deepEqual(messages.map(value => value.type || value), ['begin', 262144, 37856, 'finish', 'play']);
+  assert.equal(messages.at(-1).fraction, 0.5);
+  assert.equal(env.player.el.src, '', 'native playback does not allocate a WebView blob URL');
+  event('state', { playing: true, t: 6, dur: 12 });
+  assert.equal(states.at(-1).t, 6);
+  env.apToggle(ui);
+  assert.equal(messages.at(-1).type, 'pause');
+
+  env.apStop();
+  rejectFormat = true;
+  await env.apPlay(ui);
+  assert.equal(env.player.nativeId, null);
+  assert.equal(env.player.el.src, 'blob:fallback', 'older formats can still use the WebView decoder');
+  assert.equal(env.player.el.paused, false);
+
+  blockChunk = true;
+  rejectFormat = false;
+  env.apStop();
+  const inFlight = env.apPlay(ui);
+  while (messages.at(-1) !== 262144) await new Promise(setImmediate);
+  env.apStop('modal');
+  await inFlight;
+  assert.equal(messages.at(-1).type, 'discard');
+  assert.equal(env.player.id, null);
+  assert.equal(env.player.el.src, '', 'cancelled loads never start the fallback');
+  assert.deepEqual(notices, []);
+  console.log('Native player: binary chunk bounds, position, pause, compatibility and cancelled transfer verified.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

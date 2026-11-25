@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const src = fs.readFileSync('app/src/main/js-src/data-transfer.js', 'utf8');
 const prefix = src.slice(src.indexOf('const JAPANESE_BACKUP_KEYS'), src.indexOf('function blobToBase64('));
-const planSource = src.slice(src.indexOf('async function buildImportPlan('), src.indexOf('async function handleImport('));
+const planSource = src.slice(src.indexOf('function base64ToBlob('), src.indexOf('async function handleImport('));
 assert.ok(prefix.startsWith('const JAPANESE_BACKUP_KEYS'));
 const day = {date:'2026-11-20', ids:['t1'], updatedAt:100};
 const task = {id:'t1', boardId:'b', columnId:'todo', title:'Photo', parentId:'',

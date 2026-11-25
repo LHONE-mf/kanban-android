@@ -115,6 +115,7 @@ async function onPointerUp(e) {
     const list = dropList && card.parentElement === dropList ? dropList : null;
     const touched = [sourceColumnId, card.parentElement?.dataset.columnId];
     drag = null;
+    let committed = false;
     if (list) {
       const newColId = list.dataset.columnId;
       const orderedIds = $$('.task-card', list).map(c => c.dataset.taskId);
@@ -159,9 +160,11 @@ async function onPointerUp(e) {
           if (idx !== undefined) currentTasks[idx] = cand;
         }
         notifyOtherTabs();
+        committed = true;
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
     renderMovedTaskColumns(touched, list ? [taskId] : []);
+    if (committed && typeof offerTaskResult === 'function') offerTaskResult(taskId, sourceColumnId);
   } else {
     drag = null;
   }

@@ -91,9 +91,11 @@ function fixture({failWrite=false,delayConfirm=false}={}) {
 
   for(const legacy of [
     [{id:'old1',title:'Legacy array',files:[],columnId:'todo'}],
+    {version:1,tasks:[{id:'v1-task',title:'Original archive',columnId:'todo'}]},
     {version:2,tasks:[{id:'old2',title:'Legacy tasks',columnId:'todo'}]},
     {version:3,boardName:'Old Board',tasks:[{id:'old3',title:'Old format',columnId:'todo'}]},
-    {version:4,boards:[board],tasks:[task],activeBoardId:board.id}
+    {version:4,boards:[board],tasks:[task],activeBoardId:board.id},
+    ...[5, 6, 7, 8].map(version => ({...archive(), version}))
   ]){
     f=fixture();
     await f.ctx.importFile(f.file(legacy));
@@ -141,5 +143,5 @@ function fixture({failWrite=false,delayConfirm=false}={}) {
   assert.equal(f.ctx.lock(),false,'database failure releases lock');
   assert.equal(f.state.boards[0].id,'old-board','existing tasks survive failed storage');
 
-  console.log('P5: v2-v4 legacy, modern format rejection and concurrent import guard passed.');
+  console.log('JSON versions 1–8 and legacy arrays remain importable; invalid files and concurrent imports are rejected.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

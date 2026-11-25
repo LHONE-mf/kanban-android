@@ -6,23 +6,33 @@ const page = targets.find(target => target.url === 'https://appassets.androidpla
 assert.ok(page, 'COMRADE Kanban WebView not available');
 const socket = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
-  socket.addEventListener('open', resolve, { once: true });
-  socket.addEventListener('error', reject, { once: true });
+  const timeout = setTimeout(() => { socket.close(); reject(new Error('WebView debugging connection timed out')); }, 60000);
+  socket.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
+  socket.addEventListener('error', error => { clearTimeout(timeout); reject(error); }, { once: true });
 });
 let serial = 0;
 const calls = new Map();
+socket.addEventListener('close', () => {
+  for (const call of calls.values()) {
+    clearTimeout(call.timeout);
+    call.reject(new Error('WebView debugging connection closed'));
+  }
+  calls.clear();
+});
 socket.addEventListener('message', event => {
   const message = JSON.parse(event.data);
   const call = calls.get(message.id);
   if (!call) return;
   calls.delete(message.id);
+  clearTimeout(call.timeout);
   if (message.error || message.result.exceptionDetails) call.reject(new Error(JSON.stringify(message.error || message.result.exceptionDetails)));
   else call.resolve(message.result.result.value);
 });
 function evaluate(fn) {
   const id = ++serial;
   return new Promise((resolve, reject) => {
-    calls.set(id, { resolve, reject });
+    const timeout = setTimeout(() => { calls.delete(id); reject(new Error('WebView command timed out')); }, 90000);
+    calls.set(id, { resolve, reject, timeout });
     socket.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: {
       expression: '(' + fn.toString() + ')()', awaitPromise: true, returnByValue: true
     } }));
@@ -30,6 +40,14 @@ function evaluate(fn) {
 }
 const mode = process.argv[2];
 try {
+  const ready = await evaluate(async () => {
+    for (let attempt = 0; attempt < 120; attempt++) {
+      if (document.querySelector('#board .column')) return true;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    return false;
+  });
+  assert.ok(ready, 'Comrade did not render its initial board');
   if (mode === 'seed') {
     await evaluate(async () => {
       const request = indexedDB.open('kanban_db_v2', 1);

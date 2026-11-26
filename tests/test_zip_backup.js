@@ -24,6 +24,7 @@ data.tasks[0].results.push({ id: 'r', text: '', createdAt: 22, updatedAt: 23 });
 data.tasks[0].files.push({ ...files[1], type: 'audio/mp4', resultId: 'r' });
 const paths = ['state.json', ...files.map(f => f.path)];
 const events = [], warnings = [];
+const staging = new Map();
 let archiveState = data, errorAt = null;
 const env = {
   MAX_VIDEO_SIZE: 50 * 1024 * 1024, PRIORITY_LABELS: { none: true }, COLOR_RE: /^#/, DONE_TITLE_RE: /Done/,
@@ -38,9 +39,12 @@ const env = {
     json: async () => archiveState,
     blob: async () => new Blob([path.endsWith('000000.bin') ? 'test' : 'voice'])
   }),
+  mediaPut: async (key, full) => staging.set(JSON.stringify(key), full),
+  mediaDeleteBatch: async keys => keys.forEach(key => staging.delete(JSON.stringify(key))),
   dbReplaceAll: async plan => {
     events.push('commit');
-    assert.equal(plan.media.shared.full.type, 'image/png');
+    assert.equal(staging.get(JSON.stringify(['session', 'shared'])).type, 'image/png');
+    assert.deepEqual(Array.from(plan.stagedMedia.ids), ['shared', 'voice']);
     assert.equal(plan.tasks[0].files[1].resultId, 'r');
   },
   localStorage: { length: 0, setItem: () => events.push('web-theme') },
@@ -74,6 +78,7 @@ vm.runInContext("pomodoroArchive = async () => ({ mode: 'focus', day: '2026-12-0
   errorAt = '000001.bin';
   await env.importZipData({ size: 500 });
   assert.ok(!events.includes('commit'), 'partial media must never change live storage');
+  assert.equal(staging.size, 0, 'partial zip staging is cleaned independently');
   assert.match(warnings[0], /Данные сохранены/);
   archiveState = structuredClone(data);
   errorAt = null;

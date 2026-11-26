@@ -677,7 +677,7 @@ async function init() {
   setInterval(() => {
     const now = Date.now();
     for (let i = undoStack.length - 1; i >= 0; i--) {
-      if (undoStack[i].expiresAt <= now) {
+      if (!undoStack[i].restoring && undoStack[i].expiresAt <= now) {
         const exp = undoStack.splice(i, 1)[0];
         try { exp.onExpire?.(); } catch (_) {}
       }

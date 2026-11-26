@@ -384,6 +384,7 @@ async function importZipData(file) {
     return response;
   };
   let committed = false;
+  const stagedIds = [];
   try {
     await zipStep(id, 'zip-import', 'begin', { size: file.size });
     await sendMediaChunks(id, file);
@@ -392,7 +393,6 @@ async function importZipData(file) {
     if (!await confirmDialog('Восстановить ZIP-бэкап',
       `Текущие данные будут заменены на ${plan.boards.length} досок и ${plan.tasks.length} задач из файла.`)) return;
     if (taskEditorBlocksImport()) throw new Error('Сначала завершите редактирование задачи');
-    const staged = Object.create(null);
     for (const item of plan.media.values()) {
       const full = await (await read(item.path)).blob();
       if (full.size !== item.size) throw new Error('Вложение передано не полностью');
@@ -402,16 +402,23 @@ async function importZipData(file) {
         if (preview.size !== item.thumb.size) throw new Error('Миниатюра передана не полностью');
         thumb = await blobToBase64(preview.slice(0, preview.size, item.thumb.mime));
       }
-      staged[item.id] = { full: full.slice(0, full.size, item.mime), type: item.mime, thumb };
+      await mediaPut([id, item.id], full.slice(0, full.size, item.mime), thumb, item.mime);
+      stagedIds.push(item.id);
     }
-    await dbReplaceAll({ ...plan, media: staged });
+    await dbReplaceAll({ ...plan, stagedMedia: { session: id, ids: stagedIds } });
     committed = true;
     await projectZipState(plan.projection);
     location.reload();
   } catch (error) {
     if (!committed) alert('Импорт ZIP отменён. Данные сохранены. ' + error.message);
     else { alert('Данные ZIP сохранены. Приложение завершит восстановление настроек при запуске.'); location.reload(); }
-  } finally { cancelZip(id); zipActive = false; }
+  } finally {
+    cancelZip(id);
+    if (!committed && stagedIds.length) {
+      try { await mediaDeleteBatch(stagedIds.map(mediaId => [id, mediaId])); } catch (_) {}
+    }
+    zipActive = false;
+  }
 }
 
 async function exportData() {
@@ -697,7 +704,7 @@ function restoreJapaneseImportSnapshot(previous) {
 // Only one import may read, confirm, restore progress or replace data at a time.
 let importInProgress = false;
 function taskEditorBlocksImport() {
-  return savingTask || switchingBoard || $('#taskModal').classList.contains('open');
+  return savingTask || switchingBoard || undoStack.some(entry => entry.restoring) || $('#taskModal').classList.contains('open');
 }
 async function handleImport(file) {
   if (!file) return;

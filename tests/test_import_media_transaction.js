@@ -29,6 +29,7 @@ function fixture({syncError=false}={}) {
         objectStore(name) {
           assert.ok(committed[name]);
           return {
+            get(key){const request={};queued.push({name,op:'get',key:JSON.stringify(key),request});return request;},
             clear(){queued.push({name,op:'clear'});},
             put(value,key){
               if(syncError&&name==='media')throw quotaError();
@@ -57,9 +58,15 @@ function fixture({syncError=false}={}) {
     const next=Object.fromEntries(Object.entries(committed)
       .map(([name,m])=>[name,new Map(m)]));
     for(const item of queued) {
+      if(tx.aborted) return;
       if(item.op==='clear')next[item.name].clear();
+      else if(item.op==='get') {
+        item.request.result=next[item.name].get(item.key);
+        item.request.onsuccess?.();
+      }
       else next[item.name].set(item.key,item.value);
     }
+    if(tx.aborted) return;
     for(const name of Object.keys(committed))committed[name]=next[name];
     tx.oncomplete();
   }
@@ -98,6 +105,24 @@ function fixture({syncError=false}={}) {
   assert.equal(failureSeen,true);
   assert.equal(f.committed.tasks.has('old-task'),true);
   assert.equal(f.committed.media.has('new-media'),false);
+
+  f=fixture();
+  const archivePlan={...f.plan,media:undefined,stagedMedia:{session:'zip',ids:['new-media']}};
+  const temporary=JSON.stringify(['zip','new-media']);
+  f.committed.media.set(temporary,f.plan.media['new-media']);
+  const swap=f.ctx.replace(archivePlan);
+  f.complete();
+  await swap;
+  assert.equal(await f.committed.media.get('new-media').full.text(), 'restored');
+  assert.equal(f.committed.media.has(temporary), false);
+  assert.equal(f.committed.media.has('old-media'), false);
+
+  f=fixture();
+  const missing=f.ctx.replace(archivePlan);
+  f.complete();
+  await assert.rejects(missing,/Временное вложение/);
+  assert.equal(f.committed.media.has('old-media'), true);
+  assert.equal(f.committed.tasks.has('old-task'), true);
 
   f=fixture();
   const requestError=f.ctx.replace(f.plan);

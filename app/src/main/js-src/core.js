@@ -410,7 +410,7 @@ async function dbDeleteBoard(boardId, nextBoards, nextActiveBoardId) {
       req.onsuccess = () => {
         try {
           const removedMedia = new Set();
-          const remainingMedia = new Set();
+          const remainingMedia = new Set(undoStack.flatMap(entry => entry.mediaIds || []));
           const mediaIds = task => {
             const ids = Array.isArray(task.files) ? task.files.map(f => f && f.id) : [];
             if (typeof task.mediaId === 'string') ids.push(task.mediaId);
@@ -509,6 +509,19 @@ async function dbReplaceAll(plan) {
       const ts = tx.objectStore(STORE_TASKS);
       const ss = tx.objectStore(STORE_SETTINGS);
       const ms = tx.objectStore(STORE_MEDIA);
+      if (plan.stagedMedia) {
+        const { session, ids } = plan.stagedMedia;
+        // Queue reads before clear; their callbacks queue final writes after clear.
+        for (const id of ids) {
+          const request = ms.get([session, id]);
+          request.onsuccess = () => {
+            try {
+              if (!request.result?.full) throw new Error('Временное вложение отсутствует');
+              ms.put(request.result, id);
+            } catch (error) { failure = error; tx.abort(); }
+          };
+        }
+      }
       ts.clear(); ss.clear(); ms.clear();
       plan.tasks.forEach(t => ts.put(t));
       ss.put({ key: 'boards', value: plan.boards });
@@ -520,8 +533,10 @@ async function dbReplaceAll(plan) {
         }
       }
       if (plan.projection) ss.put({ key: ZIP_PROJECTION, value: plan.projection });
-      for (const [id, m] of Object.entries(plan.media)) {
-        ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
+      if (!plan.stagedMedia) {
+        for (const [id, m] of Object.entries(plan.media)) {
+          ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
+        }
       }
     } catch (e) {
       failure = e;
@@ -547,11 +562,35 @@ async function mediaGet(id) {
   });
 }
 async function mediaDelete(id) {
+  return mediaDeleteBatch([id]);
+}
+async function mediaDeleteBatch(ids) {
+  if (!ids.length) return;
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_MEDIA, 'readwrite');
-    tx.objectStore(STORE_MEDIA).delete(id);
+    const media = tx.objectStore(STORE_MEDIA);
+    for (const id of ids) media.delete(id);
     tx.oncomplete = () => res();
     tx.onerror = () => rej(wrapTxError(tx.error));
+  });
+}
+async function mediaDeleteUnreferenced(ids) {
+  if (!ids.length) return;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_TASKS, STORE_MEDIA], 'readwrite');
+    const request = tx.objectStore(STORE_TASKS).getAll();
+    const media = tx.objectStore(STORE_MEDIA);
+    const candidates = new Set(ids);
+    request.onsuccess = () => {
+      for (const entry of undoStack) for (const id of entry.mediaIds || []) candidates.delete(id);
+      for (const task of request.result) {
+        if (typeof task.mediaId === 'string') candidates.delete(task.mediaId);
+        for (const file of Array.isArray(task.files) ? task.files : []) candidates.delete(file?.id);
+      }
+      for (const id of candidates) media.delete(id);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(wrapTxError(tx.error));
   });
 }
 async function mediaGetAllKeys() {
@@ -564,26 +603,33 @@ async function mediaGetAllKeys() {
 }
 async function mediaCleanupOrphans() {
   try {
-    if (document.querySelector('.modal.open') || drag) return;
+    if (document.querySelector('.modal.open') || drag || savingTask || importInProgress) return;
     const keys = await mediaGetAllKeys();
-    const used = new Set();
-    Object.values(state._tasksByBoard).forEach(arr => arr.forEach(t => t.files.forEach(f => used.add(f.id))));
-    for (const k of keys) if (!used.has(k) && !pendingMediaDeletes.has(k)) await mediaDelete(k);
+    if (document.querySelector('.modal.open') || drag || savingTask || importInProgress) return;
+    await mediaDeleteUnreferenced(keys.filter(key => !pendingMediaDeletes.has(key)));
   } catch (e) { console.warn('mediaCleanupOrphans', e); }
 }
+const dueMediaDeletes = new Set();
+let mediaDeleteTimer = null;
 function scheduleMediaDelete(mediaId, delay = UNDO_TTL) {
   if (!mediaId) return;
-  const existing = pendingMediaDeletes.get(mediaId);
-  if (existing) clearTimeout(existing);
-  const t = setTimeout(async () => {
+  cancelMediaDelete(mediaId);
+  const t = setTimeout(() => {
     pendingMediaDeletes.delete(mediaId);
     thumbCache.delete(mediaId);
-    try { await mediaDelete(mediaId); } catch (_) {}
+    dueMediaDeletes.add(mediaId);
+    if (mediaDeleteTimer == null) mediaDeleteTimer = setTimeout(() => {
+      mediaDeleteTimer = null;
+      const ids = [...dueMediaDeletes];
+      dueMediaDeletes.clear();
+      void mediaDeleteUnreferenced(ids).catch(() => {});
+    }, 0);
   }, delay);
   pendingMediaDeletes.set(mediaId, t);
 }
 function cancelMediaDelete(mediaId) {
   if (!mediaId) return;
+  dueMediaDeletes.delete(mediaId);
   const t = pendingMediaDeletes.get(mediaId);
   if (t) { clearTimeout(t); pendingMediaDeletes.delete(mediaId); }
 }
@@ -596,17 +642,28 @@ function pushUndo(op) {
   undoStack.push(entry);
   const now = Date.now();
   for (let i = undoStack.length - 1; i >= 0; i--) {
-    if (undoStack[i].expiresAt <= now) {
+    if (!undoStack[i].restoring && undoStack[i].expiresAt <= now) {
       const exp = undoStack.splice(i, 1)[0];
       try { exp.onExpire?.(); } catch (_) {}
     }
   }
   return entry.id;
 }
-function consumeUndo(id) {
-  const idx = undoStack.findIndex(op => op.id === id);
-  if (idx === -1) return null;
-  return undoStack.splice(idx, 1)[0];
+async function restoreUndo(id) {
+  const entry = undoStack.find(op => op.id === id);
+  if (!entry || entry.restoring || importInProgress) return;
+  if (entry.expiresAt <= Date.now()) {
+    undoStack.splice(undoStack.indexOf(entry), 1);
+    entry.onExpire?.();
+    return;
+  }
+  entry.restoring = true;
+  try {
+    if (await entry.restore()) {
+      const index = undoStack.indexOf(entry);
+      if (index !== -1) undoStack.splice(index, 1);
+    }
+  } finally { entry.restoring = false; }
 }
 
 // ============================================================

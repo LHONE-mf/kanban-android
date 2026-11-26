@@ -12,6 +12,7 @@ async function deleteTask(taskId) {
   state.tasks.length = 0; state.tasks.push(...kept);
   const files = gone.flatMap(t => t.files);
   const undoId = pushUndo({
+    mediaIds: files.map(f => f.id),
     onExpire: () => files.forEach(f => scheduleMediaDelete(f.id, 0)),
     restore: async () => {
       if (root.boardId && root.boardId !== state.activeBoardId) await switchBoard(root.boardId);
@@ -24,10 +25,7 @@ async function deleteTask(taskId) {
     }
   });
   notifyOtherTabs(); renderTaskCollectionChange(root, true, rootBeforeRemoval);
-  showToast(`Удалено: «${truncate(root.title, 40)}»${gone.length > 1 ? ` и ещё ${gone.length - 1}` : ''}`, 'Вернуть', async () => {
-    const op = consumeUndo(undoId);
-    if (op) await op.restore();
-  }, 5000);
+  showToast(`Удалено: «${truncate(root.title, 40)}»${gone.length > 1 ? ` и ещё ${gone.length - 1}` : ''}`, 'Вернуть', () => restoreUndo(undoId), 5000);
 }
 
 // ============================================================
@@ -500,7 +498,7 @@ async function _saveTask() {
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }
   catch (e) {
-    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    if (stored.length) await mediaDeleteUnreferenced(stored.map(x => x.id)).catch(() => {});
     showToast('Не удалось сохранить файл: ' + (e.message || e)); return;
   }
   const files = [...tempFiles, ...stored];
@@ -526,7 +524,7 @@ async function _saveTask() {
     : [];
   try { await dbPutTasks([candidate, ...descendants]); }
   catch (e) {
-    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    if (stored.length) await mediaDeleteUnreferenced(stored.map(x => x.id)).catch(() => {});
     showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return;
   }
   for (const file of newFiles) if (file._voiceDraft) forgetVoiceDraft(file._voiceDraft);

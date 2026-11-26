@@ -68,14 +68,14 @@ internal class KanbanStorageSnapshot(
                         insertTasks(db, tasks)
                         check(count(db, "SELECT count(*) FROM media m WHERE NOT EXISTS (SELECT 1 FROM attachments a WHERE a.media_id = m.id)") == 0)
                         for (key in listOf("settings", "web", "nativeJapanese", "pomo")) {
-                            db.execSQL("INSERT INTO settings VALUES (?, ?)", arrayOf(key, state.get(key).toString()))
+                            db.execSQL("INSERT INTO settings VALUES (?, ?)", arrayOf<Any?>(key, state.get(key).toString()))
                         }
                         requirePayloads(db, "SELECT payload FROM boards ORDER BY position", boards)
                         requirePayloads(db, "SELECT payload FROM tasks ORDER BY rowid", tasks)
                         verifyDatabase(db)
                         syncDirectory(blobs)
                         db.execSQL("INSERT INTO snapshot VALUES (1, ?, ?, 'verified')",
-                            arrayOf(metadata.sha256, state.getString("activeBoardId")))
+                            arrayOf<Any?>(metadata.sha256, state.getString("activeBoardId")))
                         db.setTransactionSuccessful()
                     } finally { db.endTransaction() }
                 }
@@ -102,13 +102,13 @@ internal class KanbanStorageSnapshot(
         for (position in 0 until boards.length()) {
             val board = boards.getJSONObject(position)
             val id = board.getString("id")
-            db.execSQL("INSERT INTO boards VALUES (?, ?, ?)", arrayOf(id, position, board.toString()))
+            db.execSQL("INSERT INTO boards VALUES (?, ?, ?)", arrayOf<Any?>(id, position, board.toString()))
             val columns = board.getJSONArray("columns")
             check(columns.length() > 0)
             for (index in 0 until columns.length()) {
                 val column = columns.getJSONObject(index)
                 db.execSQL("INSERT INTO columns VALUES (?, ?, ?, ?, ?)",
-                    arrayOf(id, column.getString("id"), index, if (column.optBoolean("isDone")) 1 else 0, column.toString()))
+                    arrayOf<Any?>(id, column.getString("id"), index, if (column.optBoolean("isDone")) 1 else 0, column.toString()))
             }
         }
     }
@@ -124,17 +124,17 @@ internal class KanbanStorageSnapshot(
             val path = item.getString("path")
             check(binaryName.matches(path) && paths.remove(path))
             val full = publishBlob(zip, path, item.getLong("size"), members.getValue(path), blobs)
-            if (referenced.add(full.sha256)) db.execSQL("INSERT INTO blobs VALUES (?, ?)", arrayOf(full.sha256, full.size))
+            if (referenced.add(full.sha256)) db.execSQL("INSERT INTO blobs VALUES (?, ?)", arrayOf<Any?>(full.sha256, full.size))
             val preview = item.optJSONObject("thumb")
             val thumb = preview?.let {
                 val thumbPath = it.getString("path")
                 check(thumbPath == path.removeSuffix(".bin") + ".thumb" && paths.remove(thumbPath))
                 publishBlob(zip, thumbPath, it.getLong("size"), members.getValue(thumbPath), blobs).also { member ->
-                    if (referenced.add(member.sha256)) db.execSQL("INSERT INTO blobs VALUES (?, ?)", arrayOf(member.sha256, member.size))
+                    if (referenced.add(member.sha256)) db.execSQL("INSERT INTO blobs VALUES (?, ?)", arrayOf<Any?>(member.sha256, member.size))
                 }
             }
             db.execSQL("INSERT INTO media VALUES (?, ?, ?, ?, ?)",
-                arrayOf(item.getString("id"), full.sha256, thumb?.sha256, item.getString("mime"), preview?.getString("mime")))
+                arrayOf<Any?>(item.getString("id"), full.sha256, thumb?.sha256, item.getString("mime"), preview?.getString("mime")))
         }
         check(paths.isEmpty())
     }
@@ -184,7 +184,7 @@ internal class KanbanStorageSnapshot(
         for (index in 0 until tasks.length()) {
             val task = tasks.getJSONObject(index)
             val id = task.getString("id")
-            db.execSQL("INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(
+            db.execSQL("INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf<Any?>(
                 id, task.getString("boardId"), task.getString("columnId"), task.getString("parentId").ifEmpty { null },
                 task.getDouble("order"), task.getLong("createdAt"), task.getLong("updatedAt"),
                 if (task.isNull("completedAt")) null else task.getLong("completedAt"), task.toString()
@@ -196,13 +196,13 @@ internal class KanbanStorageSnapshot(
                 val entries = task.optJSONArray(field) ?: continue
                 for (i in 0 until entries.length()) {
                     val entry = entries.getJSONObject(i)
-                    db.execSQL(statement, arrayOf(id, entry.getString("id"), i, entry.toString()))
+                    db.execSQL(statement, arrayOf<Any?>(id, entry.getString("id"), i, entry.toString()))
                 }
             }
             val files = task.getJSONArray("files")
             for (i in 0 until files.length()) {
                 val entry = files.getJSONObject(i)
-                db.execSQL("INSERT INTO attachments VALUES (?, ?, ?, ?, ?)", arrayOf(
+                db.execSQL("INSERT INTO attachments VALUES (?, ?, ?, ?, ?)", arrayOf<Any?>(
                     id, i, entry.getString("id"), entry.optString("resultId").ifEmpty { null }, entry.toString()
                 ))
             }
@@ -227,7 +227,7 @@ internal class KanbanStorageSnapshot(
         db.rawQuery(sql, null).use { check(it.moveToFirst()); it.getInt(0) }
 
     private fun syncDirectory(directory: File) {
-        val fd = Os.open(directory.path, OsConstants.O_RDONLY or OsConstants.O_DIRECTORY, 0)
+        val fd = Os.open(directory.path, OsConstants.O_RDONLY, 0)
         try { Os.fsync(fd) } finally { Os.close(fd) }
     }
 

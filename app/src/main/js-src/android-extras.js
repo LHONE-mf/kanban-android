@@ -413,23 +413,75 @@ function renderAudioList() {
       if (!v) return; if (old) f.name = v; else f._name = v; renderFiles();
     } }));
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'audio-rm'; rm.textContent = '×'; rm.setAttribute('aria-label', 'Удалить запись');
-    rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); };
+    rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); if (f._voiceDraft) refreshVoiceDrafts(); };
     row.appendChild(rm); (resultBoxes.get(old ? f.resultId : f._resultId) || box).appendChild(row);
   });
 }
 
 // Android owns microphone capture. WebView only controls and receives the final file.
 const rec = { id: null, session: null, resultId: '', starting: false, active: false,
-  finishing: false, paused: false, ready: null, done: null, resolve: null, lv: [] };
+  finishing: false, paused: false, ready: null, done: null, resolve: null, lv: [], recovering: null };
+const voiceDraftId = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
+let voiceDraftRequest = null;
 function bindAudio() {
   $('#recStartBtn').onclick = () => recStart();
   $('#recStop').onclick = () => recStop();
-  $('#recCancel').onclick = recAbort;
+  $('#recCancel').onclick = () => recAbort();
   $('#recPause').onclick = recPause;
 }
-function voiceCommand(id, type) {
-  try { window.KanbanVoice.postMessage(JSON.stringify({ id, type })); return true; }
+function voiceCommand(id, type, fields = {}) {
+  try { window.KanbanVoice.postMessage(JSON.stringify({ id, type, ...fields })); return true; }
   catch (_) { return false; }
+}
+function refreshVoiceDrafts() {
+  const panel = $('#recDrafts');
+  if (!panel || !window.KanbanVoice?.postMessage) return;
+  panel.hidden = true;
+  panel.replaceChildren();
+  if (!$('#taskModal').classList.contains('open')) return;
+  const id = 'list_' + generateId();
+  voiceDraftRequest = { id, editor: tempResults };
+  voiceCommand(id, 'list');
+}
+function forgetVoiceDraft(draft) {
+  voiceCommand('draft_' + generateId(), 'remove-draft', { draft });
+}
+function showVoiceDrafts(event) {
+  if (event.id !== voiceDraftRequest?.id || voiceDraftRequest.editor !== tempResults ||
+      !$('#taskModal').classList.contains('open') || !Array.isArray(event.items)) return;
+  const panel = $('#recDrafts');
+  const selected = new Set(newFiles.map(file => file._voiceDraft));
+  const saved = new Set(Object.values(state._tasksByBoard).flatMap(tasks => tasks.flatMap(task => task.files.map(file => file.id))));
+  for (const draft of event.items) {
+    if (!voiceDraftId.test(draft.draft)) continue;
+    if (saved.has('m_voice_' + draft.draft)) { forgetVoiceDraft(draft.draft); continue; }
+    if (draft.board !== state.activeBoardId || draft.task !== (editingTaskId || '') || selected.has(draft.draft)) continue;
+    const row = document.createElement('div'); row.className = 'audio-item';
+    const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'btn btn-secondary btn-small';
+    const date = new Date(draft.createdAt).toLocaleString('ru-RU');
+    restore.textContent = (draft.result ? 'Восстановить запись результата' : 'Восстановить запись') + ' · ' + date;
+    restore.onclick = () => recoverVoiceDraft(draft);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-secondary btn-small';
+    remove.textContent = 'Удалить черновик';
+    remove.onclick = async () => {
+      if (await confirmDialog('Удалить голосовой черновик?', 'Черновик будет удалён с устройства.')) {
+        forgetVoiceDraft(draft.draft);
+        row.remove();
+        panel.hidden = !panel.children.length;
+      }
+    };
+    row.append(restore, remove); panel.append(row);
+  }
+  panel.hidden = !panel.children.length;
+}
+function recoverVoiceDraft(draft) {
+  if (rec.id || savingTask || !$('#taskModal').classList.contains('open') || !voiceDraftId.test(draft.draft) ||
+      draft.board !== state.activeBoardId || draft.task !== (editingTaskId || '')) return;
+  apStop();
+  const id = 'voice_' + generateId();
+  Object.assign(rec, { id, session: tempResults, resultId: '', starting: true, recovering: draft.draft });
+  voicePanel();
+  if (!voiceCommand(id, 'recover', { draft: draft.draft })) { voiceReset(false); showToast('Не удалось открыть черновик'); }
 }
 function voicePromise() {
   if (!rec.done) rec.done = new Promise(resolve => { rec.resolve = resolve; });
@@ -451,7 +503,7 @@ function voicePanel() {
 function voiceReset(ok) {
   voiceResolve(ok);
   Object.assign(rec, { id: null, session: null, resultId: '', starting: false,
-    active: false, finishing: false, paused: false, ready: null, lv: [] });
+    active: false, finishing: false, paused: false, ready: null, lv: [], recovering: null });
   voicePanel();
 }
 function voiceStillInEditor(id) {
@@ -469,7 +521,9 @@ function recStart(resultId = '') {
   $('#recLevels').replaceChildren();
   voicePanel();
   if (resultId) $('#recPanel').scrollIntoView({ block: 'nearest' });
-  if (!voiceCommand(id, 'start')) { voiceReset(false); showToast('Не удалось запустить диктофон Android'); }
+  if (!voiceCommand(id, 'start', { board: state.activeBoardId, task: editingTaskId || '', result: resultId })) {
+    voiceReset(false); showToast('Не удалось запустить диктофон Android');
+  }
 }
 function recPause() {
   if (!rec.active || rec.finishing) return;
@@ -489,9 +543,9 @@ function recStop() {
   }
   return pending;
 }
-function recAbort() {
+function recAbort(discard = true) {
   if (!rec.id) return;
-  voiceCommand(rec.id, 'cancel');
+  voiceCommand(rec.id, discard && !rec.recovering ? 'cancel' : 'leave');
   voiceReset(false);
 }
 function voiceLevel(ms, level) {
@@ -516,16 +570,23 @@ async function receiveVoiceFile(id) {
     const blob = await response.blob();
     if (blob.size !== ready.size || blob.size === 0 || blob.size > MAX_VIDEO_SIZE) throw new Error('Запись передана не полностью');
     if (!voiceStillInEditor(id)) return;
-    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const d = new Date(ready.createdAt), p = n => String(n).padStart(2, '0');
     const file = new File([blob], `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.m4a`, { type: 'audio/mp4' });
     file._dur = ready.ms / 1000;
     file._meta = { dur: file._dur, peaks: ready.peaks || [] };
-    if (rec.resultId) file._resultId = rec.resultId;
+    const resultId = rec.recovering ? ready.result : rec.resultId;
+    if (resultId) {
+      if (!tempResults.some(result => result.id === resultId))
+        tempResults.push({ id: resultId, text: '', createdAt: ready.createdAt, updatedAt: ready.createdAt });
+      file._resultId = resultId;
+    }
+    file._voiceDraft = ready.draft;
     newFiles.push(file);
-    // Acknowledge only after the complete attachment is staged in this editor.
+    // Release the transfer lease. The private draft remains until the task commit.
     voiceCommand(id, 'ack');
     voiceReset(true);
-    renderFiles();
+    if (resultId && typeof renderTaskResults === 'function') renderTaskResults();
+    renderFiles(); refreshVoiceDrafts();
   } catch (error) {
     if (!voiceStillInEditor(id)) return;
     rec.finishing = false;
@@ -537,8 +598,9 @@ async function receiveVoiceFile(id) {
 window.kanbanVoiceNativeResult = function(payload) {
   let event;
   try { event = JSON.parse(payload); } catch (_) { return; }
+  if (event.type === 'drafts') { showVoiceDrafts(event); return; }
   if (event.id !== rec.id) return;
-  if (!voiceStillInEditor(event.id)) { recAbort(); return; }
+  if (!voiceStillInEditor(event.id)) { recAbort(false); return; }
   switch (event.type) {
     case 'started':
       rec.starting = false; rec.active = true; voicePanel(); break;
@@ -550,9 +612,12 @@ window.kanbanVoiceNativeResult = function(payload) {
       voiceLevel(event.ms, event.level); break;
     case 'ready':
       if (rec.ready) return;
-      if (!/^[a-f0-9-]{36}$/.test(event.token) || !Number.isSafeInteger(event.size) ||
-          event.size <= 0 || event.size > MAX_VIDEO_SIZE || !Number.isFinite(event.ms)) {
-        recAbort(); showToast('Некорректный файл записи'); return;
+      if (!/^[a-f0-9-]{36}$/.test(event.token) || !voiceDraftId.test(event.draft) ||
+          !Number.isSafeInteger(event.size) || event.size <= 0 || event.size > MAX_VIDEO_SIZE ||
+          !Number.isFinite(event.ms) || !Number.isFinite(event.createdAt) ||
+          event.board !== state.activeBoardId || event.task !== (editingTaskId || '') ||
+          (rec.recovering ? event.draft !== rec.recovering : event.result !== rec.resultId)) {
+        recAbort(false); showToast('Файл записи недоступен для этой задачи'); return;
       }
       rec.starting = rec.active = rec.paused = false;
       rec.ready = event;

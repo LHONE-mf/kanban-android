@@ -20,19 +20,31 @@ internal class KanbanVoiceRecorder(
     private val emit: (JSONObject) -> Unit
 ) {
     private val directory = File(context.cacheDir, "voice-capture").apply { mkdirs() }
+    private val drafts = KanbanVoiceDrafts(File(context.noBackupFilesDir, "voice-drafts"))
     private val thread = HandlerThread("ComradeVoice").apply { start() }
     private val worker = Handler(thread.looper)
     private val main = Handler(Looper.getMainLooper())
     private var recorder: MediaRecorder? = null
     private var id: String? = null
     private var file: File? = null
+    private var owner: KanbanVoiceDrafts.Owner? = null
     private var elapsed = 0L
     private var started = 0L
     private var paused = false
     private val amplitudes = ArrayList<Int>()
     @Volatile private var closed = false
-    private data class Ready(val id: String, val token: String, val file: File)
+    private data class Ready(val id: String, val token: String, val draft: KanbanVoiceDrafts.Draft) {
+        val file get() = draft.file
+    }
     @Volatile private var ready: Ready? = null
+
+    init {
+        worker.post {
+            val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+            directory.listFiles()?.filter { it.name.startsWith("capture-") && it.name.endsWith(".m4a") &&
+                it.lastModified() < cutoff }?.forEach { it.delete() }
+        }
+    }
 
     private fun send(session: String, type: String, fields: JSONObject = JSONObject()) {
         fields.put("id", session).put("type", type)
@@ -55,12 +67,17 @@ internal class KanbanVoiceRecorder(
     private fun newRecorder(): MediaRecorder =
         if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
 
-    fun start(session: String) = enqueue {
+    fun start(session: String, sourceOwner: KanbanVoiceDrafts.Owner) = enqueue {
         if (id != null || ready != null) {
             send(session, "error", JSONObject().put("message", "Предыдущая запись ещё не завершена"))
             return@enqueue
         }
+        if (!drafts.hasRoom()) {
+            send(session, "error", JSONObject().put("message", "Нет места для новых черновиков. Сохраните или удалите предыдущие записи"))
+            return@enqueue
+        }
         id = session
+        owner = sourceOwner
         try {
             // Raw source where supported; VOICE_RECOGNITION avoids communication processing.
             val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -91,14 +108,34 @@ internal class KanbanVoiceRecorder(
         } catch (_: Exception) { fail(session, "Не удалось начать запись на Android") }
     }
 
-    fun command(session: String, action: String) = enqueue {
-        if (action == "ack") {
-            ready?.takeIf { it.id == session }?.let { ready = null; it.file.delete() }
+    fun command(session: String, action: String, draft: String = "") = enqueue {
+        if (action == "list") {
+            send(session, "drafts", JSONObject().put("items", JSONArray(drafts.list().map { it.metadata })))
             return@enqueue
         }
-        if (action == "cancel") {
-            if (id == session) reset(true)
-            ready?.takeIf { it.id == session }?.let { ready = null; it.file.delete() }
+        if (action == "remove-draft") {
+            if (ready?.draft?.id == draft) ready = null
+            drafts.remove(draft)
+            return@enqueue
+        }
+        if (action == "recover") {
+            val selected = drafts.open(draft)
+            if (id == null && ready == null && selected != null) publishReady(session, selected)
+            else send(session, "error", JSONObject().put("message", "Черновик записи недоступен"))
+            return@enqueue
+        }
+        if (action == "ack") {
+            if (ready?.id == session) ready = null
+            return@enqueue
+        }
+        if (action == "cancel" || action == "leave") {
+            if (id == session) {
+                if (action == "cancel") reset(true) else finish(session, notify = false)
+            }
+            ready?.takeIf { it.id == session }?.let {
+                ready = null
+                if (action == "cancel") drafts.remove(it.draft.id)
+            }
             send(session, "cancelled")
             return@enqueue
         }
@@ -122,16 +159,15 @@ internal class KanbanVoiceRecorder(
         } catch (_: Exception) { fail(session, "Ошибка записи на Android") }
     }
 
-    private fun finish(session: String) {
+    private fun finish(session: String, notify: Boolean = true) {
         if (id != session) return
         val target = file ?: return
+        val sourceOwner = owner ?: return
         val ms = duration()
         try {
             recorder?.stop()
             reset(false)
             if (target.length() !in 1L..(50L * 1024 * 1024)) throw IllegalStateException("Пустая или слишком большая запись")
-            val result = Ready(session, UUID.randomUUID().toString(), target)
-            ready = result
             val peaks = JSONArray()
             val count = amplitudes.size
             if (count > 0) for (i in 0 until 56) {
@@ -140,12 +176,17 @@ internal class KanbanVoiceRecorder(
                 val max = (from until to).maxOf { amplitudes[it] }
                 peaks.put((kotlin.math.sqrt(max / 32768.0) * 100).toInt().coerceIn(8, 100))
             }
-            send(session, "ready", JSONObject().put("token", result.token).put("ms", ms)
-                .put("size", target.length()).put("peaks", peaks))
+            val draft = drafts.publish(target, sourceOwner, JSONObject().put("ms", ms).put("peaks", peaks))
+            if (notify) publishReady(session, draft)
         } catch (_: Exception) {
             target.delete()
             fail(session, "Не удалось сохранить запись. Проверьте свободное место и попробуйте снова")
         }
+    }
+    private fun publishReady(session: String, draft: KanbanVoiceDrafts.Draft) {
+        val transfer = Ready(session, UUID.randomUUID().toString(), draft)
+        ready = transfer
+        send(session, "ready", JSONObject(draft.metadata.toString()).put("token", transfer.token))
     }
     private fun fail(session: String, message: String) {
         reset(true)
@@ -157,6 +198,7 @@ internal class KanbanVoiceRecorder(
         recorder = null
         if (delete) file?.delete()
         file = null
+        owner = null
         id = null
         paused = false
     }
@@ -172,8 +214,7 @@ internal class KanbanVoiceRecorder(
     }
     fun stopInBackground() = enqueue { id?.let { finish(it) } }
     fun cancelForNavigation() = enqueue {
-        reset(true)
-        ready?.file?.delete()
+        id?.let { finish(it, notify = false) }
         ready = null
     }
     private fun enqueue(block: () -> Unit) {
@@ -182,8 +223,7 @@ internal class KanbanVoiceRecorder(
     fun close() {
         closed = true
         worker.post {
-            reset(true)
-            ready?.file?.delete()
+            id?.let { finish(it, notify = false) }
             ready = null
             thread.quitSafely()
         }

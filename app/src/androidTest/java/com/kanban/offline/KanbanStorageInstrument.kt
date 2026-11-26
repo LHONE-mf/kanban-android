@@ -53,10 +53,28 @@ class KanbanStorageInstrument : Instrumentation() {
                     check(it.moveToFirst() && JSONObject(it.getString(0)).getString("title") == "new snapshot")
                 }
             }
-            finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "P19 Android SQLite snapshot checks passed\n") })
+            checkVoiceDrafts(directory)
+            finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "P19 Android SQLite and voice draft checks passed\n") })
         } catch (failure: Throwable) {
             finish(Activity.RESULT_CANCELED, Bundle().apply { putString("stream", failure.stackTraceToString()) })
         } finally { directory.deleteRecursively() }
+    }
+
+    private fun checkVoiceDrafts(directory: File) {
+        val root = File(directory, "drafts")
+        val original = File(directory, "recording.m4a").apply { writeText("completed audio") }
+        val owner = KanbanVoiceDrafts.Owner("board", "root", "r")
+        val draft = KanbanVoiceDrafts(root).publish(original, owner, JSONObject().put("ms", 1200))
+        check(!original.exists())
+        val published = requireNotNull(draft.file.parentFile)
+        check(published.renameTo(File(root, ".part-${draft.id}")))
+        val reopened = KanbanVoiceDrafts(root)
+        val recovered = reopened.list().single()
+        check(recovered.id == draft.id && recovered.file.readText() == "completed audio")
+        check(KanbanVoiceDrafts.Owner.from(recovered.metadata) == owner)
+        check(reopened.open("../recording.m4a") == null)
+        reopened.remove(draft.id)
+        check(reopened.list().isEmpty())
     }
 
     private fun title(file: File): String =

@@ -28,6 +28,9 @@ function fixture(reject) {
   assert.equal(saved.name,'audio.ogg');
   assert.equal(saved.peaks.length,2);
   assert.equal(saved.resultId,'result1','recorded or selected audio keeps result association');
+  const draftId = 'a0000000-0000-4000-8000-000000000001';
+  const persisted = await ok.context.storeFile({ ...file, _voiceDraft: draftId });
+  assert.equal(persisted.id, 'm_voice_' + draftId, 'retry uses the same persistent attachment ID');
   const extras=fs.readFileSync('app/src/main/js-src/android-extras.js','utf8');
   const manifest=fs.readFileSync('app/src/main/AndroidManifest.xml','utf8');
   const native=fs.readFileSync('app/src/main/java/com/kanban/offline/KanbanVoiceRecorder.kt','utf8');
@@ -47,17 +50,20 @@ function fixture(reject) {
   const session=[{id:'r1'}];
   const audioBlob=new Blob(['audio'],{type:'audio/mp4'});
   const env={tempResults:session,newFiles:files,savingTask:false,MAX_VIDEO_SIZE:50*1024*1024,
+    state:{activeBoardId:'board'},editingTaskId:'task',
     File:class extends Blob{constructor(chunks,name,opts){super(chunks,opts);this.name=name;}},
     window:{KanbanVoice:{postMessage:raw=>commands.push(JSON.parse(raw))}},
     generateId:()=>String(++serial),apStop(){},renderFiles(){},showToast:m=>notices.push(m),
-    $:selector=>{if(!nodes.has(selector))nodes.set(selector,{classList:{contains:()=>true},children:[],replaceChildren(){},scrollIntoView(){}});return nodes.get(selector);},
+    $:selector=>{if(selector==='#recDrafts')return null;if(!nodes.has(selector))nodes.set(selector,{classList:{contains:()=>true},children:[],replaceChildren(){},scrollIntoView(){}});return nodes.get(selector);},
     fetch:async()=>{if(failFetch)throw Error('transfer failed');return {ok:true,blob:async()=>audioBlob};}
   };
   vm.createContext(env);vm.runInContext(recSrc+'\nthis.recordState=rec;',env);
   const send=(id,type,extra={})=>env.window.kanbanVoiceNativeResult(JSON.stringify({id,type,...extra}));
-  const ready={token:'a'.repeat(36),ms:1500,size:audioBlob.size,peaks:[20,40]};
+  const ready={token:'a'.repeat(36),draft:draftId,board:'board',task:'task',result:'r1',
+    createdAt:1733000500000,ms:1500,size:audioBlob.size,peaks:[20,40]};
   env.recStart('r1');
   const first=commands.at(-1).id;
+  assert.deepEqual(commands.at(-1), { id:first,type:'start',board:'board',task:'task',result:'r1' });
   assert.equal(env.recordState.starting,true);
   send(first,'started');
   assert.equal(env.recordState.active,true);
@@ -70,6 +76,7 @@ function fixture(reject) {
   assert.equal(files[0]._resultId,'r1');
   assert.equal(files[0].type,'audio/mp4');
   assert.equal(files[0]._meta.dur,1.5);
+  assert.equal(files[0]._voiceDraft,draftId);
   assert.equal(commands.at(-1).type,'ack');
   env.recStart('r1');
   const second=commands.at(-1).id;
@@ -98,6 +105,15 @@ function fixture(reject) {
   send(fourth,'ready',ready);
   assert.equal(await pending,false);
   assert.equal(files.length,2,'different editor cannot receive old recording');
+  env.recoverVoiceDraft({ ...ready, task:'other' });
+  assert.equal(env.recordState.id, null, 'cannot recover a draft into a different task');
+  env.recoverVoiceDraft(ready);
+  const recovered = commands.at(-1).id;
+  assert.equal(commands.at(-1).type, 'recover');
+  send(recovered, 'ready', ready);
+  assert.equal(await env.recordState.done, true);
+  assert.equal(files[2]._resultId, 'r1');
+  assert.equal(env.tempResults[0].id, 'r1', 'an unsaved result is reconstructed when recovering its recording');
   console.log('Native voice: session identity, retry, cancel, result association and capture contract verified.');
 })().catch(e=>{console.error(e);process.exitCode=1});
 

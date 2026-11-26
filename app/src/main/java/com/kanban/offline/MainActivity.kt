@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var voiceRecorder: KanbanVoiceRecorder
     private var nativeMedia: KanbanMediaTransfer? = null
     private var gallery: KanbanGallery? = null
-    private var pendingVoicePermission: String? = null
+    private var pendingVoicePermission: Pair<String, KanbanVoiceDrafts.Owner>? = null
     private var voicePermissionInFlight = false
     private var pendingReminder: JSONObject? = null
     private var kanbanLoaded = false
@@ -231,12 +231,13 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         voicePermissionInFlight = false
-        val session = pendingVoicePermission
+        val request = pendingVoicePermission
         pendingVoicePermission = null
-        if (session != null) {
+        if (request != null) {
+            val (session, owner) = request
             if (granted && webView.url == kanbanUrl &&
                 lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-                voiceRecorder.start(session)
+                voiceRecorder.start(session, owner)
             } else {
                 voiceEvent(JSONObject().put("id", session).put("type", "error")
                     .put("message", "Нет доступа к микрофону. Проверьте разрешения Comrade"))
@@ -251,6 +252,10 @@ class MainActivity : ComponentActivity() {
         if (!session.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return
         when (action) {
             "start" -> {
+                val owner = runCatching { KanbanVoiceDrafts.Owner.from(data) }.getOrElse {
+                    voiceEvent(JSONObject().put("id", session).put("type", "error").put("message", "Контекст записи недоступен"))
+                    return
+                }
                 if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
                     voiceEvent(JSONObject().put("id", session).put("type", "error")
                         .put("message", "Откройте Comrade для записи"))
@@ -259,9 +264,9 @@ class MainActivity : ComponentActivity() {
                         .put("message", "Запрос микрофона уже открыт"))
                 } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
                     PackageManager.PERMISSION_GRANTED) {
-                    voiceRecorder.start(session)
+                    voiceRecorder.start(session, owner)
                 } else {
-                    pendingVoicePermission = session
+                    pendingVoicePermission = session to owner
                     voicePermissionInFlight = true
                     try { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
                     catch (_: Exception) {
@@ -272,11 +277,12 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            "cancel" -> {
-                if (pendingVoicePermission == session) pendingVoicePermission = null
+            "cancel", "leave" -> {
+                if (pendingVoicePermission?.first == session) pendingVoicePermission = null
                 voiceRecorder.command(session, action)
             }
-            "pause", "resume", "stop", "ack" -> voiceRecorder.command(session, action)
+            "pause", "resume", "stop", "ack", "list", "recover", "remove-draft" ->
+                voiceRecorder.command(session, action, data.optString("draft"))
         }
     }
 
@@ -443,7 +449,7 @@ class MainActivity : ComponentActivity() {
                 if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
                     webView.url != kanbanUrl) return@addWebMessageListener
                 val raw = message.data ?: return@addWebMessageListener
-                if (raw.length <= 1024) runOnUiThread { handleVoiceCommand(raw) }
+                if (raw.length <= 4096) runOnUiThread { handleVoiceCommand(raw) }
             }
         }
 

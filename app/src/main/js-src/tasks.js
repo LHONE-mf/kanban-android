@@ -106,6 +106,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   $('#addTaskResultBtn').onclick = addTaskResult;
   modalInitialSnapshot = captureModalSnapshot();
   modal.classList.add('open');
+  if (typeof refreshVoiceDrafts === 'function') refreshVoiceDrafts();
   setTimeout(() => {
     if (opts.results) {
       $('#taskResultsField').scrollIntoView({ block: 'start' });
@@ -312,7 +313,7 @@ async function storeFile(file) {
   }
   // Decode audio before storing: a decoder error must not create orphaned media.
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
-  const id = 'm_' + generateId();
+  const id = file._voiceDraft ? 'm_voice_' + file._voiceDraft : 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
   const originalName = file._name || file.name || 'Файл';
   const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' }[type];
@@ -528,6 +529,7 @@ async function _saveTask() {
     await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
     showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return;
   }
+  for (const file of newFiles) if (file._voiceDraft) forgetVoiceDraft(file._voiceDraft);
 
   const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
   if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
@@ -563,7 +565,7 @@ function closeModal(id) {
     lastFocusBeforeModal = null;
   }
   if (id === 'taskModal') {
-    recAbort(); apStop('modal');
+    recAbort(false); apStop('modal');
     $('#mediaPreview').querySelectorAll('[data-preview-url]').forEach(el => revokeTrackedURL(el.dataset.previewUrl));
     modalInitialSnapshot = null;
   }

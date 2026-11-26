@@ -22,6 +22,7 @@ android {
         applicationId = "com.kanban.offline"
         minSdk = 30
         targetSdk = 35
+        testInstrumentationRunner = "com.kanban.offline.KanbanStorageInstrument"
         // A higher code is required for Android to accept an in-place update.
         versionCode = System.getenv("KANBAN_VERSION_CODE")?.toIntOrNull() ?: 1
         versionName = "0.4.10"

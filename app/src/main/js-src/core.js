@@ -448,6 +448,32 @@ async function dbGetSettings() {
     req.onerror = () => rej(wrapTxError(req.error));
   });
 }
+function dbReadZipSnapshot() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readonly');
+    const tasks = tx.objectStore(STORE_TASKS).getAll();
+    const settings = tx.objectStore(STORE_SETTINGS).getAll();
+    const media = tx.objectStore(STORE_MEDIA);
+    const records = new Map();
+    tasks.onsuccess = () => {
+      const ids = new Set();
+      for (const task of tasks.result) {
+        for (const file of Array.isArray(task.files) ? task.files : []) {
+          if (typeof file?.id === 'string') ids.add(file.id);
+        }
+        if (!Array.isArray(task.files) && typeof task.mediaId === 'string') ids.add(task.mediaId);
+      }
+      for (const id of ids) {
+        const request = media.get(id);
+        // IndexedDB returns Blob handles. ZIP reads one handle in bounded chunks.
+        request.onsuccess = () => records.set(id, request.result);
+      }
+    };
+    tx.oncomplete = () => resolve({ tasks: tasks.result, records,
+      settings: Object.fromEntries(settings.result.map(row => [row.key, row.value])) });
+    tx.onabort = () => reject(wrapTxError(tx.error));
+  });
+}
 async function dbPutSettingsBulk(entries) {
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_SETTINGS, 'readwrite');

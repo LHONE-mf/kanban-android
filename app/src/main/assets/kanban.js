@@ -448,6 +448,32 @@ async function dbGetSettings() {
     req.onerror = () => rej(wrapTxError(req.error));
   });
 }
+function dbReadZipSnapshot() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readonly');
+    const tasks = tx.objectStore(STORE_TASKS).getAll();
+    const settings = tx.objectStore(STORE_SETTINGS).getAll();
+    const media = tx.objectStore(STORE_MEDIA);
+    const records = new Map();
+    tasks.onsuccess = () => {
+      const ids = new Set();
+      for (const task of tasks.result) {
+        for (const file of Array.isArray(task.files) ? task.files : []) {
+          if (typeof file?.id === 'string') ids.add(file.id);
+        }
+        if (!Array.isArray(task.files) && typeof task.mediaId === 'string') ids.add(task.mediaId);
+      }
+      for (const id of ids) {
+        const request = media.get(id);
+        // IndexedDB returns Blob handles. ZIP reads one handle in bounded chunks.
+        request.onsuccess = () => records.set(id, request.result);
+      }
+    };
+    tx.oncomplete = () => resolve({ tasks: tasks.result, records,
+      settings: Object.fromEntries(settings.result.map(row => [row.key, row.value])) });
+    tx.onabort = () => reject(wrapTxError(tx.error));
+  });
+}
 async function dbPutSettingsBulk(entries) {
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_SETTINGS, 'readwrite');
@@ -3344,17 +3370,15 @@ async function zipWrite(id, path, blob) {
   await sendMediaChunks(id, blob);
   await zipStep(id, 'zip-entry-end', 'entry-end');
 }
-async function exportZipData() {
+async function exportZipData(prepareSnapshot = false) {
   if (zipActive || importInProgress || savingTask) { showToast('Дождитесь завершения текущей операции'); return; }
   zipActive = true;
   const id = crypto.randomUUID();
   try {
-    const settings = await dbGetSettings();
+    const { tasks: storedTasks, settings, records } = await dbReadZipSnapshot();
     if (settings[ZIP_PROJECTION]) throw new Error('Дождитесь завершения восстановления');
-    const settingsSnapshot = JSON.stringify(settings);
     delete settings[ZIP_PROJECTION];
-    const taskSnapshot = JSON.stringify(await dbGetAllTasks());
-    const tasks = JSON.parse(taskSnapshot).map(sanitizeTask);
+    const tasks = prepareSnapshot ? storedTasks : storedTasks.map(sanitizeTask);
     const boards = settings.boards;
     const activeBoardId = settings.activeBoardId;
     const media = [];
@@ -3371,7 +3395,7 @@ async function exportZipData() {
     for (const task of tasks) for (const attachment of task.files || []) {
       if (seen.has(attachment.id)) continue;
       seen.add(attachment.id);
-      const record = await mediaGet(attachment.id);
+      const record = records.get(attachment.id);
       if (!record?.full) throw new Error('Вложение отсутствует: ' + attachment.name);
       const base = 'media/' + String(media.length).padStart(6, '0');
       const mime = record.type || record.full.type || 'application/octet-stream';
@@ -3384,16 +3408,25 @@ async function exportZipData() {
       }
       media.push(entry);
     }
-    if (taskSnapshot !== JSON.stringify(await dbGetAllTasks()) ||
-        settingsSnapshot !== JSON.stringify(await dbGetSettings())) {
-      throw new Error('Данные изменились во время экспорта. Запустите его ещё раз');
-    }
     const snapshot = { version: 1, boards, activeBoardId, tasks, settings, media, web, nativeJapanese, pomo };
+    validateZipState(snapshot, ['state.json', ...media.flatMap(file => file.thumb ? [file.path, file.thumb.path] : [file.path])]);
     await zipWrite(id, 'state.json', new Blob([JSON.stringify(snapshot)], { type: 'application/json' }));
-    const result = await mediaStep(id, ['saved', 'cancelled'], () => mediaCommand(id, 'zip-seal'), 600000);
-    if (result.type === 'saved') showToast('ZIP-бэкап сохранён');
-  } catch (error) { showToast('Не удалось сохранить ZIP: ' + error.message, null, null, 6000); }
+    if (prepareSnapshot) {
+      const result = await zipStep(id, 'zip-snapshot', 'snapshot-ready', {}, 600000);
+      showToast(`Снимок SQLite проверен. Задач: ${result.tasks}. Вложений: ${result.media}.`, null, null, 7000);
+    } else {
+      const result = await mediaStep(id, ['saved', 'cancelled'], () => mediaCommand(id, 'zip-seal'), 600000);
+      if (result.type === 'saved') showToast('ZIP-бэкап сохранён');
+    }
+  } catch (error) { showToast((prepareSnapshot ? 'Проверка SQLite не завершена. ' : 'Не удалось сохранить ZIP. ') + error.message, null, null, 6000); }
   finally { cancelZip(id); zipActive = false; }
+}
+
+async function verifySQLiteSnapshot() {
+  if (!canUseZip()) return;
+  if (await confirmDialog('Проверка SQLite', 'Android создаст приватную копию досок и вложений и проверит её. Приложение продолжит работать с текущими данными.')) {
+    await exportZipData(true);
+  }
 }
 
 function validateZipState(data, entryNames) {
@@ -4267,6 +4300,11 @@ function bindEvents() {
   window.addEventListener('resize', () => { if (window.innerWidth > 960) closeHeaderMenu(); });
   $('#themeBtn').onclick = toggleTheme;
   $('#exportBtn').onclick = exportData;
+  const verifySQLite = $('#verifySQLiteBtn');
+  if (verifySQLite && canUseZip()) {
+    verifySQLite.hidden = false;
+    verifySQLite.onclick = verifySQLiteSnapshot;
+  }
   $('#exportCsvBtn').onclick = exportCsv;
   $('#importBtn').onclick = () => $('#importFile').click();
   $('#importFile').onchange = (e) => {

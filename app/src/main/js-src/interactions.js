@@ -315,6 +315,11 @@ function bindEvents() {
   window.addEventListener('resize', () => { if (window.innerWidth > 960) closeHeaderMenu(); });
   $('#themeBtn').onclick = toggleTheme;
   $('#exportBtn').onclick = exportData;
+  const verifySQLite = $('#verifySQLiteBtn');
+  if (verifySQLite && canUseZip()) {
+    verifySQLite.hidden = false;
+    verifySQLite.onclick = verifySQLiteSnapshot;
+  }
   $('#exportCsvBtn').onclick = exportCsv;
   $('#importBtn').onclick = () => $('#importFile').click();
   $('#importFile').onchange = (e) => {

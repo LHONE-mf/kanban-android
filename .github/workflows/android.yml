@@ -149,6 +149,17 @@ jobs:
           name: kanban-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Build Android storage tests
+        if: github.event_name == 'pull_request'
+        env:
+          KANBAN_DEBUG_KEYSTORE_PATH: ${{ github.workspace }}/.github/keys/kanban-debug.keystore
+        run: gradle :app:assembleDebugAndroidTest --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request'
+        with:
+          name: kanban-storage-test-apk
+          path: app/build/outputs/apk/androidTest/debug/*.apk
+          if-no-files-found: error
 
       # Actions artifacts are ZIP containers, which some Android file managers
       # cannot unpack. GitHub Releases publishes the original signed APK bytes.

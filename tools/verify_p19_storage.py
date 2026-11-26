@@ -11,7 +11,7 @@ import re
 import sqlite3
 from zipfile import ZipFile
 
-SCHEMA = Path(__file__).with_name("p19_storage.sql")
+SCHEMA = Path(__file__).resolve().parents[1] / "app/src/main/assets/p19_storage.sql"
 MEMBER = re.compile(r"media/[0-9]{6}\.(bin|thumb)")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 LIMIT = 2_000_000_000

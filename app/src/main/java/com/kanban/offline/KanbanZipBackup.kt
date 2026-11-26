@@ -35,14 +35,14 @@ internal class KanbanZipBackup(
         val backupName = Regex("comrade-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}\\.zip")
     }
 
-    private data class Member(val path: String, val size: Long, val sha256: String)
+    internal data class Member(val size: Long, val sha256: String)
     private class Entry(val path: String, val size: Long) {
         val digest: MessageDigest = MessageDigest.getInstance("SHA-256")
         var bytes = 0L
     }
     private data class Export(
         val name: String, val output: ZipOutputStream, val members: MutableMap<String, Member> = LinkedHashMap(),
-        var active: Entry? = null, var total: Long = 0, var choosing: Boolean = false
+        var active: Entry? = null, var total: Long = 0, var sealed: Boolean = false, var choosing: Boolean = false
     )
     private data class Verified(val id: String, val file: File, val paths: Set<String>)
     private var id: String? = null
@@ -66,6 +66,7 @@ internal class KanbanZipBackup(
                 "zip-entry" -> if (id == session) beginEntry(session, data.getString("path"), data.getLong("size"))
                 "zip-entry-end" -> if (id == session) endEntry(session)
                 "zip-seal" -> if (id == session) seal(session)
+                "zip-snapshot" -> if (id == session) seal(session, prepareSnapshot = true)
                 "zip-validate" -> if (id == session) validate(session)
                 "zip-cancel" -> if (id == session) clear()
             }
@@ -130,7 +131,7 @@ internal class KanbanZipBackup(
 
     private fun beginEntry(session: String, path: String, size: Long) {
         val archive = requireNotNull(exporting)
-        check(!archive.choosing && archive.active == null && archive.members.size < MAX_ENTRIES &&
+        check(!archive.sealed && archive.active == null && archive.members.size < MAX_ENTRIES &&
             !archive.members.containsKey(path) && validMember(path, size) && archive.total + size <= MAX_TOTAL)
         archive.output.putNextEntry(ZipEntry(path))
         archive.active = Entry(path, size)
@@ -143,24 +144,31 @@ internal class KanbanZipBackup(
         val entry = requireNotNull(archive.active)
         check(entry.bytes == entry.size)
         archive.output.closeEntry()
-        archive.members[entry.path] = Member(entry.path, entry.bytes, entry.digest.digest().hex())
+        archive.members[entry.path] = Member(entry.bytes, entry.digest.digest().hex())
         archive.total += entry.size
         archive.active = null
         refreshTimeout()
         emit(session, "entry-end", null, null)
     }
 
-    private fun seal(session: String) {
+    private fun seal(session: String, prepareSnapshot: Boolean = false) {
         val archive = requireNotNull(exporting)
-        check(!archive.choosing && archive.active == null && archive.members.containsKey(STATE))
+        check(!archive.sealed && archive.active == null && archive.members.containsKey(STATE))
         val members = JSONArray()
-        for (entry in archive.members.values) {
-            members.put(JSONObject().put("path", entry.path).put("size", entry.size).put("sha256", entry.sha256))
+        for ((path, entry) in archive.members) {
+            members.put(JSONObject().put("path", path).put("size", entry.size).put("sha256", entry.sha256))
         }
         archive.output.putNextEntry(ZipEntry(MANIFEST))
         archive.output.write(JSONObject().put("format", FORMAT).put("version", 1)
             .put("entries", members).toString().toByteArray(Charsets.UTF_8))
         archive.output.close()
+        archive.sealed = true
+        if (prepareSnapshot) {
+            val result = KanbanStorageSnapshot(context).prepare(requireNotNull(file), archive.members)
+            clear()
+            emit(session, "snapshot-ready", null, result)
+            return
+        }
         archive.choosing = true
         worker.removeCallbacks(timeout)
         choose(archive.name)
@@ -274,7 +282,7 @@ internal class KanbanZipBackup(
         worker.removeCallbacks(timeout)
         verified = null
         runCatching { importing?.close() }
-        if (exporting?.choosing == false) runCatching { exporting?.output?.close() }
+        if (exporting?.sealed == false) runCatching { exporting?.output?.close() }
         file?.delete()
         importing = null
         exporting = null

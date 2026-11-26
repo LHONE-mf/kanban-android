@@ -30,7 +30,7 @@ const env = {
   isValidISODate: x => /^\d{4}-\d{2}-\d{2}$/.test(x), generateId: () => 'generated',
   crypto: { randomUUID: () => 'session' }, KanbanMedia: { postMessage() {} },
   mediaCommand: (id, type) => events.push(type),
-  mediaStep: async (id, type, send) => { send(); return { entries: paths }; },
+  mediaStep: async (id, type, send) => { send(); return { entries: paths, tasks: 2, media: 2 }; },
   sendMediaChunks: async () => {}, confirmDialog: async () => true, taskEditorBlocksImport: () => false,
   alert: text => warnings.push(text),
   fetch: async path => ({
@@ -68,7 +68,7 @@ corrupt(copy => { copy.tasks[1].id = 'parent'; });
 corrupt(copy => { copy.media[0].path = '../state.json'; });
 corrupt(copy => { copy.web.untrusted_key = 'secret'; });
 assert.throws(() => env.validateZipState(data, [...paths, 'media/123456.bin']), /метаданные/);
-vm.runInContext("pomodoroArchive = async () => {}; this.dbPutSettingsBulk = async () => {};", env);
+vm.runInContext("pomodoroArchive = async () => ({ mode: 'focus', day: '2026-12-05', remaining: 1500000, sessions: 0, running: false, end: 0 }); this.dbPutSettingsBulk = async () => {};", env);
 
 (async () => {
   errorAt = '000001.bin';
@@ -80,5 +80,16 @@ vm.runInContext("pomodoroArchive = async () => {}; this.dbPutSettingsBulk = asyn
   await env.importZipData({ size: 500 });
   assert.ok(events.indexOf('commit') < events.indexOf('web-theme'));
   assert.ok(events.includes('reload'));
+  Object.assign(env, {
+    savingTask: false, importInProgress: false, Blob,
+    todayISO: () => '2026-12-05', nativeJapaneseCommand: async () => null,
+    dbReadZipSnapshot: async () => ({ tasks: data.tasks, settings: { boards: data.boards, activeBoardId: data.activeBoardId },
+      records: new Map(files.map(file => [file.id, { full: new Blob([file.id === 'voice' ? 'voice' : 'test']), type: file.mime }])) }),
+    showToast: text => warnings.push(text)
+  });
+  events.length = 0;
+  await env.exportZipData(true);
+  assert.ok(events.includes('zip-snapshot'), 'SQLite preparation uses the native snapshot command');
+  assert.ok(!events.includes('zip-seal') && !events.includes('commit'), 'preparation leaves live data alone');
   console.log('ZIP backup: clean state, legacy shared media, archive bounds and atomic JS publication verified.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

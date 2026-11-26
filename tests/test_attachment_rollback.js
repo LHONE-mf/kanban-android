@@ -17,7 +17,7 @@ const context={
     if(storageFailure==='file'&&f===selected[1])throw Error('full disk');
     return {id:'m-'+f.name,name:f.name,type:'text/plain',size:f.size};
   },
-  mediaDelete:async id=>{await new Promise(resolve=>setImmediate(resolve));deleted.push(id);},
+  mediaDeleteUnreferenced:async ids=>{await new Promise(resolve=>setImmediate(resolve));deleted.push(...ids);},
   dbPutTasks:async()=>{saveAttempts++;if(storageFailure==='database')throw Error('disk');},
   closeModal:()=>{},notifyOtherTabs:()=>{},renderBoard:()=>{},scheduleMediaDelete:()=>{}
 };

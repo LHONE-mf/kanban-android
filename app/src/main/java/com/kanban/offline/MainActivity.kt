@@ -10,6 +10,7 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import android.os.Bundle
+import android.os.Build
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -20,6 +21,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.view.View
+import android.view.HapticFeedbackConstants
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import java.time.LocalDate
@@ -27,6 +29,7 @@ import android.speech.tts.TextToSpeech
 import java.util.Locale
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import androidx.webkit.WebMessageCompat
 import android.view.Gravity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -60,7 +63,13 @@ class MainActivity : ComponentActivity() {
     private var pendingFiles: ValueCallback<Array<Uri>>? = null
     private lateinit var backupSaver: KanbanBackupSaver
     private lateinit var attachmentOpener: KanbanAttachmentOpener
-    private var pendingMicRequest: PermissionRequest? = null
+    private lateinit var voiceRecorder: KanbanVoiceRecorder
+    private var nativeMedia: KanbanMediaTransfer? = null
+    private var gallery: KanbanGallery? = null
+    private var pendingVoicePermission: Pair<String, KanbanVoiceDrafts.Owner>? = null
+    private var voicePermissionInFlight = false
+    private var pendingReminder: JSONObject? = null
+    private var kanbanLoaded = false
     private var editingAttachmentId: String? = null
     private var editingFile: File? = null
     private var editingDigest: String? = null
@@ -94,6 +103,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val appOrigin = "https://appassets.androidplatform.net"
+    private val kanbanUrl = "$appOrigin/assets/kanban.html"
 
     /** Remove only private copies of the old GGUF; preserve IndexedDB and user files. */
     private fun removeOldModelCopy() {
@@ -133,26 +143,162 @@ class MainActivity : ComponentActivity() {
         if (::backupSaver.isInitialized) backupSaver.onDestinationPicked(uri)
     }
 
+    private val zipDocumentPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) {
+        nativeMedia?.backupDestination(it)
+    }
+
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        sendKanbanEvent("kanbanNotificationPermissionResult", JSONObject())
+    }
+
+    private fun offerNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33 || !hasWindowFocus() ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        val prefs = getSharedPreferences("comrade_notification_permission", MODE_PRIVATE)
+        if (prefs.getBoolean("asked", false)) return
+        prefs.edit().putBoolean("asked", true).apply()
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun pomoCommand(raw: String) {
+        val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val id = data.optString("id")
+        val action = data.optString("type")
+        if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}")) ||
+            action !in setOf("read", "toggle", "reset", "skip", "backup-read", "backup-restore")) return
+        val backup = action.startsWith("backup-")
+        val state = data.optJSONObject(if (action == "backup-restore") "state" else "legacy")
+        if (action == "backup-restore" && state == null) return
+        KanbanPomodoro.run(this, action, state) { result ->
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                sendKanbanEvent(if (backup) "kanbanPomoBackupResult" else "kanbanPomoResult", result.put("id", id))
+                if (result.optBoolean("started") && webView.url == kanbanUrl) offerNotificationPermission()
+            }
+        }
+    }
+
+    private fun reminderCommand(raw: String) {
+        val data = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        val id = data.optString("id")
+        val rows = data.optJSONArray("rows") ?: return
+        if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return
+        KanbanTaskReminders.run(this, rows) { ok ->
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                sendKanbanEvent("kanbanTaskRemindersResult", JSONObject().put("id", id).put("ok", ok))
+                if (ok && data.optBoolean("askPermission") && webView.url == kanbanUrl) offerNotificationPermission()
+            }
+        }
+    }
+
+    private fun readReminderIntent(intent: Intent) {
+        if (intent.action != KanbanTaskReminders.OPEN) return
+        val uri = intent.data ?: return
+        if (uri.scheme != "comrade" || uri.authority != "reminder" || uri.pathSegments.size != 2) return
+        val (board, task) = uri.pathSegments
+        if (!KanbanTaskReminders.validId(board) || !KanbanTaskReminders.validId(task)) return
+        pendingReminder = JSONObject().put(KanbanTaskReminders.BOARD, board).put(KanbanTaskReminders.TASK, task)
+    }
+
+    private fun deliverReminder() {
+        if (!kanbanLoaded || webView.url != kanbanUrl) return
+        val target = pendingReminder ?: return
+        pendingReminder = null
+        sendKanbanEvent("kanbanOpenReminder", target)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        readReminderIntent(intent)
+        if (pendingReminder == null) return
+        if (webView.url != kanbanUrl) webView.loadUrl(kanbanUrl) else deliverReminder()
+    }
+
+    private fun voiceEvent(event: JSONObject) {
+        sendKanbanEvent("kanbanVoiceNativeResult", event)
+    }
+
+    private fun sendKanbanEvent(callback: String, event: JSONObject) {
+        if (::webView.isInitialized && webView.url == kanbanUrl) {
+            webView.evaluateJavascript(
+                "window.$callback?.(" + JSONObject.quote(event.toString()) + ")", null
+            )
+        }
+    }
+
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        val request = pendingMicRequest
-        pendingMicRequest = null
+        voicePermissionInFlight = false
+        val request = pendingVoicePermission
+        pendingVoicePermission = null
         if (request != null) {
-            if (granted && request.origin.toString().removeSuffix("/") == appOrigin &&
-                request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)) {
-                request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+            val (session, owner) = request
+            if (granted && webView.url == kanbanUrl &&
+                lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                voiceRecorder.start(session, owner)
             } else {
-                request.deny()
+                voiceEvent(JSONObject().put("id", session).put("type", "error")
+                    .put("message", "Нет доступа к микрофону. Проверьте разрешения Comrade"))
             }
+        }
+    }
+
+    private fun handleVoiceCommand(raw: String) {
+        val data = try { JSONObject(raw) } catch (_: Exception) { return }
+        val session = data.optString("id")
+        val action = data.optString("type")
+        if (!session.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return
+        when (action) {
+            "start" -> {
+                val owner = runCatching { KanbanVoiceDrafts.Owner.from(data) }.getOrElse {
+                    voiceEvent(JSONObject().put("id", session).put("type", "error").put("message", "Контекст записи недоступен"))
+                    return
+                }
+                if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                    voiceEvent(JSONObject().put("id", session).put("type", "error")
+                        .put("message", "Откройте Comrade для записи"))
+                } else if (voicePermissionInFlight) {
+                    voiceEvent(JSONObject().put("id", session).put("type", "error")
+                        .put("message", "Запрос микрофона уже открыт"))
+                } else if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                    PackageManager.PERMISSION_GRANTED) {
+                    voiceRecorder.start(session, owner)
+                } else {
+                    pendingVoicePermission = session to owner
+                    voicePermissionInFlight = true
+                    try { microphonePermission.launch(Manifest.permission.RECORD_AUDIO) }
+                    catch (_: Exception) {
+                        pendingVoicePermission = null
+                        voicePermissionInFlight = false
+                        voiceEvent(JSONObject().put("id", session).put("type", "error")
+                            .put("message", "Не удалось запросить разрешение микрофона"))
+                    }
+                }
+            }
+            "cancel", "leave" -> {
+                if (pendingVoicePermission?.first == session) pendingVoicePermission = null
+                voiceRecorder.command(session, action)
+            }
+            "pause", "resume", "stop", "ack", "list", "recover", "remove-draft" ->
+                voiceRecorder.command(session, action, data.optString("draft"))
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         removeOldModelCopy()
+        voiceRecorder = KanbanVoiceRecorder(this, ::voiceEvent)
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/voice-capture/", WebViewAssetLoader.PathHandler { path -> voiceRecorder.resource(path) })
+            .addPathHandler("/native-media/", WebViewAssetLoader.PathHandler { path ->
+                nativeMedia?.resource(path) ?: WebResourceResponse(null, null, null)
+            })
+            .addPathHandler("/native-backup/", WebViewAssetLoader.PathHandler { path ->
+                nativeMedia?.backupResource(path) ?: WebResourceResponse(null, null, null)
+            })
             .build()
 
         japaneseSpeech = TextToSpeech(this) { status ->
@@ -189,41 +335,121 @@ class MainActivity : ComponentActivity() {
                 }
 
                 override fun onPermissionRequest(request: PermissionRequest) {
-                    runOnUiThread {
-                        // Grant only microphone access to the trusted bundled app origin.
-                        // Never automatically grant camera or unrelated WebView permissions.
-                        val trusted = request.origin.toString().removeSuffix("/") == appOrigin
-                        val audioOnly = request.resources.size == 1 &&
-                            request.resources[0] == PermissionRequest.RESOURCE_AUDIO_CAPTURE
-                        if (!trusted || !audioOnly || pendingMicRequest != null) {
-                            request.deny()
-                        } else if (ContextCompat.checkSelfPermission(
-                                this@MainActivity, Manifest.permission.RECORD_AUDIO
-                            ) == PackageManager.PERMISSION_GRANTED) {
-                            request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
-                        } else {
-                            pendingMicRequest = request
-                            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    }
-                }
-
-                override fun onPermissionRequestCanceled(request: PermissionRequest) {
-                    if (pendingMicRequest === request) pendingMicRequest = null
+                    // Audio capture belongs to the native recorder, never to web content.
+                    request.deny()
                 }
             }
             webViewClient = object : WebViewClientCompat() {
                 override fun shouldInterceptRequest(
                     view: WebView, request: WebResourceRequest
-                ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+                ): WebResourceResponse? {
+                    val path = request.url.path.orEmpty()
+                    if ((path.startsWith("/native-media/") || path.startsWith("/native-backup/") ||
+                            path.startsWith("/voice-capture/")) && (request.isForMainFrame || request.method != "GET")) {
+                        return WebResourceResponse(null, null, null)
+                    }
+                    return loader.shouldInterceptRequest(request.url)
+                }
+
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    kanbanLoaded = false
+                    pendingVoicePermission = null
+                    voiceRecorder.cancelForNavigation()
+                    gallery?.close()
+                    nativeMedia?.reset()
+                }
 
                 override fun onPageFinished(view: WebView, url: String) {
+                    if (url == kanbanUrl && view.url == kanbanUrl) {
+                        kanbanLoaded = true
+                        deliverReminder()
+                    }
                     if (::japaneseButton.isInitialized) {
                         japaneseButton.text = if (url.endsWith("/japanese.html")) "← Comrade" else "日本語 · Учить"
                         if (::dailyBanner.isInitialized) updateDailyBannerVisibility(url)
                         view.evaluateJavascript("""(function(){function sync(){var t=document.documentElement.dataset.theme||localStorage.getItem('kanban_theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');if(window.KanbanTheme)KanbanTheme.postMessage(t);if(location.pathname.endsWith('/japanese.html'))document.documentElement.dataset.theme=t;}sync();if(!window.__themeSync){window.__themeSync=new MutationObserver(sync);window.__themeSync.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});}})();""", null)
                     }
                 }
+            }
+        }
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_ARRAY_BUFFER)) {
+            val preview = KanbanGallery(this) { sendKanbanEvent("kanbanGalleryResult", it) }
+            gallery = preview
+            val media = KanbanMediaTransfer(this, preview, { name ->
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        try { zipDocumentPicker.launch(name) } catch (_: Exception) { nativeMedia?.backupDestination(null) }
+                    }
+                }
+            }) { sendKanbanEvent("kanbanMediaNativeResult", it) }
+            nativeMedia = media
+            WebViewCompat.addWebMessageListener(webView, "KanbanMedia", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                when (message.type) {
+                    WebMessageCompat.TYPE_STRING -> message.data?.takeIf { it.length <= 1024 }?.let(media::command)
+                    WebMessageCompat.TYPE_ARRAY_BUFFER -> message.arrayBuffer?.takeIf {
+                        it.size in (KanbanMediaTransfer.ID_BYTES + 1)..
+                            (KanbanMediaTransfer.ID_BYTES + KanbanMediaTransfer.MAX_CHUNK_BYTES)
+                    }?.let(media::chunk)
+                }
+            }
+            WebViewCompat.addWebMessageListener(webView, "KanbanGallery", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                val raw = message.data?.takeIf { it.length <= 4096 } ?: return@addWebMessageListener
+                val command = runCatching { JSONObject(raw) }.getOrNull() ?: return@addWebMessageListener
+                val id = command.optString("id")
+                if (!id.matches(Regex("[a-zA-Z0-9_-]{1,100}"))) return@addWebMessageListener
+                when (command.optString("type")) {
+                    "close" -> preview.close(id)
+                    "open" -> {
+                        if (!view.hasWindowFocus()) return@addWebMessageListener
+                        val size = command.optInt("size")
+                        val index = command.optInt("index", -1)
+                        if (size !in 1..5000 || index !in 0 until size) return@addWebMessageListener
+                        preview.open(id, size, index, command.optString("title").take(200))
+                    }
+                }
+            }
+        }
+
+        // The bridge accepts commands only from the local Kanban main frame.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            WebViewCompat.addWebMessageListener(webView, "KanbanTaskReminders", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                message.data?.takeIf { it.length <= 512 * 1024 }?.let(::reminderCommand)
+            }
+            WebViewCompat.addWebMessageListener(webView, "KanbanPomo", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl) return@addWebMessageListener
+                message.data?.takeIf { it.length <= 2048 }?.let(::pomoCommand)
+            }
+            WebViewCompat.addWebMessageListener(webView, "KanbanHaptics", setOf(appOrigin)) {
+                view, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    view.url != kanbanUrl || !view.hasWindowFocus()) return@addWebMessageListener
+                val feedback = when (message.data) {
+                    "drag" -> HapticFeedbackConstants.LONG_PRESS
+                    "move" -> HapticFeedbackConstants.CLOCK_TICK
+                    "done" -> HapticFeedbackConstants.CONFIRM
+                    else -> return@addWebMessageListener
+                }
+                view.performHapticFeedback(feedback)
+            }
+            WebViewCompat.addWebMessageListener(webView, "KanbanVoice", setOf(appOrigin)) {
+                _, message, sourceOrigin, isMainFrame, _ ->
+                if (!isMainFrame || sourceOrigin.toString().removeSuffix("/") != appOrigin ||
+                    webView.url != kanbanUrl) return@addWebMessageListener
+                val raw = message.data ?: return@addWebMessageListener
+                if (raw.length <= 4096) runOnUiThread { handleVoiceCommand(raw) }
             }
         }
 
@@ -465,6 +691,7 @@ class MainActivity : ComponentActivity() {
         setContentView(root)
         applyMiniTheme(true)
         ViewCompat.requestApplyInsets(root)
+        readReminderIntent(intent)
         webView.loadUrl("$appOrigin/assets/kanban.html")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -808,11 +1035,27 @@ class MainActivity : ComponentActivity() {
         return panel
     }
 
+    override fun onStart() {
+        super.onStart()
+        nativeMedia?.setForeground(true)
+        gallery?.setForeground(true)
+    }
+
+    override fun onStop() {
+        // Finish active recording when the application leaves the foreground.
+        if (::voiceRecorder.isInitialized) voiceRecorder.stopInBackground()
+        nativeMedia?.setForeground(false)
+        gallery?.setForeground(false)
+        super.onStop()
+    }
+
     override fun onDestroy() {
         if (::backupSaver.isInitialized) backupSaver.close()
         if (::attachmentOpener.isInitialized) attachmentOpener.close()
-        pendingMicRequest?.deny()
-        pendingMicRequest = null
+        pendingVoicePermission = null
+        if (::voiceRecorder.isInitialized) voiceRecorder.close()
+        gallery?.close()
+        nativeMedia?.close()
         pendingFiles?.onReceiveValue(null)
         pendingFiles = null
         webView.destroy()

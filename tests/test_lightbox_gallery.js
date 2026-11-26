@@ -55,3 +55,33 @@ const files=[{id:'img1',type:'image/jpeg'},{id:'img2',type:'image/png'}];
   assert.equal(revoked,3,'all old blob URLs must be released on switch/close');
   console.log('C-08 lightbox gallery and zoom regression passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+(async () => {
+  const commands = [], bytes = [], discarded = [], reads = [];
+  const bridge = { postMessage: raw => commands.push(JSON.parse(raw)) };
+  const native = {
+    ...context, KanbanGallery: bridge, apStop() {}, generateId: () => 'gallery',
+    setTimeout: (fn, ms) => setTimeout(fn, ms).unref(), clearTimeout,
+    mediaGet: async id => { reads.push(id); return { full: { id } }; },
+    mediaDiscard: id => discarded.push(id),
+    stageNativeMedia: async (request, blob, current, options) => {
+      assert.ok(current());
+      bytes.push([request, blob.id, options.operation]);
+    }
+  };
+  vm.runInNewContext(source.slice(a, b), native);
+  const files = [{ id: 'photo', type: 'image/heic' }, { id: 'movie', type: 'video/mp4' }];
+  await native.openLightbox({ title: 'Result', files }, files[1]);
+  assert.deepEqual(commands[0], { id: 'gallery', type: 'open', index: 1, size: 2, title: 'Result' });
+  assert.deepEqual(reads, [], 'opening native UI does not decode or load every item');
+  const session = (type, fields) => native.kanbanGalleryResult(JSON.stringify({ id: 'gallery', type, ...fields }));
+  await session('request', { index: 1, request: 'one' });
+  await session('request', { index: 0, request: 'two' });
+  assert.deepEqual(bytes, [['one', 'movie', 'gallery-video'], ['two', 'photo', 'gallery-image']]);
+  assert.deepEqual(discarded, ['one']);
+  await session('closed');
+  assert.deepEqual(discarded, ['one', 'two']);
+  await session('request', { index: 1, request: 'late' });
+  assert.deepEqual(reads, ['movie', 'photo']);
+  console.log('Native gallery: on-demand order, video route and cancellation verified.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

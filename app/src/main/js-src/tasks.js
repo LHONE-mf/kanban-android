@@ -12,6 +12,7 @@ async function deleteTask(taskId) {
   state.tasks.length = 0; state.tasks.push(...kept);
   const files = gone.flatMap(t => t.files);
   const undoId = pushUndo({
+    mediaIds: files.map(f => f.id),
     onExpire: () => files.forEach(f => scheduleMediaDelete(f.id, 0)),
     restore: async () => {
       if (root.boardId && root.boardId !== state.activeBoardId) await switchBoard(root.boardId);
@@ -24,10 +25,7 @@ async function deleteTask(taskId) {
     }
   });
   notifyOtherTabs(); renderTaskCollectionChange(root, true, rootBeforeRemoval);
-  showToast(`Удалено: «${truncate(root.title, 40)}»${gone.length > 1 ? ` и ещё ${gone.length - 1}` : ''}`, 'Вернуть', async () => {
-    const op = consumeUndo(undoId);
-    if (op) await op.restore();
-  }, 5000);
+  showToast(`Удалено: «${truncate(root.title, 40)}»${gone.length > 1 ? ` и ещё ${gone.length - 1}` : ''}`, 'Вернуть', () => restoreUndo(undoId), 5000);
 }
 
 // ============================================================
@@ -38,7 +36,8 @@ function captureModalSnapshot() {
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
     deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
     results: tempResults,
-    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || ''])
+    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || '']),
+    reminder: globalThis.KanbanTaskReminders && $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : ''
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
@@ -58,6 +57,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const colIdEl = $('#taskColumnId');
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
+  let reminder = '';
 
   titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; tagsEl.value = '';
   fileInput.value = '';
@@ -74,6 +74,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
     tempResults = (task.results || []).map(r => ({ ...r }));
+    reminder = task.reminderTime || '';
     fillParentSelect(task, task.columnId);
     renderNestedNodes(task.id);
     deleteBtn.style.display = 'inline-flex';
@@ -89,11 +90,21 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     $('#dupTaskBtn').style.display = 'none';
   }
 
+  if (globalThis.KanbanTaskReminders) {
+    const enabled = $('#taskReminderEnabled'), time = $('#taskReminderTime');
+    $('#taskReminderField').hidden = false;
+    enabled.checked = !!reminder;
+    time.value = reminder || '09:00';
+    enabled.onchange = () => { time.hidden = !enabled.checked; };
+    enabled.onchange();
+  }
+
   renderTaskResults();
   renderFiles();
   $('#addTaskResultBtn').onclick = addTaskResult;
   modalInitialSnapshot = captureModalSnapshot();
   modal.classList.add('open');
+  if (typeof refreshVoiceDrafts === 'function') refreshVoiceDrafts();
   setTimeout(() => {
     if (opts.results) {
       $('#taskResultsField').scrollIntoView({ block: 'start' });
@@ -126,7 +137,7 @@ function renderTaskResults() {
     remove.textContent = 'Удалить';
     remove.setAttribute('aria-label', 'Удалить результат ' + (index + 1));
     remove.onclick = () => {
-      if (savingTask || rec.mr || rec.starting || rec.finishing) return;
+      if (savingTask || rec.id) return;
       tempResults.splice(index, 1);
       tempFiles = tempFiles.filter(f => f.resultId !== entry.id);
       newFiles = newFiles.filter(f => f._resultId !== entry.id);
@@ -175,7 +186,7 @@ function renderTaskResults() {
   }
 }
 function addTaskResult() {
-  if (savingTask || rec.mr || rec.starting || rec.finishing) return;
+  if (savingTask || rec.id) return;
   const now = Date.now();
   tempResults.push({ id: 'result_' + generateId(), text: '', createdAt: now, updatedAt: now });
   renderTaskResults();
@@ -288,18 +299,25 @@ function renderFiles() {
 }
 async function storeFile(file) {
   let blob = file, thumb = null, type = file.type || 'application/octet-stream';
-  if (/^image\/(jpeg|png|webp|heic|heif)$/.test(type)) {
-    try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) { blob = file; }
+  const processablePhoto = /^image\/(jpeg|png|webp|heic|heif)$/.test(type);
+  const nativePhoto = processablePhoto && globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID;
+  if (nativePhoto) {
+    try { ({ blob, thumb } = await processNativePhoto(file)); type = blob.type; } catch (_) {}
+  } else {
+    if (processablePhoto) {
+      try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) {}
+    }
+    if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   }
-  if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   // Decode audio before storing: a decoder error must not create orphaned media.
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
-  const id = 'm_' + generateId();
+  const id = file._voiceDraft ? 'm_voice_' + file._voiceDraft : 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
   const originalName = file._name || file.name || 'Файл';
-  // An encoded WebP must not retain a misleading .png/.heic extension.
-  const name = blob !== file && type === 'image/webp' && !/\.webp$/i.test(originalName)
-    ? originalName.replace(/\.[^./]+$/, '') + '.webp' : originalName;
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' }[type];
+  const name = type !== file.type && extension && !(type === 'image/jpeg' && /\.jpe?g$/i.test(originalName)) &&
+    !originalName.toLowerCase().endsWith('.' + extension)
+    ? originalName.replace(/\.[^./]+$/, '') + '.' + extension : originalName;
   return { id, name, type, size: blob.size, ...(file._resultId ? { resultId: file._resultId } : {}), ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
@@ -422,7 +440,8 @@ function openFileViaAndroid(blob, file) {
 }
 async function openFile(f, title) {
   if (/^(image|video)\//.test(f.type)) {
-    const galleryFiles = tempFiles.some(file => file.id === f.id) ? tempFiles : [f];
+    const galleryFiles = tempFiles.some(file => file.id === f.id)
+      ? tempFiles.filter(file => (file.resultId || '') === (f.resultId || '')) : [f];
     return openLightbox({ title, files: galleryFiles }, f);
   }
   const m = await mediaGet(f.id).catch(() => null);
@@ -465,14 +484,21 @@ async function _saveTask() {
   if (parentId && !par) { showToast('Родитель не найден'); return; }
   const columnId = par ? par.columnId : pv.slice(4);
   const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
+  let reminderTime = existing?.reminderTime || '';
+  if (globalThis.KanbanTaskReminders) {
+    reminderTime = $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : '';
+    if ($('#taskReminderEnabled').checked && (!deadline || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(reminderTime))) {
+      showToast('Укажите срок и время напоминания');
+      return;
+    }
+  }
 
   if (rec.starting) { showToast('Дождитесь доступа к микрофону'); return; }
-  if (rec.mr) await recStop();
-  else if (rec.finishing) await rec.done;
+  if (rec.id && !(await recStop())) return;
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }
   catch (e) {
-    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    if (stored.length) await mediaDeleteUnreferenced(stored.map(x => x.id)).catch(() => {});
     showToast('Не удалось сохранить файл: ' + (e.message || e)); return;
   }
   const files = [...tempFiles, ...stored];
@@ -485,6 +511,7 @@ async function _saveTask() {
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, files,
+    ...(reminderTime ? { reminderTime } : {}),
     results: tempResults.filter(r => r.text.trim() || attachedResults.has(r.id)).map(r => ({ ...r, text: r.text.trim() })),
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
@@ -497,9 +524,10 @@ async function _saveTask() {
     : [];
   try { await dbPutTasks([candidate, ...descendants]); }
   catch (e) {
-    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    if (stored.length) await mediaDeleteUnreferenced(stored.map(x => x.id)).catch(() => {});
     showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return;
   }
+  for (const file of newFiles) if (file._voiceDraft) forgetVoiceDraft(file._voiceDraft);
 
   const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
   if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
@@ -509,6 +537,7 @@ async function _saveTask() {
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   closeModal('taskModal'); notifyOtherTabs();
+  if (globalThis.KanbanTaskReminders && reminderTime && reminderTime !== existing?.reminderTime) queueTaskReminders(true);
   if (existing && !existing.parentId && !candidate.parentId &&
       existing.columnId !== candidate.columnId)
     renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
@@ -517,7 +546,7 @@ async function _saveTask() {
   if (existing && typeof offerTaskResult === 'function') offerTaskResult(candidate.id, existing.columnId);
 }
 
-function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || !!rec.starting || !!rec.finishing || modalInitialSnapshot !== captureModalSnapshot()); }
+function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.id || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
   if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
@@ -534,7 +563,7 @@ function closeModal(id) {
     lastFocusBeforeModal = null;
   }
   if (id === 'taskModal') {
-    recAbort(); apStop('modal');
+    recAbort(false); apStop('modal');
     $('#mediaPreview').querySelectorAll('[data-preview-url]').forEach(el => revokeTrackedURL(el.dataset.previewUrl));
     modalInitialSnapshot = null;
   }
@@ -556,6 +585,7 @@ async function duplicateTask(taskId) {
     order: maxOrder + 1, createdAt: Date.now(), updatedAt: Date.now(),
     boardId: src.boardId || state.activeBoardId
   };
+  delete copy.reminderTime;
   try { await dbPutTask(copy); }
   catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);

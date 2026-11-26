@@ -49,7 +49,7 @@ function fixture({confirm=true,last=false,saving=false}={}) {
   const ctx={
     state,db,Promise,Set,Error,STORE_TASKS:'tasks',STORE_SETTINGS:'settings',
     STORE_MEDIA:'media',wrapTxError:e=>e,
-    savingTask:saving,switchingBoard:false,importInProgress:false,
+    savingTask:saving,switchingBoard:false,importInProgress:false,undoStack:[],
     getBoard:id=>state.boards.find(x=>x.id===id),
     confirmDialog:async(title,msg)=>{assert.match(msg,/Это нельзя отменить/);return confirm;},
     $:id=>id==='#taskModal'?{classList:{contains:()=>false}}:
@@ -130,3 +130,45 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
   assert.ok(f.toasts.some(x=>x.includes('disk full')));
   console.log('P11: atomic deletion, shared media, cancellation and rollback passed.');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+(async () => {
+  const mediaStart = source.indexOf('async function mediaDeleteUnreferenced(');
+  const mediaEnd = source.indexOf('async function mediaGetAllKeys(', mediaStart);
+  const undoStart = source.indexOf('async function restoreUndo(');
+  const undoEnd = source.indexOf('// ============================================================', undoStart);
+  const deleted = [];
+  let restore;
+  const undoStack = [{
+    id: 'undo', expiresAt: Date.now() + 10000, mediaIds: ['pending-undo'],
+    restore: () => new Promise(resolve => { restore = resolve; })
+  }];
+  const fixture = {
+    undoStack, STORE_TASKS: 'tasks', STORE_MEDIA: 'media', importInProgress: false,
+    db: { transaction(stores, mode) {
+      assert.deepEqual(Array.from(stores), ['tasks', 'media']);
+      assert.equal(mode, 'readwrite');
+      const tx = { objectStore(name) {
+        if (name === 'media') return { delete: key => deleted.push(key) };
+        return { getAll() {
+          const request = {};
+          queueMicrotask(() => {
+            request.result = [{ files: [{ id: 'shared' }] }, { mediaId: 'pre-P18' }];
+            request.onsuccess();
+            tx.oncomplete();
+          });
+          return request;
+        } };
+      } };
+      return tx;
+    } }
+  };
+  vm.runInNewContext(source.slice(mediaStart, mediaEnd) + source.slice(undoStart, undoEnd), fixture);
+  const inFlight = fixture.restoreUndo('undo');
+  await fixture.restoreUndo('undo'); // In-flight undo owns this action.
+  await fixture.mediaDeleteUnreferenced(['shared', 'pre-P18', 'pending-undo', 'orphan']);
+  assert.deepEqual(deleted, ['orphan']);
+  restore(true);
+  await inFlight;
+  assert.equal(undoStack.length, 0);
+  console.log('Attachment cleanup preserves live and legacy references while undo is in progress.');
+})().catch(error => { console.error(error); process.exitCode = 1; });

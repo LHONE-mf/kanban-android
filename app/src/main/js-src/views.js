@@ -547,13 +547,17 @@ async function markTaskDone(taskId) {
 }
 function offerTaskResult(taskId, oldColumnId) {
   const task = state.tasks.find(t => t.id === taskId);
-  if (!task || task.columnId === oldColumnId || state.columns.find(c => c.id === oldColumnId)?.isDone ||
-      !state.columns.find(c => c.id === task.columnId)?.isDone) return;
+  if (!task || task.columnId === oldColumnId) return false;
+  const completed = !state.columns.find(c => c.id === oldColumnId)?.isDone &&
+    state.columns.find(c => c.id === task.columnId)?.isDone;
+  try { globalThis.KanbanHaptics?.postMessage(completed ? 'done' : 'move'); } catch (_) {}
+  if (!completed) return true;
   const boardId = state.activeBoardId;
   showToast('Задача выполнена. Записать результат?', 'Результат', () => {
     if (state.activeBoardId !== boardId || $('#taskModal').classList.contains('open') || drag || savingTask || importInProgress) return;
     if (state.tasks.some(t => t.id === taskId)) openTaskModal(taskId, null, { results: true });
   }, 6500);
+  return true;
 }
 
 function updateTagFilter() {

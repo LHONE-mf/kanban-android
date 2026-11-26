@@ -12,7 +12,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   const frames = new Map(), intervals = new Map();
   let nextFrame = 0, nextInterval = 0;
   const writes = [];
-  const toasts = [], offers = [];
+  const toasts = [], offers = [], haptics = [];
   const hover = {adds:0, removes:0, hits:0};
   let renders = 0, partialMoves = [];
   let prevented = 0, downPrevented = 0, captured = null;
@@ -75,6 +75,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
     drag:null,autoScrollInterval:null,autoScrollDir:{x:0,y:0},
     lastPointer:{x:0,y:0},lastDragEndTime:0,
     window,document,navigator:{},state:{tasks:[t,...descendants]},
+    KanbanHaptics:{postMessage: message => haptics.push(message)},
     isDragAllowed:()=>true,
     $:sel=>{assert.equal(sel,'#board');return board;},
     $$:(sel,root)=>sel==='.task-card'?root.children:
@@ -104,7 +105,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
       return children;
     },
     notifyOtherTabs(){},
-    offerTaskResult:(id,old)=>offers.push([id,old]),
+    offerTaskResult:(id,old)=>{offers.push([id,old]);},
     renderBoard:()=>{renders++;},
     renderMovedTaskColumns:(ids,refresh=[])=>partialMoves.push({ids:Array.from(ids),refresh:Array.from(refresh)}),
     showToast:msg=>{toasts.push(msg);}
@@ -129,7 +130,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   const activate = ()=>{const timer=timers.at(-1);assert.ok(timer&&!timer.cancelled);timer.fn();};
   const up = async(x,y,pointerId=1)=>sandbox.onPointerUp({pointerId,clientX:x,clientY:y});
   const cancel = pointerId=>sandbox.onPointerCancel({pointerId});
-  return {sandbox,board,card,first,second,writes,toasts,offers,hover,down,move,rawMove,flush,tick,frames,intervals,activate,up,cancel,
+  return {sandbox,board,card,first,second,writes,toasts,offers,haptics,hover,down,move,rawMove,flush,tick,frames,intervals,activate,up,cancel,
     get renders(){return renders;},get partialMoves(){return partialMoves;},get prevented(){return prevented;},
     get downPrevented(){return downPrevented;},get captured(){return captured;},timers};
 }
@@ -155,6 +156,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   assert.equal(s.renders,0,'cancelled drag must not rebuild entire board');
   assert.equal(s.partialMoves.length,1,'cancelled drag reconciles touched columns');
   assert.equal(s.writes.length,0,'cancelled drag must never write to storage');
+  assert.deepEqual(s.haptics,['drag']);
 
   s=scenario();
   s.down();s.activate();s.move(370,150);
@@ -168,6 +170,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   s.down();s.activate();s.move(370,150);
   await s.up(370,150);
   assert.equal(s.writes.length,1,'valid cross-column drop persists');
+  assert.deepEqual(s.haptics,['drag','move']);
   assert.deepEqual(s.offers,[['task1','col_a']]);
   assert.equal(s.writes[0].length,1);
   assert.equal(s.writes[0][0].columnId,'col_b');
@@ -190,6 +193,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   await s.up(370,150);
   assert.equal(s.writes.length,1,'failed move still uses only one transaction');
   assert.equal(s.offers.length,0,'failed write cannot offer completion');
+  assert.deepEqual(s.haptics,['drag']);
   assert.ok(s.sandbox.state.tasks.every(t=>t.columnId==='col_a'),
     'failed transaction leaves parent and children unchanged in memory');
   assert.ok(s.toasts.some(message=>message.includes('disk full')),
@@ -207,6 +211,10 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   s.down();await s.up(110,150);
   assert.equal(s.writes.length,0,'a simple tap never changes task order');
   assert.equal(s.renders,0);
+
+  s=scenario();
+  s.down();s.activate();await s.up(110,150);
+  assert.deepEqual(s.haptics,['drag'],'unchanged position gives no success haptic');
 
   // Tablet scenario: touch-action:none on a dedicated grip makes horizontal
   // finger drag deterministic without disabling ordinary touch scrolling.
@@ -240,6 +248,7 @@ function scenario({withDescendants = false, failWrite = false, allowScroll = fal
   assert.equal(s.hover.hits,2,'one placement and one auto-scroll hit-test');
   assert.equal(s.hover.adds,1);
   for(let i=0;i<20;i++)s.move(370,150+i);
+  assert.deepEqual(s.haptics,['drag'],'pointer moves do not send haptics');
   assert.equal(s.hover.adds,1,'same-column hover never reapplies its class');
   assert.equal(s.hover.removes,0,'same-column hover never removes its class');
   s.move(110,150);

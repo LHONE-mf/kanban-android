@@ -410,7 +410,7 @@ async function dbDeleteBoard(boardId, nextBoards, nextActiveBoardId) {
       req.onsuccess = () => {
         try {
           const removedMedia = new Set();
-          const remainingMedia = new Set();
+          const remainingMedia = new Set(undoStack.flatMap(entry => entry.mediaIds || []));
           const mediaIds = task => {
             const ids = Array.isArray(task.files) ? task.files.map(f => f && f.id) : [];
             if (typeof task.mediaId === 'string') ids.push(task.mediaId);
@@ -448,6 +448,32 @@ async function dbGetSettings() {
     req.onerror = () => rej(wrapTxError(req.error));
   });
 }
+function dbReadZipSnapshot() {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_TASKS, STORE_SETTINGS, STORE_MEDIA], 'readonly');
+    const tasks = tx.objectStore(STORE_TASKS).getAll();
+    const settings = tx.objectStore(STORE_SETTINGS).getAll();
+    const media = tx.objectStore(STORE_MEDIA);
+    const records = new Map();
+    tasks.onsuccess = () => {
+      const ids = new Set();
+      for (const task of tasks.result) {
+        for (const file of Array.isArray(task.files) ? task.files : []) {
+          if (typeof file?.id === 'string') ids.add(file.id);
+        }
+        if (!Array.isArray(task.files) && typeof task.mediaId === 'string') ids.add(task.mediaId);
+      }
+      for (const id of ids) {
+        const request = media.get(id);
+        // IndexedDB returns Blob handles. ZIP reads one handle in bounded chunks.
+        request.onsuccess = () => records.set(id, request.result);
+      }
+    };
+    tx.oncomplete = () => resolve({ tasks: tasks.result, records,
+      settings: Object.fromEntries(settings.result.map(row => [row.key, row.value])) });
+    tx.onabort = () => reject(wrapTxError(tx.error));
+  });
+}
 async function dbPutSettingsBulk(entries) {
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_SETTINGS, 'readwrite');
@@ -483,13 +509,34 @@ async function dbReplaceAll(plan) {
       const ts = tx.objectStore(STORE_TASKS);
       const ss = tx.objectStore(STORE_SETTINGS);
       const ms = tx.objectStore(STORE_MEDIA);
+      if (plan.stagedMedia) {
+        const { session, ids } = plan.stagedMedia;
+        // Queue reads before clear; their callbacks queue final writes after clear.
+        for (const id of ids) {
+          const request = ms.get([session, id]);
+          request.onsuccess = () => {
+            try {
+              if (!request.result?.full) throw new Error('Временное вложение отсутствует');
+              ms.put(request.result, id);
+            } catch (error) { failure = error; tx.abort(); }
+          };
+        }
+      }
       ts.clear(); ss.clear(); ms.clear();
       plan.tasks.forEach(t => ts.put(t));
       ss.put({ key: 'boards', value: plan.boards });
       ss.put({ key: 'activeBoardId', value: plan.activeBoardId });
       if (plan.dayPlan) ss.put({ key: 'comrade_day_plan_v1', value: plan.dayPlan });
-      for (const [id, m] of Object.entries(plan.media)) {
-        ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
+      if (plan.settings) {
+        for (const [key, value] of Object.entries(plan.settings)) {
+          if (key !== 'boards' && key !== 'activeBoardId') ss.put({ key, value });
+        }
+      }
+      if (plan.projection) ss.put({ key: ZIP_PROJECTION, value: plan.projection });
+      if (!plan.stagedMedia) {
+        for (const [id, m] of Object.entries(plan.media)) {
+          ms.put({ full: m.full, thumb: m.thumb, type: m.type }, id);
+        }
       }
     } catch (e) {
       failure = e;
@@ -515,11 +562,35 @@ async function mediaGet(id) {
   });
 }
 async function mediaDelete(id) {
+  return mediaDeleteBatch([id]);
+}
+async function mediaDeleteBatch(ids) {
+  if (!ids.length) return;
   return new Promise((res, rej) => {
     const tx = db.transaction(STORE_MEDIA, 'readwrite');
-    tx.objectStore(STORE_MEDIA).delete(id);
+    const media = tx.objectStore(STORE_MEDIA);
+    for (const id of ids) media.delete(id);
     tx.oncomplete = () => res();
     tx.onerror = () => rej(wrapTxError(tx.error));
+  });
+}
+async function mediaDeleteUnreferenced(ids) {
+  if (!ids.length) return;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORE_TASKS, STORE_MEDIA], 'readwrite');
+    const request = tx.objectStore(STORE_TASKS).getAll();
+    const media = tx.objectStore(STORE_MEDIA);
+    const candidates = new Set(ids);
+    request.onsuccess = () => {
+      for (const entry of undoStack) for (const id of entry.mediaIds || []) candidates.delete(id);
+      for (const task of request.result) {
+        if (typeof task.mediaId === 'string') candidates.delete(task.mediaId);
+        for (const file of Array.isArray(task.files) ? task.files : []) candidates.delete(file?.id);
+      }
+      for (const id of candidates) media.delete(id);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(wrapTxError(tx.error));
   });
 }
 async function mediaGetAllKeys() {
@@ -532,26 +603,33 @@ async function mediaGetAllKeys() {
 }
 async function mediaCleanupOrphans() {
   try {
-    if (document.querySelector('.modal.open') || drag) return;
+    if (document.querySelector('.modal.open') || drag || savingTask || importInProgress) return;
     const keys = await mediaGetAllKeys();
-    const used = new Set();
-    Object.values(state._tasksByBoard).forEach(arr => arr.forEach(t => t.files.forEach(f => used.add(f.id))));
-    for (const k of keys) if (!used.has(k) && !pendingMediaDeletes.has(k)) await mediaDelete(k);
+    if (document.querySelector('.modal.open') || drag || savingTask || importInProgress) return;
+    await mediaDeleteUnreferenced(keys.filter(key => !pendingMediaDeletes.has(key)));
   } catch (e) { console.warn('mediaCleanupOrphans', e); }
 }
+const dueMediaDeletes = new Set();
+let mediaDeleteTimer = null;
 function scheduleMediaDelete(mediaId, delay = UNDO_TTL) {
   if (!mediaId) return;
-  const existing = pendingMediaDeletes.get(mediaId);
-  if (existing) clearTimeout(existing);
-  const t = setTimeout(async () => {
+  cancelMediaDelete(mediaId);
+  const t = setTimeout(() => {
     pendingMediaDeletes.delete(mediaId);
     thumbCache.delete(mediaId);
-    try { await mediaDelete(mediaId); } catch (_) {}
+    dueMediaDeletes.add(mediaId);
+    if (mediaDeleteTimer == null) mediaDeleteTimer = setTimeout(() => {
+      mediaDeleteTimer = null;
+      const ids = [...dueMediaDeletes];
+      dueMediaDeletes.clear();
+      void mediaDeleteUnreferenced(ids).catch(() => {});
+    }, 0);
   }, delay);
   pendingMediaDeletes.set(mediaId, t);
 }
 function cancelMediaDelete(mediaId) {
   if (!mediaId) return;
+  dueMediaDeletes.delete(mediaId);
   const t = pendingMediaDeletes.get(mediaId);
   if (t) { clearTimeout(t); pendingMediaDeletes.delete(mediaId); }
 }
@@ -564,23 +642,37 @@ function pushUndo(op) {
   undoStack.push(entry);
   const now = Date.now();
   for (let i = undoStack.length - 1; i >= 0; i--) {
-    if (undoStack[i].expiresAt <= now) {
+    if (!undoStack[i].restoring && undoStack[i].expiresAt <= now) {
       const exp = undoStack.splice(i, 1)[0];
       try { exp.onExpire?.(); } catch (_) {}
     }
   }
   return entry.id;
 }
-function consumeUndo(id) {
-  const idx = undoStack.findIndex(op => op.id === id);
-  if (idx === -1) return null;
-  return undoStack.splice(idx, 1)[0];
+async function restoreUndo(id) {
+  const entry = undoStack.find(op => op.id === id);
+  if (!entry || entry.restoring || importInProgress) return;
+  if (entry.expiresAt <= Date.now()) {
+    undoStack.splice(undoStack.indexOf(entry), 1);
+    entry.onExpire?.();
+    return;
+  }
+  entry.restoring = true;
+  try {
+    if (await entry.restore()) {
+      const index = undoStack.indexOf(entry);
+      if (index !== -1) undoStack.splice(index, 1);
+    }
+  } finally { entry.restoring = false; }
 }
 
 // ============================================================
 // CROSS-TAB SYNC
 // ============================================================
-function notifyOtherTabs() { if (broadcast) broadcast.postMessage({ type: 'changed', at: Date.now() }); }
+function notifyOtherTabs() {
+  if (broadcast) broadcast.postMessage({ type: 'changed', at: Date.now() });
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
+}
 let syncReloadTimer = null;
 function setupBroadcast() {
   if (!broadcast) return;
@@ -662,6 +754,7 @@ function sanitizeTask(t) {
     tags: Array.isArray(t.tags) ? t.tags.map(String).filter(Boolean) : [],
     priority: PRIORITY_LABELS[t.priority] ? t.priority : 'none',
     deadline: typeof t.deadline === 'string' ? t.deadline : (typeof t.dueDate === 'string' ? t.dueDate : ''),
+    ...(/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(t.reminderTime) ? { reminderTime: t.reminderTime } : {}),
     parentId: typeof t.parentId === 'string' ? t.parentId : '',
     files: Array.isArray(t.files)
       ? t.files.filter(f => f && typeof f.id === 'string').map(f => ({ id: f.id, name: String(f.name || 'Файл'), type: String(f.type || ''), size: +f.size || 0, ...(resultIds.has(f.resultId) ? { resultId: f.resultId } : {}), ...(+f.dur ? { dur: +f.dur } : {}), ...(Array.isArray(f.peaks) ? { peaks: f.peaks.slice(0, 96).map(n => Math.max(0, Math.min(100, +n || 0))) } : {}) }))
@@ -791,7 +884,7 @@ async function loadData() {
       boards = [sanitizeBoard({ id: 'board_main', name: 'Моя доска' })];
     }
 
-    if (rawTasks.length === 0) {
+    if (rawTasks.length === 0 && !settings.p19_zip_imported) {
       const legacy = tryLoadLegacyTasks();
       if (legacy && legacy.length) {
         const fallbackBoard = boards[0];
@@ -839,6 +932,7 @@ async function loadData() {
     }
 
     applyActiveBoard();
+    if (globalThis.KanbanTaskReminders) queueTaskReminders();
   } catch (e) {
     console.error('loadData', e);
     showToast('Не удалось загрузить данные: ' + (e.message || ''));
@@ -859,6 +953,7 @@ async function reloadFromDb() {
   applyActiveBoard();
   thumbCache.clear();
   renderBoard();
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
 }
 
 // ============================================================
@@ -1491,13 +1586,17 @@ async function markTaskDone(taskId) {
 }
 function offerTaskResult(taskId, oldColumnId) {
   const task = state.tasks.find(t => t.id === taskId);
-  if (!task || task.columnId === oldColumnId || state.columns.find(c => c.id === oldColumnId)?.isDone ||
-      !state.columns.find(c => c.id === task.columnId)?.isDone) return;
+  if (!task || task.columnId === oldColumnId) return false;
+  const completed = !state.columns.find(c => c.id === oldColumnId)?.isDone &&
+    state.columns.find(c => c.id === task.columnId)?.isDone;
+  try { globalThis.KanbanHaptics?.postMessage(completed ? 'done' : 'move'); } catch (_) {}
+  if (!completed) return true;
   const boardId = state.activeBoardId;
   showToast('Задача выполнена. Записать результат?', 'Результат', () => {
     if (state.activeBoardId !== boardId || $('#taskModal').classList.contains('open') || drag || savingTask || importInProgress) return;
     if (state.tasks.some(t => t.id === taskId)) openTaskModal(taskId, null, { results: true });
   }, 6500);
+  return true;
 }
 
 function updateTagFilter() {
@@ -2034,6 +2133,7 @@ async function deleteTask(taskId) {
   state.tasks.length = 0; state.tasks.push(...kept);
   const files = gone.flatMap(t => t.files);
   const undoId = pushUndo({
+    mediaIds: files.map(f => f.id),
     onExpire: () => files.forEach(f => scheduleMediaDelete(f.id, 0)),
     restore: async () => {
       if (root.boardId && root.boardId !== state.activeBoardId) await switchBoard(root.boardId);
@@ -2046,10 +2146,7 @@ async function deleteTask(taskId) {
     }
   });
   notifyOtherTabs(); renderTaskCollectionChange(root, true, rootBeforeRemoval);
-  showToast(`Удалено: «${truncate(root.title, 40)}»${gone.length > 1 ? ` и ещё ${gone.length - 1}` : ''}`, 'Вернуть', async () => {
-    const op = consumeUndo(undoId);
-    if (op) await op.restore();
-  }, 5000);
+  showToast(`Удалено: «${truncate(root.title, 40)}»${gone.length > 1 ? ` и ещё ${gone.length - 1}` : ''}`, 'Вернуть', () => restoreUndo(undoId), 5000);
 }
 
 // ============================================================
@@ -2060,7 +2157,8 @@ function captureModalSnapshot() {
     title: $('#taskTitle').value, desc: $('#taskDesc').value, tags: $('#taskTags').value,
     deadline: $('#taskDeadline').value, priority: editingPriority, checklist: tempChecklist,
     results: tempResults,
-    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || ''])
+    parent: $('#taskParent').value, files: tempFiles.map(f => [f.id, f.name, f.resultId || '']), nf: newFiles.map(f => [f._name || f.name, f.size, f._resultId || '']),
+    reminder: globalThis.KanbanTaskReminders && $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : ''
   });
 }
 function openTaskModal(taskId = null, columnId = null, opts = {}) {
@@ -2080,6 +2178,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
   const colIdEl = $('#taskColumnId');
   const fileInput = $('#taskFile');
   const deleteBtn = $('#deleteTaskBtn');
+  let reminder = '';
 
   titleEl.value = ''; descEl.value = ''; deadlineEl.value = ''; tagsEl.value = '';
   fileInput.value = '';
@@ -2096,6 +2195,7 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     tempChecklist = task.checklist.map(c => ({ ...c })); renderChecklistUI();
     tempFiles = task.files.map(f => ({ ...f }));
     tempResults = (task.results || []).map(r => ({ ...r }));
+    reminder = task.reminderTime || '';
     fillParentSelect(task, task.columnId);
     renderNestedNodes(task.id);
     deleteBtn.style.display = 'inline-flex';
@@ -2111,11 +2211,21 @@ function openTaskModal(taskId = null, columnId = null, opts = {}) {
     $('#dupTaskBtn').style.display = 'none';
   }
 
+  if (globalThis.KanbanTaskReminders) {
+    const enabled = $('#taskReminderEnabled'), time = $('#taskReminderTime');
+    $('#taskReminderField').hidden = false;
+    enabled.checked = !!reminder;
+    time.value = reminder || '09:00';
+    enabled.onchange = () => { time.hidden = !enabled.checked; };
+    enabled.onchange();
+  }
+
   renderTaskResults();
   renderFiles();
   $('#addTaskResultBtn').onclick = addTaskResult;
   modalInitialSnapshot = captureModalSnapshot();
   modal.classList.add('open');
+  if (typeof refreshVoiceDrafts === 'function') refreshVoiceDrafts();
   setTimeout(() => {
     if (opts.results) {
       $('#taskResultsField').scrollIntoView({ block: 'start' });
@@ -2148,7 +2258,7 @@ function renderTaskResults() {
     remove.textContent = 'Удалить';
     remove.setAttribute('aria-label', 'Удалить результат ' + (index + 1));
     remove.onclick = () => {
-      if (savingTask || rec.mr || rec.starting || rec.finishing) return;
+      if (savingTask || rec.id) return;
       tempResults.splice(index, 1);
       tempFiles = tempFiles.filter(f => f.resultId !== entry.id);
       newFiles = newFiles.filter(f => f._resultId !== entry.id);
@@ -2197,7 +2307,7 @@ function renderTaskResults() {
   }
 }
 function addTaskResult() {
-  if (savingTask || rec.mr || rec.starting || rec.finishing) return;
+  if (savingTask || rec.id) return;
   const now = Date.now();
   tempResults.push({ id: 'result_' + generateId(), text: '', createdAt: now, updatedAt: now });
   renderTaskResults();
@@ -2310,18 +2420,25 @@ function renderFiles() {
 }
 async function storeFile(file) {
   let blob = file, thumb = null, type = file.type || 'application/octet-stream';
-  if (/^image\/(jpeg|png|webp|heic|heif)$/.test(type)) {
-    try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) { blob = file; }
+  const processablePhoto = /^image\/(jpeg|png|webp|heic|heif)$/.test(type);
+  const nativePhoto = processablePhoto && globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID;
+  if (nativePhoto) {
+    try { ({ blob, thumb } = await processNativePhoto(file)); type = blob.type; } catch (_) {}
+  } else {
+    if (processablePhoto) {
+      try { blob = await compressImage(file, IMG_MAX_DIM, IMG_QUALITY); type = blob.type; } catch (_) {}
+    }
+    if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   }
-  if (type.startsWith('image/')) { try { thumb = await generateThumb(blob, IMG_THUMB_DIM, 0.78); } catch (_) {} }
   // Decode audio before storing: a decoder error must not create orphaned media.
   const meta = type.startsWith('audio/') ? await prepAudio(file) : null;
-  const id = 'm_' + generateId();
+  const id = file._voiceDraft ? 'm_voice_' + file._voiceDraft : 'm_' + generateId();
   await mediaPut(id, blob, thumb, type);
   const originalName = file._name || file.name || 'Файл';
-  // An encoded WebP must not retain a misleading .png/.heic extension.
-  const name = blob !== file && type === 'image/webp' && !/\.webp$/i.test(originalName)
-    ? originalName.replace(/\.[^./]+$/, '') + '.webp' : originalName;
+  const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif' }[type];
+  const name = type !== file.type && extension && !(type === 'image/jpeg' && /\.jpe?g$/i.test(originalName)) &&
+    !originalName.toLowerCase().endsWith('.' + extension)
+    ? originalName.replace(/\.[^./]+$/, '') + '.' + extension : originalName;
   return { id, name, type, size: blob.size, ...(file._resultId ? { resultId: file._resultId } : {}), ...(meta && meta.dur ? { dur: meta.dur } : {}), ...(meta && meta.peaks ? { peaks: meta.peaks } : {}) };
 }
 async function editAttachmentExternally(f) {
@@ -2444,7 +2561,8 @@ function openFileViaAndroid(blob, file) {
 }
 async function openFile(f, title) {
   if (/^(image|video)\//.test(f.type)) {
-    const galleryFiles = tempFiles.some(file => file.id === f.id) ? tempFiles : [f];
+    const galleryFiles = tempFiles.some(file => file.id === f.id)
+      ? tempFiles.filter(file => (file.resultId || '') === (f.resultId || '')) : [f];
     return openLightbox({ title, files: galleryFiles }, f);
   }
   const m = await mediaGet(f.id).catch(() => null);
@@ -2487,14 +2605,21 @@ async function _saveTask() {
   if (parentId && !par) { showToast('Родитель не найден'); return; }
   const columnId = par ? par.columnId : pv.slice(4);
   const existing = editingTaskId ? state.tasks.find(t => t.id === editingTaskId) : null;
+  let reminderTime = existing?.reminderTime || '';
+  if (globalThis.KanbanTaskReminders) {
+    reminderTime = $('#taskReminderEnabled').checked ? $('#taskReminderTime').value : '';
+    if ($('#taskReminderEnabled').checked && (!deadline || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(reminderTime))) {
+      showToast('Укажите срок и время напоминания');
+      return;
+    }
+  }
 
   if (rec.starting) { showToast('Дождитесь доступа к микрофону'); return; }
-  if (rec.mr) await recStop();
-  else if (rec.finishing) await rec.done;
+  if (rec.id && !(await recStop())) return;
   const stored = [];
   try { for (const f of newFiles) stored.push(await storeFile(f)); }
   catch (e) {
-    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    if (stored.length) await mediaDeleteUnreferenced(stored.map(x => x.id)).catch(() => {});
     showToast('Не удалось сохранить файл: ' + (e.message || e)); return;
   }
   const files = [...tempFiles, ...stored];
@@ -2507,6 +2632,7 @@ async function _saveTask() {
     columnId, parentId, title, desc: $('#taskDesc').value.trim(),
     tags: $('#taskTags').value.split(',').map(t => t.trim()).filter(Boolean),
     priority: editingPriority, deadline, files,
+    ...(reminderTime ? { reminderTime } : {}),
     results: tempResults.filter(r => r.text.trim() || attachedResults.has(r.id)).map(r => ({ ...r, text: r.text.trim() })),
     checklist: tempChecklist.map(c => ({ id: c.id, text: c.text.trim(), checked: !!c.checked })).filter(c => c.text),
     order: !moved ? existing.order : (sib.length ? Math.min(...sib.map(t => t.order ?? 0)) - 1 : 0),
@@ -2519,9 +2645,10 @@ async function _saveTask() {
     : [];
   try { await dbPutTasks([candidate, ...descendants]); }
   catch (e) {
-    await Promise.all(stored.map(x => mediaDelete(x.id).catch(() => {})));
+    if (stored.length) await mediaDeleteUnreferenced(stored.map(x => x.id)).catch(() => {});
     showToast('Не удалось сохранить: ' + e.message, null, null, 5000); return;
   }
+  for (const file of newFiles) if (file._voiceDraft) forgetVoiceDraft(file._voiceDraft);
 
   const idx = existing ? state.tasks.findIndex(t => t.id === candidate.id) : -1;
   if (idx > -1) state.tasks[idx] = candidate; else state.tasks.push(candidate);
@@ -2531,6 +2658,7 @@ async function _saveTask() {
   }
   if (existing) existing.files.filter(f => !files.some(x => x.id === f.id)).forEach(f => scheduleMediaDelete(f.id));
   closeModal('taskModal'); notifyOtherTabs();
+  if (globalThis.KanbanTaskReminders && reminderTime && reminderTime !== existing?.reminderTime) queueTaskReminders(true);
   if (existing && !existing.parentId && !candidate.parentId &&
       existing.columnId !== candidate.columnId)
     renderMovedTaskColumns([existing.columnId, candidate.columnId], [candidate.id]);
@@ -2539,7 +2667,7 @@ async function _saveTask() {
   if (existing && typeof offerTaskResult === 'function') offerTaskResult(candidate.id, existing.columnId);
 }
 
-function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.mr || !!rec.starting || !!rec.finishing || modalInitialSnapshot !== captureModalSnapshot()); }
+function isModalDirty() { return modalInitialSnapshot !== null && (!!rec.id || modalInitialSnapshot !== captureModalSnapshot()); }
 async function tryCloseTaskModal() {
   if (savingTask) { showToast('Дождитесь сохранения задачи'); return; }
   if (isModalDirty()) {
@@ -2556,7 +2684,7 @@ function closeModal(id) {
     lastFocusBeforeModal = null;
   }
   if (id === 'taskModal') {
-    recAbort(); apStop('modal');
+    recAbort(false); apStop('modal');
     $('#mediaPreview').querySelectorAll('[data-preview-url]').forEach(el => revokeTrackedURL(el.dataset.previewUrl));
     modalInitialSnapshot = null;
   }
@@ -2578,6 +2706,7 @@ async function duplicateTask(taskId) {
     order: maxOrder + 1, createdAt: Date.now(), updatedAt: Date.now(),
     boardId: src.boardId || state.activeBoardId
   };
+  delete copy.reminderTime;
   try { await dbPutTask(copy); }
   catch (e) { await discardCopies(); showToast('Не удалось дублировать: ' + e.message); return; }
   state.tasks.push(copy);
@@ -2610,6 +2739,36 @@ function releaseFocusTrap(modalEl) {
 // ============================================================
 // IMAGE PROCESSING
 // ============================================================
+async function processNativePhoto(file) {
+  const id = crypto.randomUUID();
+  try {
+    const info = await stageNativeMedia(id, file, () => true, { operation: 'photo' });
+    const formats = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+    if (!formats.includes(info.originalMime) || !['image/jpeg', 'image/webp'].includes(info.mime) ||
+        !Number.isSafeInteger(info.thumbSize) || info.thumbSize <= 0 || info.thumbSize > 1024 * 1024 ||
+        !Number.isSafeInteger(info.fullSize) || info.fullSize < 0 || info.fullSize >= file.size) {
+      throw new Error('Некорректный результат обработки фото');
+    }
+    const read = async (kind, size) => {
+      const response = await fetch('/native-media/' + id + '/' + kind, { cache: 'no-store' });
+      if (!response.ok) throw new Error('Файл фото недоступен');
+      const blob = await response.blob();
+      if (blob.size !== size || blob.type !== info.mime) throw new Error('Фото передано не полностью');
+      return blob;
+    };
+    const preview = await read('thumb', info.thumbSize);
+    const thumb = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Не удалось прочитать миниатюру'));
+      reader.readAsDataURL(preview);
+    });
+    const blob = info.fullSize > 0 ? await read('full', info.fullSize) :
+      file.type === info.originalMime ? file : file.slice(0, file.size, info.originalMime);
+    return { blob, thumb };
+  } finally { mediaDiscard(id); }
+}
+
 async function compressImage(file, maxDim, quality) {
   const targetSize = 2 * 1024 * 1024;
   // Retain original small files, including PNG alpha and EXIF metadata.
@@ -2687,6 +2846,53 @@ const lightboxGallery = {
   files: [], title: '', index: 0, zoom: 1, panX: 0, panY: 0,
   pointers: new Map(), gesture: null
 };
+let nativeGallery = null;
+
+async function fallbackGallery(gallery, index) {
+  if (nativeGallery !== gallery) return;
+  clearTimeout(gallery.timer);
+  if (gallery.request) mediaDiscard(gallery.request);
+  nativeGallery = null;
+  try { globalThis.KanbanGallery.postMessage(JSON.stringify({ id: gallery.id, type: 'close' })); } catch (_) {}
+  lightboxGallery.index = index;
+  await showLightboxItem();
+}
+
+globalThis.kanbanGalleryResult = async raw => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const gallery = nativeGallery;
+  if (!gallery || gallery.id !== event.id) return;
+  clearTimeout(gallery.timer);
+  if (event.type === 'closed') {
+    if (gallery.request) mediaDiscard(gallery.request);
+    nativeGallery = null;
+    return;
+  }
+  const file = gallery.files[event.index];
+  if (!Number.isInteger(event.index) || !file) return;
+  if (event.type === 'fallback') { await fallbackGallery(gallery, event.index); return; }
+  if (event.type === 'external') {
+    try {
+      const blob = (await mediaGet(file.id))?.full;
+      if (!blob) throw new Error('Файл не найден');
+      if (nativeGallery === gallery) await openFileViaAndroid(blob, file);
+    } catch (error) { showToast('Не удалось открыть файл: ' + error.message); }
+    return;
+  }
+  if (event.type !== 'request' || typeof event.request !== 'string') return;
+  if (gallery.request) mediaDiscard(gallery.request);
+  const request = gallery.request = event.request;
+  const current = () => nativeGallery === gallery && gallery.request === request;
+  try {
+    const blob = (await mediaGet(file.id))?.full;
+    if (!current()) return;
+    if (!blob) throw new Error('Файл не найден');
+    await stageNativeMedia(request, blob, current, {
+      operation: file.type.startsWith('video/') ? 'gallery-video' : 'gallery-image'
+    });
+  } catch (_) { if (current()) await fallbackGallery(gallery, event.index); }
+};
 
 async function openLightbox(task, selected) {
   const files = (task.files || []).filter(f => /^(image|video)\//.test(f.type));
@@ -2695,6 +2901,19 @@ async function openLightbox(task, selected) {
   lightboxGallery.files = files.some(f => f.id === file.id) ? files : [file];
   lightboxGallery.index = Math.max(0, lightboxGallery.files.findIndex(f => f.id === file.id));
   lightboxGallery.title = task.title || '';
+  const bridge = globalThis.KanbanGallery;
+  if (bridge?.postMessage && lightboxGallery.files.length <= 5000) {
+    apStop();
+    const id = generateId(), index = lightboxGallery.index;
+    const gallery = { id, files: lightboxGallery.files, request: null };
+    nativeGallery = gallery;
+    gallery.timer = setTimeout(() => void fallbackGallery(gallery, index), 3000);
+    try {
+      bridge.postMessage(JSON.stringify({ id, type: 'open', index, size: gallery.files.length,
+        title: lightboxGallery.title.slice(0, 200) }));
+      return;
+    } catch (_) { await fallbackGallery(gallery, index); return; }
+  }
   await showLightboxItem();
 }
 
@@ -3165,7 +3384,258 @@ function saveBackupViaAndroid(blob, name) {
   });
 }
 
+const ZIP_PROJECTION = 'p19_zip_projection';
+const ZIP_IMPORTED = 'p19_zip_imported';
+const zipMime = /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i;
+const zipThumbMime = /^image\/(?:jpeg|png|webp)$/;
+const zipId = value => typeof value === 'string' && value.length > 0 && value.length <= 4096 && !value.includes('\0');
+const zipObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const zipWebKey = key => JAPANESE_BACKUP_KEYS.includes(key) || key === 'kanban_theme' || key === 'kanban_ui' ||
+  key.startsWith('kanban_collapsed_') || key.startsWith('kanban_mindmap_positions_');
+const canUseZip = () => !!(globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID);
+let zipActive = false;
+
+let pomoArchivePending = null;
+globalThis.kanbanPomoBackupResult = raw => {
+  let result;
+  try { result = JSON.parse(raw); } catch (_) { return; }
+  if (result.id === pomoArchivePending?.id) pomoArchivePending.finish(result);
+};
+function pomodoroArchive(type, state) {
+  return new Promise((resolve, reject) => {
+    if (pomoArchivePending || !globalThis.KanbanPomo?.postMessage) { reject(new Error('Android Pomodoro недоступен')); return; }
+    const id = generateId();
+    const finish = result => {
+      clearTimeout(timer);
+      pomoArchivePending = null;
+      if (result.error) reject(new Error(result.error)); else resolve(result.backup);
+    };
+    const timer = setTimeout(() => finish({ error: 'Pomodoro не ответил' }), 7000);
+    pomoArchivePending = { id, finish };
+    try { globalThis.KanbanPomo.postMessage(JSON.stringify({ id, type, state })); }
+    catch (error) { finish({ error: error.message }); }
+  });
+}
+function zipStep(id, command, expected, fields = {}, timeout) {
+  return mediaStep(id, expected, () => mediaCommand(id, command, fields), timeout);
+}
+function cancelZip(id) {
+  try { mediaCommand(id, 'zip-cancel'); } catch (_) {}
+}
+async function zipWrite(id, path, blob) {
+  await zipStep(id, 'zip-entry', 'entry', { path, size: blob.size });
+  await sendMediaChunks(id, blob);
+  await zipStep(id, 'zip-entry-end', 'entry-end');
+}
+async function exportZipData(prepareSnapshot = false) {
+  if (zipActive || importInProgress || savingTask) { showToast('Дождитесь завершения текущей операции'); return; }
+  zipActive = true;
+  const id = crypto.randomUUID();
+  try {
+    const { tasks: storedTasks, settings, records } = await dbReadZipSnapshot();
+    if (settings[ZIP_PROJECTION]) throw new Error('Дождитесь завершения восстановления');
+    delete settings[ZIP_PROJECTION];
+    const tasks = prepareSnapshot ? storedTasks : storedTasks.map(sanitizeTask);
+    const boards = settings.boards;
+    const activeBoardId = settings.activeBoardId;
+    const media = [];
+    const web = {};
+    for (let index = 0; index < localStorage.length; index++) {
+      const key = localStorage.key(index);
+      if (zipWebKey(key)) web[key] = localStorage.getItem(key);
+    }
+    const nativeJapanese = await nativeJapaneseCommand('read');
+    const pomo = await pomodoroArchive('backup-read');
+    const name = 'comrade-backup-' + todayISO() + '.zip';
+    await zipStep(id, 'zip-export', 'begin', { name });
+    const seen = new Set();
+    for (const task of tasks) for (const attachment of task.files || []) {
+      if (seen.has(attachment.id)) continue;
+      seen.add(attachment.id);
+      const record = records.get(attachment.id);
+      if (!record?.full) throw new Error('Вложение отсутствует: ' + attachment.name);
+      const base = 'media/' + String(media.length).padStart(6, '0');
+      const mime = record.type || record.full.type || 'application/octet-stream';
+      const entry = { id: attachment.id, mime, path: base + '.bin', size: record.full.size };
+      await zipWrite(id, entry.path, record.full);
+      if (typeof record.thumb === 'string' && /^data:image\/(?:jpeg|png|webp);base64,/.test(record.thumb)) {
+        const blob = await (await fetch(record.thumb)).blob();
+        entry.thumb = { mime: blob.type, path: base + '.thumb', size: blob.size };
+        await zipWrite(id, entry.thumb.path, blob);
+      }
+      media.push(entry);
+    }
+    const snapshot = { version: 1, boards, activeBoardId, tasks, settings, media, web, nativeJapanese, pomo };
+    validateZipState(snapshot, ['state.json', ...media.flatMap(file => file.thumb ? [file.path, file.thumb.path] : [file.path])]);
+    await zipWrite(id, 'state.json', new Blob([JSON.stringify(snapshot)], { type: 'application/json' }));
+    if (prepareSnapshot) {
+      const result = await zipStep(id, 'zip-snapshot', 'snapshot-ready', {}, 600000);
+      showToast(`Снимок SQLite проверен. Задач: ${result.tasks}. Вложений: ${result.media}.`, null, null, 7000);
+    } else {
+      const result = await mediaStep(id, ['saved', 'cancelled'], () => mediaCommand(id, 'zip-seal'), 600000);
+      if (result.type === 'saved') showToast('ZIP-бэкап сохранён');
+    }
+  } catch (error) { showToast((prepareSnapshot ? 'Проверка SQLite не завершена. ' : 'Не удалось сохранить ZIP. ') + error.message, null, null, 6000); }
+  finally { cancelZip(id); zipActive = false; }
+}
+
+async function verifySQLiteSnapshot() {
+  if (!canUseZip()) return;
+  if (await confirmDialog('Проверка SQLite', 'Android создаст приватную копию досок и вложений и проверит её. Приложение продолжит работать с текущими данными.')) {
+    await exportZipData(true);
+  }
+}
+
+function validateZipState(data, entryNames) {
+  const requireValid = value => { if (!value) throw new Error('Повреждены метаданные ZIP'); };
+  requireValid(zipObject(data) && data.version === 1 && Array.isArray(data.boards) &&
+    data.boards.length > 0 && Array.isArray(data.tasks) && Array.isArray(data.media) &&
+    zipObject(data.settings) && zipObject(data.web));
+  const entries = new Set(entryNames);
+  requireValid(entries.size === entryNames.length && entries.delete('state.json'));
+  const media = new Map();
+  for (const file of data.media) {
+    requireValid(zipObject(file) && zipId(file.id) && !media.has(file.id) && zipMime.test(file.mime) &&
+      typeof file.path === 'string' && /^media\/[0-9]{6}\.bin$/.test(file.path) && entries.delete(file.path) &&
+      Number.isSafeInteger(file.size) && file.size >= 0 && file.size <= MAX_VIDEO_SIZE);
+    if (file.thumb != null) requireValid(zipObject(file.thumb) &&
+      file.thumb.path === file.path.replace(/\.bin$/, '.thumb') && entries.delete(file.thumb.path) &&
+      zipThumbMime.test(file.thumb.mime) && Number.isSafeInteger(file.thumb.size) && file.thumb.size > 0 && file.thumb.size <= 1048576);
+    media.set(file.id, file);
+  }
+  requireValid(entries.size === 0);
+  const columns = new Map();
+  for (const board of data.boards) {
+    requireValid(zipObject(board) && zipId(board.id) && !columns.has(board.id) &&
+      Array.isArray(board.columns) && board.columns.length > 0);
+    const ids = new Set();
+    for (const column of board.columns) {
+      requireValid(zipObject(column) && zipId(column.id) && !ids.has(column.id));
+      ids.add(column.id);
+    }
+    columns.set(board.id, ids);
+  }
+  requireValid(columns.has(data.activeBoardId));
+  const byId = new Map(), used = new Set();
+  const tasks = [];
+  for (const raw of data.tasks) {
+    requireValid(zipObject(raw) && zipId(raw.id) && !byId.has(raw.id) && columns.get(raw.boardId)?.has(raw.columnId) &&
+      typeof raw.parentId === 'string' && Array.isArray(raw.files) && typeof raw.deadline === 'string' &&
+      isValidISODate(raw.deadline));
+    const results = new Set(), checklist = new Set();
+    for (const result of raw.results || []) {
+      requireValid(zipObject(result) && zipId(result.id) && !results.has(result.id) && typeof result.text === 'string');
+      results.add(result.id);
+    }
+    for (const item of raw.checklist || []) {
+      requireValid(zipObject(item) && zipId(item.id) && !checklist.has(item.id) && typeof item.text === 'string');
+      checklist.add(item.id);
+    }
+    for (const file of raw.files) {
+      requireValid(zipObject(file) && media.has(file.id) && (!file.resultId || results.has(file.resultId)));
+      used.add(file.id);
+    }
+    const task = sanitizeTask(raw);
+    requireValid(task.files.length === raw.files.length && task.results.length === results.size &&
+      task.checklist.length === checklist.size);
+    byId.set(task.id, task);
+    tasks.push(task);
+  }
+  requireValid(used.size === media.size);
+  const checked = new Set();
+  for (const task of tasks) {
+    const path = new Set();
+    let node = task;
+    while (node && !checked.has(node.id)) {
+      requireValid(!path.has(node.id));
+      path.add(node.id);
+      if (!node.parentId) break;
+      const parent = byId.get(node.parentId);
+      requireValid(parent && parent.boardId === node.boardId && parent.columnId === node.columnId);
+      node = parent;
+    }
+    for (const id of path) checked.add(id);
+  }
+  for (const [key, value] of Object.entries(data.web)) {
+    requireValid(zipWebKey(key) && key.length <= 4096 && typeof value === 'string' && value.length <= 2_000_000);
+  }
+  validateJapaneseBackup(Object.fromEntries(Object.entries(data.web).filter(([key]) => JAPANESE_BACKUP_KEYS.includes(key))));
+  const nativeJapanese = validateNativeJapaneseBackup(data.nativeJapanese);
+  const pomo = data.pomo;
+  requireValid(zipObject(pomo) && ['focus', 'break'].includes(pomo.mode) && typeof pomo.running === 'boolean' &&
+    Number.isSafeInteger(pomo.remaining) && pomo.remaining >= 0 && pomo.remaining <= (pomo.mode === 'focus' ? 1500000 : 300000) &&
+    typeof pomo.day === 'string' && !!pomo.day && isValidISODate(pomo.day) && Number.isSafeInteger(pomo.sessions) &&
+    pomo.sessions >= 0 && Number.isSafeInteger(pomo.end) && pomo.end >= 0);
+  for (const key of Object.keys(data.settings)) requireValid(zipId(key) && ![ZIP_PROJECTION, '__proto__', 'prototype', 'constructor'].includes(key));
+  const settings = { ...data.settings, [ZIP_IMPORTED]: true };
+  if (settings.comrade_day_plan_v1 != null) {
+    const plan = settings.comrade_day_plan_v1;
+    requireValid(zipObject(plan) && typeof plan.date === 'string' && isValidISODate(plan.date) && Array.isArray(plan.ids));
+  }
+  return { boards: data.boards.map(sanitizeBoard), activeBoardId: data.activeBoardId, tasks, media, settings,
+    projection: { web: data.web, nativeJapanese, pomo } };
+}
+async function projectZipState(projection) {
+  if (!projection) return;
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (zipWebKey(key) && !Object.hasOwn(projection.web, key)) localStorage.removeItem(key);
+  }
+  for (const [key, value] of Object.entries(projection.web)) localStorage.setItem(key, value);
+  if (projection.nativeJapanese && await nativeJapaneseCommand('restore', projection.nativeJapanese) !== true)
+    throw new Error('Android не подтвердил восстановление японского');
+  await pomodoroArchive('backup-restore', projection.pomo);
+  await dbPutSettingsBulk([[ZIP_PROJECTION, null]]);
+}
+async function importZipData(file) {
+  if (!canUseZip() || zipActive) { showToast('Импорт ZIP доступен в Android и требует свободного приложения'); return; }
+  zipActive = true;
+  const id = crypto.randomUUID();
+  const read = async path => {
+    const response = await fetch('/native-backup/' + id + '/' + path, { cache: 'no-store' });
+    if (!response.ok) throw new Error('Не удалось прочитать проверенный архив');
+    return response;
+  };
+  let committed = false;
+  const stagedIds = [];
+  try {
+    await zipStep(id, 'zip-import', 'begin', { size: file.size });
+    await sendMediaChunks(id, file);
+    const verified = await zipStep(id, 'zip-validate', 'verified', {}, 300000);
+    const plan = validateZipState(await (await read('state.json')).json(), verified.entries);
+    if (!await confirmDialog('Восстановить ZIP-бэкап',
+      `Текущие данные будут заменены на ${plan.boards.length} досок и ${plan.tasks.length} задач из файла.`)) return;
+    if (taskEditorBlocksImport()) throw new Error('Сначала завершите редактирование задачи');
+    for (const item of plan.media.values()) {
+      const full = await (await read(item.path)).blob();
+      if (full.size !== item.size) throw new Error('Вложение передано не полностью');
+      let thumb = null;
+      if (item.thumb) {
+        const preview = await (await read(item.thumb.path)).blob();
+        if (preview.size !== item.thumb.size) throw new Error('Миниатюра передана не полностью');
+        thumb = await blobToBase64(preview.slice(0, preview.size, item.thumb.mime));
+      }
+      await mediaPut([id, item.id], full.slice(0, full.size, item.mime), thumb, item.mime);
+      stagedIds.push(item.id);
+    }
+    await dbReplaceAll({ ...plan, stagedMedia: { session: id, ids: stagedIds } });
+    committed = true;
+    await projectZipState(plan.projection);
+    location.reload();
+  } catch (error) {
+    if (!committed) alert('Импорт ZIP отменён. Данные сохранены. ' + error.message);
+    else { alert('Данные ZIP сохранены. Приложение завершит восстановление настроек при запуске.'); location.reload(); }
+  } finally {
+    cancelZip(id);
+    if (!committed && stagedIds.length) {
+      try { await mediaDeleteBatch(stagedIds.map(mediaId => [id, mediaId])); } catch (_) {}
+    }
+    zipActive = false;
+  }
+}
+
 async function exportData() {
+  if (canUseZip()) return exportZipData();
   try {
     const allTasks = Object.values(state._tasksByBoard).flat();
     const settings = await dbGetSettings();
@@ -3447,7 +3917,7 @@ function restoreJapaneseImportSnapshot(previous) {
 // Only one import may read, confirm, restore progress or replace data at a time.
 let importInProgress = false;
 function taskEditorBlocksImport() {
-  return savingTask || switchingBoard || $('#taskModal').classList.contains('open');
+  return savingTask || switchingBoard || undoStack.some(entry => entry.restoring) || $('#taskModal').classList.contains('open');
 }
 async function handleImport(file) {
   if (!file) return;
@@ -3461,6 +3931,7 @@ async function handleImport(file) {
   finally { importInProgress = false; }
 }
 async function importSingleFile(file) {
+  if (/\.zip$/i.test(file.name || '') || file.type === 'application/zip') return importZipData(file);
   let data;
   try { data = JSON.parse(await file.text()); }
   catch (e) { alert('Неверный JSON: ' + e.message); return; }
@@ -3550,6 +4021,7 @@ async function importSingleFile(file) {
   renderBoard();
   saveUIState();
 
+  if (globalThis.KanbanTaskReminders) queueTaskReminders();
   const suffix = totalWarn ? ` (${totalWarn} предупр.)` : '';
   showToast(`Импортировано: ${plan.tasks.length} задач в ${plan.boards.length} досках${suffix}`,
     null, null, 5500);
@@ -3618,7 +4090,7 @@ function startDrag() {
   $('#board').classList.add('is-dragging');
   document.body.style.userSelect = 'none';
   document.addEventListener('touchmove', preventTouch, { passive: false });
-  if (navigator.vibrate) { try { navigator.vibrate(8); } catch (_) {} }
+  try { globalThis.KanbanHaptics?.postMessage('drag'); } catch (_) {}
   updateDropTarget(lastPointer.x, lastPointer.y);
 }
 function preventTouch(e) { if (drag && drag.active) e.preventDefault(); }
@@ -3737,11 +4209,14 @@ async function onPointerUp(e) {
           if (idx !== undefined) currentTasks[idx] = cand;
         }
         notifyOtherTabs();
-        committed = true;
+        committed = updates.length > 0;
       } catch (err) { showToast('Не удалось сохранить порядок: ' + err.message); }
     }
     renderMovedTaskColumns(touched, list ? [taskId] : []);
-    if (committed && typeof offerTaskResult === 'function') offerTaskResult(taskId, sourceColumnId);
+    if (committed) {
+      const feedbackSent = typeof offerTaskResult === 'function' && offerTaskResult(taskId, sourceColumnId);
+      if (!feedbackSent) try { globalThis.KanbanHaptics?.postMessage('move'); } catch (_) {}
+    }
   } else {
     drag = null;
   }
@@ -3889,6 +4364,11 @@ function bindEvents() {
   window.addEventListener('resize', () => { if (window.innerWidth > 960) closeHeaderMenu(); });
   $('#themeBtn').onclick = toggleTheme;
   $('#exportBtn').onclick = exportData;
+  const verifySQLite = $('#verifySQLiteBtn');
+  if (verifySQLite && canUseZip()) {
+    verifySQLite.hidden = false;
+    verifySQLite.onclick = verifySQLiteSnapshot;
+  }
   $('#exportCsvBtn').onclick = exportCsv;
   $('#importBtn').onclick = () => $('#importFile').click();
   $('#importFile').onchange = (e) => {
@@ -4289,8 +4769,8 @@ const POMO_LEN = { focus: 1500, break: 300 };
 const pomo = { mode: 'focus', left: POMO_LEN.focus, end: 0, running: false, sessions: 0 };
 const mmss = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 function pomoSave() { try { localStorage.setItem('kanban_pomo', JSON.stringify({ day: todayISO(), sessions: pomo.sessions, mode: pomo.mode, left: pomo.left, end: pomo.end, running: pomo.running })); } catch (_) {} }
-function pomoRender() {
-  const left = pomo.running ? Math.max(0, Math.ceil((pomo.end - Date.now()) / 1000)) : pomo.left;
+function pomoRender(now = Date.now()) {
+  const left = pomo.running ? Math.max(0, Math.ceil((pomo.end - now) / 1000)) : pomo.left;
   $('#pomoTime').textContent = mmss(left);
   $('#pomoMode').textContent = (pomo.mode === 'focus' ? 'Фокус' : 'Перерыв') + ' · 🍅 сегодня: ' + pomo.sessions;
   $('#pomoToggle').textContent = pomo.running ? '⏸' : '▶';
@@ -4304,12 +4784,13 @@ function pomoBeep() {
     o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.08;
     o.start(); o.stop(c.currentTime + 0.35);
   } catch (_) {}
-  if (navigator.vibrate) try { navigator.vibrate([200, 100, 200]); } catch (_) {}
+  try { globalThis.KanbanHaptics?.postMessage('done'); } catch (_) {}
 }
 function pomoSwitch() { pomo.running = false; pomo.mode = pomo.mode === 'focus' ? 'break' : 'focus'; pomo.left = POMO_LEN[pomo.mode]; pomoSave(); pomoRender(); }
 function initPomo() {
-  try { const s = JSON.parse(localStorage.getItem('kanban_pomo') || '{}'); if (s.day === todayISO()) pomo.sessions = s.sessions | 0; if (['focus','break'].includes(s.mode)) { pomo.mode = s.mode; pomo.left = Math.max(0, Math.min(86400, Number(s.left) || POMO_LEN[pomo.mode])); if (s.running && Number.isFinite(s.end)) { pomo.end = s.end; pomo.running = s.end > Date.now(); if (!pomo.running) pomo.left = 0; } } } catch (_) {}
   $('#focusBtn').onclick = () => { $('#pomo').hidden = !$('#pomo').hidden; };
+  if (globalThis.KanbanPomo?.postMessage) { initNativePomo(); return; }
+  try { const s = JSON.parse(localStorage.getItem('kanban_pomo') || '{}'); if (s.day === todayISO()) pomo.sessions = s.sessions | 0; if (['focus','break'].includes(s.mode)) { pomo.mode = s.mode; pomo.left = Math.max(0, Math.min(86400, Number(s.left) || POMO_LEN[pomo.mode])); if (s.running && Number.isFinite(s.end)) { pomo.end = s.end; pomo.running = s.end > Date.now(); if (!pomo.running) pomo.left = 0; } } } catch (_) {}
   $('#pomoToggle').onclick = () => {
     if (pomo.running) { pomo.left = Math.max(0, Math.ceil((pomo.end - Date.now()) / 1000)); pomo.running = false; }
     else { pomo.end = Date.now() + pomo.left * 1000; pomo.running = true; }
@@ -4327,6 +4808,147 @@ function initPomo() {
   pomoRender();
 }
 
+function initNativePomo() {
+  const buttons = ['#pomoToggle', '#pomoReset', '#pomoSkip'].map(selector => $(selector));
+  let pending = null, ticker = null, initialized = false;
+  let legacy;
+  try { legacy = JSON.parse(localStorage.getItem('kanban_pomo') || 'null'); } catch (_) {}
+  function unlock() {
+    clearTimeout(pending?.timeout);
+    pending = null;
+    for (const button of buttons) button.disabled = false;
+  }
+  function request(type) {
+    if (pending) return;
+    const id = generateId();
+    for (const button of buttons) button.disabled = true;
+    pending = { id, timeout: setTimeout(() => {
+      unlock(); showToast('Pomodoro не получил ответ от Android');
+    }, 5000) };
+    try { globalThis.KanbanPomo.postMessage(JSON.stringify({ id, type, legacy: initialized ? undefined : legacy })); }
+    catch (_) { unlock(); showToast('Pomodoro не удалось связаться с Android'); }
+  }
+  function tick() {
+    clearTimeout(ticker);
+    const left = pomoRender(performance.now());
+    if (!pomo.running || document.hidden) return;
+    if (left === 0) request('read');
+    else ticker = setTimeout(tick, 250);
+  }
+  window.kanbanPomoResult = raw => {
+    let state;
+    try { state = JSON.parse(raw); } catch (_) { return; }
+    if (state.id !== pending?.id) return;
+    unlock();
+    if (state.error) { showToast(state.error); return; }
+    initialized = true;
+    pomo.mode = state.mode;
+    pomo.running = state.running;
+    pomo.left = Math.ceil(state.ms / 1000);
+    pomo.end = performance.now() + state.ms;
+    pomo.sessions = state.sessions;
+    $('#pomoStatus').textContent = state.notificationsAllowed ? 'Android может задерживать уведомления' : 'Уведомления выключены';
+    if (state.completed) showToast(state.completed === 'focus' ? 'Сессия завершена — перерыв 5 мин' : 'Перерыв окончен');
+    tick();
+  };
+  window.kanbanNotificationPermissionResult = () => request('read');
+  buttons[0].onclick = () => request('toggle');
+  buttons[1].onclick = () => request('reset');
+  buttons[2].onclick = () => request('skip');
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimeout(ticker);
+    else request('read');
+  });
+  request('read');
+}
+
+// ============================================================
+// TASK REMINDERS
+// ============================================================
+function taskReminderRows() {
+  const rows = [];
+  const validId = id => typeof id === 'string' && id.length >= 1 && id.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(id);
+  for (const board of state.boards) {
+    if (!validId(board.id)) continue;
+    const done = new Set(board.columns.filter(column => column.isDone).map(column => column.id));
+    for (const task of state._tasksByBoard[board.id] || []) {
+      if (!task.reminderTime || !task.deadline || !isValidISODate(task.deadline) || !validId(task.id) || done.has(task.columnId)) continue;
+      rows.push({ task: task.id, board: board.id, title: task.title.slice(0, 200), date: task.deadline, time: task.reminderTime });
+    }
+  }
+  return rows;
+}
+
+const reminderSync = { timer: null, outstanding: null, confirmed: null, waiting: false, askPermission: false };
+function queueTaskReminders(askPermission = false) {
+  reminderSync.waiting = true;
+  reminderSync.askPermission ||= askPermission;
+  if (reminderSync.outstanding || reminderSync.timer != null) return;
+  reminderSync.timer = setTimeout(syncTaskReminders, 0);
+}
+function syncTaskReminders() {
+  reminderSync.timer = null;
+  reminderSync.waiting = false;
+  const rows = taskReminderRows();
+  const snapshot = JSON.stringify(rows);
+  const askPermission = reminderSync.askPermission;
+  reminderSync.askPermission = false;
+  if (snapshot === reminderSync.confirmed && !askPermission) return;
+  const id = generateId();
+  const raw = JSON.stringify({ id, rows, askPermission });
+  if (rows.length > 1500 || raw.length > 512 * 1024) {
+    showToast('Слишком много напоминаний для Android');
+    return;
+  }
+  const finish = ok => {
+    clearTimeout(reminderSync.outstanding?.timeout);
+    reminderSync.outstanding = null;
+    if (ok) reminderSync.confirmed = snapshot;
+    else showToast('Не удалось обновить напоминания Android');
+    if (reminderSync.waiting) queueTaskReminders();
+  };
+  reminderSync.outstanding = { id, finish, timeout: setTimeout(() => finish(false), 10000) };
+  try { globalThis.KanbanTaskReminders.postMessage(raw); } catch (_) { finish(false); }
+}
+window.kanbanTaskRemindersResult = raw => {
+  let result;
+  try { result = JSON.parse(raw); } catch (_) { return; }
+  if (result.id === reminderSync.outstanding?.id) reminderSync.outstanding.finish(result.ok);
+};
+
+let reminderTarget = null, reminderUiReady = false;
+async function openReminderTask() {
+  const target = reminderTarget;
+  if (!reminderUiReady || !target) return;
+  reminderTarget = null;
+  if (savingTask || importInProgress || drag || switchingBoard) {
+    showToast('Завершите текущее действие, чтобы открыть задачу', 'Открыть', () => {
+      reminderTarget = target; void openReminderTask();
+    }, 10000);
+    return;
+  }
+  if (!state._tasksByBoard[target.board]?.some(task => task.id === target.task)) {
+    showToast('Задача из напоминания удалена или перемещена');
+    return;
+  }
+  if (state.activeBoardId !== target.board && !(await switchBoard(target.board))) return;
+  if ($('#taskModal').classList.contains('open')) {
+    if (editingTaskId === target.task) return;
+    await tryCloseTaskModal();
+    if ($('#taskModal').classList.contains('open')) return;
+  }
+  if (state.activeBoardId !== target.board || !state.tasks.some(task => task.id === target.task)) return;
+  switchView('kanban');
+  openTaskModal(target.task);
+}
+window.kanbanOpenReminder = raw => {
+  let target;
+  try { target = JSON.parse(raw); } catch (_) { return; }
+  if (typeof target.board !== 'string' || typeof target.task !== 'string') return;
+  reminderTarget = target;
+  void openReminderTask();
+};
+
 // ============================================================
 // SERVICE WORKER
 // ============================================================
@@ -4335,8 +4957,57 @@ function initPomo() {
 // ============================================================
 const fmtDur = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
 const isAudio = f => !!f && String(f.type || '').startsWith('audio/');
-const AP = { el: new Audio(), id: null, scope: '', url: null, rate: 1, uis: new Set(), tok: 0 };
+const AP = { el: new Audio(), id: null, scope: '', url: null, rate: 1, uis: new Set(), tok: 0, nativeId: null, nativeState: null };
 AP.el.preload = 'metadata';
+
+const mediaSteps = new Map();
+function mediaCommand(id, type, fields = {}) {
+  globalThis.KanbanMedia.postMessage(JSON.stringify({ id, type, ...fields }));
+}
+function mediaStep(id, expected, send, timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => finish(null, new Error('Android не ответил')), timeout);
+    function finish(event, error) {
+      clearTimeout(timer);
+      mediaSteps.delete(id);
+      if (error) reject(error); else resolve(event);
+    }
+    mediaSteps.set(id, { expected, finish });
+    try { send(); } catch (error) { finish(null, error); }
+  });
+}
+async function sendMediaChunks(id, blob, isCurrent = () => true) {
+  const chunkSize = 256 * 1024;
+  const header = new TextEncoder().encode(id);
+  for (let offset = 0; offset < blob.size; offset += chunkSize) {
+    const data = await blob.slice(offset, offset + chunkSize).arrayBuffer();
+    if (!isCurrent()) throw new Error('Передача отменена');
+    const frame = new Uint8Array(header.length + data.byteLength);
+    frame.set(header);
+    frame.set(new Uint8Array(data), header.length);
+    await mediaStep(id, 'chunk', () => globalThis.KanbanMedia.postMessage(frame.buffer));
+  }
+}
+function mediaDiscard(id) {
+  mediaSteps.get(id)?.finish(null, new Error('Передача отменена'));
+  try { mediaCommand(id, 'discard'); } catch (_) {}
+}
+let mediaQueue = Promise.resolve();
+function stageNativeMedia(id, blob, isCurrent, options = {}) {
+  const transfer = mediaQueue.then(async () => {
+    if (!isCurrent()) throw new Error('Передача отменена');
+    try {
+      await mediaStep(id, 'begin', () => mediaCommand(id, 'begin', { size: blob.size, ...options }));
+      await sendMediaChunks(id, blob, isCurrent);
+      return await mediaStep(id, 'loaded', () => mediaCommand(id, 'finish'));
+    } catch (error) {
+      mediaDiscard(id);
+      throw error;
+    }
+  });
+  mediaQueue = transfer.catch(() => {});
+  return transfer;
+}
 
 async function prepAudio(file) {
   if (file._meta) return file._meta;
@@ -4356,7 +5027,25 @@ async function prepAudio(file) {
   return file._meta = m;
 }
 
-function apState(ui) { const a = AP.el; return AP.id === ui.key ? { playing: !a.paused && !a.ended, t: a.currentTime, dur: isFinite(a.duration) ? a.duration : 0 } : null; }
+window.kanbanMediaNativeResult = raw => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const step = mediaSteps.get(event.id);
+  if (step && (event.type === 'error' || event.type === step.expected ||
+      (Array.isArray(step.expected) && step.expected.includes(event.type)))) {
+    step.finish(event, event.type === 'error' ? new Error(event.message) : null);
+  } else if (event.id === AP.nativeId) {
+    if (event.type === 'state') { AP.nativeState = event; apSync(); }
+    if (event.type === 'unavailable') showToast(event.message);
+    if (event.type === 'error') { apStop(); showToast(event.message); }
+  }
+};
+function apState(ui) {
+  if (AP.id !== ui.key) return null;
+  if (AP.nativeId) return AP.nativeState;
+  const a = AP.el;
+  return { playing: !a.paused && !a.ended, t: a.currentTime, dur: isFinite(a.duration) ? a.duration : 0 };
+}
 function apSync() {
   for (const ui of AP.uis) {
     if (!ui.root.isConnected) { if (ui.seen) AP.uis.delete(ui); continue; }
@@ -4367,12 +5056,29 @@ function apSync() {
 AP.el.addEventListener('ended', () => { AP.el.currentTime = 0; });
 
 async function apLoad(ui) {
-  const tok = ++AP.tok, a = AP.el;
+  apStop();
+  AP.scope = ui.scope;
+  const tok = AP.tok, a = AP.el;
   let blob = null; try { blob = await ui.getBlob(); } catch (_) {}
   if (tok !== AP.tok) return false;
   if (!blob) { showToast('Файл не найден'); return false; }
-  a.pause(); if (AP.url) revokeTrackedURL(AP.url);
-  AP.url = createTrackedURL(blob); AP.id = ui.key; AP.scope = ui.scope;
+  if (globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID) {
+    const id = AP.nativeId = crypto.randomUUID();
+    try {
+      const result = await stageNativeMedia(id, blob, () => AP.tok === tok);
+      if (tok !== AP.tok) return false;
+      if (result.dur <= 0) throw new Error('Длительность записи неизвестна');
+      AP.id = ui.key;
+      AP.nativeState = result;
+      apSync();
+      return true;
+    } catch (_) {
+      if (tok !== AP.tok) return false;
+      mediaDiscard(id);
+      AP.nativeId = null;
+    }
+  }
+  AP.url = createTrackedURL(blob); AP.id = ui.key;
   a.src = AP.url; a.defaultPlaybackRate = a.playbackRate = AP.rate;
   await new Promise(res => { const d = () => { a.removeEventListener('loadedmetadata', d); a.removeEventListener('error', d); res(); }; a.addEventListener('loadedmetadata', d); a.addEventListener('error', d); setTimeout(d, 4000); });
   if (tok !== AP.tok) return false;
@@ -4387,14 +5093,24 @@ async function apLoad(ui) {
 }
 async function apPlay(ui, fr) {
   const a = AP.el;
-  if (AP.id !== ui.key || !a.src) { ui.root.classList.add('loading'); const ok = await apLoad(ui); ui.root.classList.remove('loading'); if (!ok) return; }
+  if (AP.id !== ui.key || (!AP.nativeId && !a.src)) { ui.root.classList.add('loading'); const ok = await apLoad(ui); ui.root.classList.remove('loading'); if (!ok) return; }
+  if (AP.nativeId) {
+    try { mediaCommand(AP.nativeId, 'play', { fraction: fr, rate: AP.rate }); }
+    catch (_) { showToast('Не удалось воспроизвести запись'); }
+    return;
+  }
   const d = isFinite(a.duration) ? a.duration : ui.dur;
   if (fr != null && d) a.currentTime = fr * d;
   try { await a.play(); } catch (_) { showToast('Не удалось воспроизвести запись'); }
 }
-function apToggle(ui) { const a = AP.el; if (AP.id === ui.key && a.src) { a.paused ? apPlay(ui) : a.pause(); } else apPlay(ui); }
+function apToggle(ui) {
+  if (AP.id !== ui.key || !apState(ui)?.playing) { void apPlay(ui); return; }
+  if (AP.nativeId) mediaCommand(AP.nativeId, 'pause'); else AP.el.pause();
+}
 function apStop(scope) {
   if (scope && AP.scope !== scope) return;
+  if (AP.nativeId) mediaDiscard(AP.nativeId);
+  AP.nativeId = AP.nativeState = null;
   const a = AP.el; AP.tok++; a.pause(); a.removeAttribute('src'); a.load();
   if (AP.url) revokeTrackedURL(AP.url);
   AP.url = null; AP.id = null; apSync();
@@ -4424,11 +5140,22 @@ function createAudioPlayer(f, o = {}) {
   w.onpointerup = e => { if (ui.scrub == null) return; const fr = frac(e); ui.scrub = null; apPlay(ui, fr); };
   w.onpointercancel = () => { ui.scrub = null; apSync(); };
   w.onkeydown = e => {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); if (AP.id === key) AP.el.currentTime = Math.max(0, AP.el.currentTime + (e.key === 'ArrowRight' ? 5 : -5)); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (AP.id !== key) return;
+      const offset = e.key === 'ArrowRight' ? 5 : -5;
+      if (AP.nativeId) mediaCommand(AP.nativeId, 'seek', { offset: offset * 1000 });
+      else AP.el.currentTime = Math.max(0, AP.el.currentTime + offset);
+    }
     else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); apToggle(ui); }
   };
   const nm = root.querySelector('.ap-name'); if (nm && o.onRename) { nm.style.cursor = 'pointer'; nm.title = 'Переименовать'; nm.onclick = o.onRename; }
-  if (sp) sp.onclick = () => { AP.rate = AP.rate === 1 ? 1.5 : AP.rate === 1.5 ? 2 : 1; AP.el.defaultPlaybackRate = AP.el.playbackRate = AP.rate; apSync(); };
+  if (sp) sp.onclick = () => {
+    AP.rate = AP.rate === 1 ? 1.5 : AP.rate === 1.5 ? 2 : 1;
+    if (AP.nativeId && AP.nativeState) mediaCommand(AP.nativeId, 'rate', { rate: AP.rate });
+    else AP.el.defaultPlaybackRate = AP.el.playbackRate = AP.rate;
+    apSync();
+  };
   AP.uis.add(ui); ui.render(apState(ui));
   return root;
 }
@@ -4450,87 +5177,222 @@ function renderAudioList() {
       if (!v) return; if (old) f.name = v; else f._name = v; renderFiles();
     } }));
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'audio-rm'; rm.textContent = '×'; rm.setAttribute('aria-label', 'Удалить запись');
-    rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); };
+    rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); if (f._voiceDraft) refreshVoiceDrafts(); };
     row.appendChild(rm); (resultBoxes.get(old ? f.resultId : f._resultId) || box).appendChild(row);
   });
 }
 
-const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null, starting: false, finishing: false, session: null, resultId: '' };
-function bindAudio() { $('#recStartBtn').onclick = () => recStart(); $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
-function micErrorMessage(error) {
-  const name = error?.name || 'UnknownError';
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Нет доступа к микрофону. Проверьте разрешения Comrade в настройках Android (' + name + ')';
-  if (name === 'NotFoundError') return 'Микрофон не найден (' + name + ')';
-  if (name === 'NotReadableError' || name === 'AbortError') return 'Не удалось запустить микрофон. Проверьте системный доступ к микрофону и закройте другие приложения записи (' + name + ')';
-  return 'Не удалось включить микрофон (' + name + ')';
+// Android owns microphone capture. WebView only controls and receives the final file.
+const rec = { id: null, session: null, resultId: '', starting: false, active: false,
+  finishing: false, paused: false, ready: null, done: null, resolve: null, lv: [], recovering: null };
+const voiceDraftId = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
+let voiceDraftRequest = null;
+function bindAudio() {
+  $('#recStartBtn').onclick = () => recStart();
+  $('#recStop').onclick = () => recStop();
+  $('#recCancel').onclick = () => recAbort();
+  $('#recPause').onclick = recPause;
 }
-async function requestMicStream(devices, stillActive) {
-  try {
-    return await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-  } catch (error) {
-    // Some WebViews cannot start the processed audio source. Retry once with
-    // plain capture, but never retry a denied permission or a closed editor.
-    if (!['NotReadableError', 'AbortError', 'OverconstrainedError', 'NotSupportedError'].includes(error?.name) || !stillActive()) throw error;
-    return devices.getUserMedia({ audio: true });
+function voiceCommand(id, type, fields = {}) {
+  try { window.KanbanVoice.postMessage(JSON.stringify({ id, type, ...fields })); return true; }
+  catch (_) { return false; }
+}
+function refreshVoiceDrafts() {
+  const panel = $('#recDrafts');
+  if (!panel || !window.KanbanVoice?.postMessage) return;
+  panel.hidden = true;
+  panel.replaceChildren();
+  if (!$('#taskModal').classList.contains('open')) return;
+  const id = 'list_' + generateId();
+  voiceDraftRequest = { id, editor: tempResults };
+  voiceCommand(id, 'list');
+}
+function forgetVoiceDraft(draft) {
+  voiceCommand('draft_' + generateId(), 'remove-draft', { draft });
+}
+function showVoiceDrafts(event) {
+  if (event.id !== voiceDraftRequest?.id || voiceDraftRequest.editor !== tempResults ||
+      !$('#taskModal').classList.contains('open') || !Array.isArray(event.items)) return;
+  const panel = $('#recDrafts');
+  const selected = new Set(newFiles.map(file => file._voiceDraft));
+  const saved = new Set(Object.values(state._tasksByBoard).flatMap(tasks => tasks.flatMap(task => task.files.map(file => file.id))));
+  for (const draft of event.items) {
+    if (!voiceDraftId.test(draft.draft)) continue;
+    if (saved.has('m_voice_' + draft.draft)) { forgetVoiceDraft(draft.draft); continue; }
+    if (draft.board !== state.activeBoardId || draft.task !== (editingTaskId || '') || selected.has(draft.draft)) continue;
+    const row = document.createElement('div'); row.className = 'audio-item';
+    const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'btn btn-secondary btn-small';
+    const date = new Date(draft.createdAt).toLocaleString('ru-RU');
+    restore.textContent = (draft.result ? 'Восстановить запись результата' : 'Восстановить запись') + ' · ' + date;
+    restore.onclick = () => recoverVoiceDraft(draft);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-secondary btn-small';
+    remove.textContent = 'Удалить черновик';
+    remove.onclick = async () => {
+      if (await confirmDialog('Удалить голосовой черновик?', 'Черновик будет удалён с устройства.')) {
+        forgetVoiceDraft(draft.draft);
+        row.remove();
+        panel.hidden = !panel.children.length;
+      }
+    };
+    row.append(restore, remove); panel.append(row);
+  }
+  panel.hidden = !panel.children.length;
+}
+function recoverVoiceDraft(draft) {
+  if (rec.id || savingTask || !$('#taskModal').classList.contains('open') || !voiceDraftId.test(draft.draft) ||
+      draft.board !== state.activeBoardId || draft.task !== (editingTaskId || '')) return;
+  apStop();
+  const id = 'voice_' + generateId();
+  Object.assign(rec, { id, session: tempResults, resultId: '', starting: true, recovering: draft.draft });
+  voicePanel();
+  if (!voiceCommand(id, 'recover', { draft: draft.draft })) { voiceReset(false); showToast('Не удалось открыть черновик'); }
+}
+function voicePromise() {
+  if (!rec.done) rec.done = new Promise(resolve => { rec.resolve = resolve; });
+  return rec.done;
+}
+function voiceResolve(ok) {
+  const resolve = rec.resolve;
+  rec.done = rec.resolve = null;
+  if (resolve) resolve(ok);
+}
+function voicePanel() {
+  $('#recPanel').hidden = !rec.id;
+  $('#recStartBtn').hidden = !!rec.id;
+  $('#recPause').disabled = !rec.active || rec.finishing;
+  $('#recPause').textContent = rec.paused ? 'Продолжить' : 'Пауза';
+  $('#recStop').disabled = rec.starting || rec.finishing;
+  $('#recStop').textContent = rec.ready && !rec.finishing ? 'Повторить' : rec.finishing ? 'Сохранение…' : 'Готово';
+}
+function voiceReset(ok) {
+  voiceResolve(ok);
+  Object.assign(rec, { id: null, session: null, resultId: '', starting: false,
+    active: false, finishing: false, paused: false, ready: null, lv: [], recovering: null });
+  voicePanel();
+}
+function voiceStillInEditor(id) {
+  return rec.id === id && rec.session === tempResults && $('#taskModal').classList.contains('open') &&
+    (!rec.resultId || tempResults.some(r => r.id === rec.resultId));
+}
+function recStart(resultId = '') {
+  if (rec.id || savingTask) return;
+  if (resultId && !tempResults.some(r => r.id === resultId)) return;
+  if (!window.KanbanVoice?.postMessage) { showToast('Нативная запись недоступна в этой сборке'); return; }
+  apStop();
+  const id = 'voice_' + generateId();
+  Object.assign(rec, { id, session: tempResults, resultId, starting: true, lv: [] });
+  $('#recTime').textContent = '0:00';
+  $('#recLevels').replaceChildren();
+  voicePanel();
+  if (resultId) $('#recPanel').scrollIntoView({ block: 'nearest' });
+  if (!voiceCommand(id, 'start', { board: state.activeBoardId, task: editingTaskId || '', result: resultId })) {
+    voiceReset(false); showToast('Не удалось запустить диктофон Android');
   }
 }
-async function recStart(resultId = '') {
-  if (rec.mr || rec.starting || rec.finishing || savingTask) return;
-  const session = tempResults;
-  if (resultId && !session.some(r => r.id === resultId)) return;
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { showToast('Запись звука недоступна: обновите Android System WebView'); return; }
-  let stream;
-  rec.starting = true;
-  const stillActive = () => tempResults === session && $('#taskModal').classList.contains('open') && !savingTask;
-  try { stream = await requestMicStream(navigator.mediaDevices, stillActive); }
-  catch (e) { if (stillActive()) showToast(micErrorMessage(e), null, null, 7000); return; }
-  finally { rec.starting = false; }
-  if (tempResults !== session || !$('#taskModal').classList.contains('open') || savingTask) { stream.getTracks().forEach(t => t.stop()); return; }
-  apStop();
-  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
-  let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); } catch (_) { stream.getTracks().forEach(t => t.stop()); showToast('Не удалось начать запись'); return; }
-  Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now(), session, resultId }); $('#recPause').textContent = 'Пауза';
-  mr.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
-  rec.done = new Promise(res => { mr.onstop = async () => { rec.finishing = true; try { await recFinish(); } finally { rec.finishing = false; res(); } }; });
-  try { rec.ctx = new (window.AudioContext || window.webkitAudioContext)(); rec.ctx.resume?.(); rec.an = rec.ctx.createAnalyser(); rec.an.fftSize = 256; rec.ctx.createMediaStreamSource(stream).connect(rec.an); } catch (_) { rec.an = null; }
-  mr.start(1000);
-  $('#recPanel').hidden = false; $('#recStartBtn').hidden = true;
-  if (resultId) { showToast('Запись для результата начата'); $('#recPanel').scrollIntoView({ block: 'nearest' }); }
-  rec.tick = setInterval(recTick, 80);
-}
-function recElapsed() { return (rec.acc + (rec.mr && rec.mr.state === 'recording' ? Date.now() - rec.seg : 0)) / 1000; }
 function recPause() {
-  if (!rec.mr) return;
-  if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.mr.pause(); $('#recPause').textContent = 'Продолжить'; }
-  else if (rec.mr.state === 'paused') { rec.seg = Date.now(); rec.mr.resume(); $('#recPause').textContent = 'Пауза'; }
+  if (!rec.active || rec.finishing) return;
+  if (!voiceCommand(rec.id, rec.paused ? 'resume' : 'pause')) showToast('Не удалось переключить паузу');
 }
-function recTick() {
-  const s = recElapsed(); $('#recTime').textContent = fmtDur(s);
-  let lvl = 0.05;
-  if (rec.an) { const d = new Uint8Array(rec.an.fftSize); rec.an.getByteTimeDomainData(d); let sum = 0; for (const v of d) sum += (v - 128) ** 2; lvl = Math.min(1, Math.sqrt(sum / d.length) / 40); }
-  if (rec.mr.state !== 'recording') return;
-  rec.lv.push(lvl);
-  const box = $('#recLevels'), n = 40, last = rec.lv.slice(-n);
+function recStop() {
+  if (!rec.id) return Promise.resolve(true);
+  if (rec.starting) return Promise.resolve(false);
+  if (rec.finishing) return voicePromise();
+  const pending = voicePromise();
+  rec.finishing = true;
+  voicePanel();
+  if (rec.ready) void receiveVoiceFile(rec.id);
+  else if (!voiceCommand(rec.id, 'stop')) {
+    rec.finishing = false; voicePanel(); voiceResolve(false);
+    showToast('Не удалось остановить диктофон');
+  }
+  return pending;
+}
+function recAbort(discard = true) {
+  if (!rec.id) return;
+  voiceCommand(rec.id, discard && !rec.recovering ? 'cancel' : 'leave');
+  voiceReset(false);
+}
+function voiceLevel(ms, level) {
+  $('#recTime').textContent = fmtDur(ms / 1000);
+  if (rec.paused) return;
+  const n = 40, box = $('#recLevels');
+  rec.lv.push(Math.min(1, Math.max(0, Number(level) || 0)));
+  if (rec.lv.length > n) rec.lv.shift();
   if (box.children.length !== n) box.innerHTML = '<i></i>'.repeat(n);
-  [...box.children].forEach((el, i) => { const v = last[i - (n - last.length)]; el.style.height = (v == null ? 6 : Math.max(8, v * 100)) + '%'; });
-  if (s >= 1200) recStop();
+  const last = rec.lv;
+  [...box.children].forEach((el, i) => {
+    const v = last[i - (n - last.length)];
+    el.style.height = (v == null ? 6 : Math.max(8, Math.sqrt(v) * 100)) + '%';
+  });
 }
-function recStop() { if (!rec.mr) return Promise.resolve(); if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.seg = Date.now(); } try { if (rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {} return rec.done; }
-function recAbort() { if (!rec.mr) return; rec.cancel = true; recStop(); }
-async function recFinish() {
-  const dur = rec.acc / 1000, type = (rec.mr.mimeType || 'audio/webm').split(';')[0], cancel = rec.cancel, chunks = rec.chunks, session = rec.session, resultId = rec.resultId;
-  clearInterval(rec.tick); rec.stream.getTracks().forEach(t => t.stop()); try { rec.ctx && rec.ctx.close(); } catch (_) {}
-  rec.mr = null; rec.stream = null; rec.ctx = null; rec.an = null;
-  $('#recPanel').hidden = true; $('#recStartBtn').hidden = false;
-  if (cancel || !chunks.length) return;
-  const d = new Date(), p = n => String(n).padStart(2, '0'), ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
-  const file = new File(chunks, `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.${ext}`, { type });
-  file._dur = dur;
-  if (resultId) file._resultId = resultId;
-  await prepAudio(file);
-  if (tempResults !== session || !$('#taskModal').classList.contains('open') || (resultId && !session.some(r => r.id === resultId))) return;
-  newFiles.push(file); renderFiles();
+async function receiveVoiceFile(id) {
+  const ready = rec.ready;
+  if (!ready || !voiceStillInEditor(id)) return;
+  try {
+    const response = await fetch('/voice-capture/' + encodeURIComponent(ready.token), { cache: 'no-store' });
+    if (!response.ok) throw new Error('Файл записи недоступен');
+    const blob = await response.blob();
+    if (blob.size !== ready.size || blob.size === 0 || blob.size > MAX_VIDEO_SIZE) throw new Error('Запись передана не полностью');
+    if (!voiceStillInEditor(id)) return;
+    const d = new Date(ready.createdAt), p = n => String(n).padStart(2, '0');
+    const file = new File([blob], `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.m4a`, { type: 'audio/mp4' });
+    file._dur = ready.ms / 1000;
+    file._meta = { dur: file._dur, peaks: ready.peaks || [] };
+    const resultId = rec.recovering ? ready.result : rec.resultId;
+    if (resultId) {
+      if (!tempResults.some(result => result.id === resultId))
+        tempResults.push({ id: resultId, text: '', createdAt: ready.createdAt, updatedAt: ready.createdAt });
+      file._resultId = resultId;
+    }
+    file._voiceDraft = ready.draft;
+    newFiles.push(file);
+    // Release the transfer lease. The private draft remains until the task commit.
+    voiceCommand(id, 'ack');
+    voiceReset(true);
+    if (resultId && typeof renderTaskResults === 'function') renderTaskResults();
+    renderFiles(); refreshVoiceDrafts();
+  } catch (error) {
+    if (!voiceStillInEditor(id)) return;
+    rec.finishing = false;
+    voiceResolve(false);
+    voicePanel();
+    showToast('Не удалось получить запись. Нажмите «Повторить»: ' + error.message, null, null, 7000);
+  }
 }
+window.kanbanVoiceNativeResult = function(payload) {
+  let event;
+  try { event = JSON.parse(payload); } catch (_) { return; }
+  if (event.type === 'drafts') { showVoiceDrafts(event); return; }
+  if (event.id !== rec.id) return;
+  if (!voiceStillInEditor(event.id)) { recAbort(false); return; }
+  switch (event.type) {
+    case 'started':
+      rec.starting = false; rec.active = true; voicePanel(); break;
+    case 'paused':
+    case 'resumed':
+      rec.paused = event.type === 'paused';
+      voiceLevel(event.ms, 0); voicePanel(); break;
+    case 'level':
+      voiceLevel(event.ms, event.level); break;
+    case 'ready':
+      if (rec.ready) return;
+      if (!/^[a-f0-9-]{36}$/.test(event.token) || !voiceDraftId.test(event.draft) ||
+          !Number.isSafeInteger(event.size) || event.size <= 0 || event.size > MAX_VIDEO_SIZE ||
+          !Number.isFinite(event.ms) || !Number.isFinite(event.createdAt) ||
+          event.board !== state.activeBoardId || event.task !== (editingTaskId || '') ||
+          (rec.recovering ? event.draft !== rec.recovering : event.result !== rec.resultId)) {
+        recAbort(false); showToast('Файл записи недоступен для этой задачи'); return;
+      }
+      rec.starting = rec.active = rec.paused = false;
+      rec.ready = event;
+      rec.finishing = true; voicePromise(); voicePanel();
+      void receiveVoiceFile(event.id); break;
+    case 'cancelled':
+      voiceReset(false); break;
+    case 'error':
+      voiceReset(false); showToast(event.message || 'Ошибка диктофона Android', null, null, 7000); break;
+  }
+};
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -4547,6 +5409,13 @@ async function init() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   try { db = await openDB(); }
   catch (e) { console.error(e); alert('Не удалось открыть базу данных: ' + e.message); return; }
+
+  if (canUseZip()) {
+    try {
+      const pending = (await dbGetSettings())[ZIP_PROJECTION];
+      if (pending) { await projectZipState(pending); initTheme(); }
+    } catch (error) { alert('Восстановление настроек ZIP будет повторено при следующем запуске: ' + error.message); }
+  }
 
   await loadData();
   loadUIState();
@@ -4565,12 +5434,14 @@ async function init() {
   setupBroadcast();
   switchView(currentView || 'kanban');
   updateStorageInfo();
+  reminderUiReady = true;
+  void openReminderTask();
 
   setInterval(updateStorageInfo, 15000);
   setInterval(() => {
     const now = Date.now();
     for (let i = undoStack.length - 1; i >= 0; i--) {
-      if (undoStack[i].expiresAt <= now) {
+      if (!undoStack[i].restoring && undoStack[i].expiresAt <= now) {
         const exp = undoStack.splice(i, 1)[0];
         try { exp.onExpire?.(); } catch (_) {}
       }

@@ -56,9 +56,10 @@
     <button class="btn btn-ghost btn-icon" id="themeBtn" aria-label="Переключить тему" aria-pressed="false" data-menu-label="Тема оформления">◐</button>
     <button class="btn btn-ghost" id="exportBtn" title="Полный бэкап: доски, структура, карта, файлы">Экспорт данных</button>
     <button class="btn btn-ghost" id="importBtn">Импорт данных</button>
+    <button class="btn btn-ghost" id="verifySQLiteBtn" hidden>Проверить перенос в SQLite</button>
     <button class="btn btn-ghost btn-icon" id="settingsBtn" aria-label="Настройки доски" data-menu-label="Настройки доски">⚙</button>
     <button class="btn btn-danger btn-small" id="clearBtn">Очистить доску</button>
-    <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <input type="file" id="importFile" accept=".json,.zip,application/json,application/zip" hidden>
   </div>
 </header>
 
@@ -188,6 +189,10 @@
           <label class="label" for="taskDeadline">Срок</label>
           <input type="date" id="taskDeadline">
           <div class="field-error" id="taskDeadlineError" hidden>Некорректная дата</div>
+          <div id="taskReminderField" hidden>
+            <label class="label"><input type="checkbox" id="taskReminderEnabled"> Напомнить в день срока</label>
+            <input type="time" id="taskReminderTime" aria-label="Время напоминания" hidden>
+          </div>
         </div>
         <div class="field">
           <label class="label">Приоритет</label>
@@ -213,6 +218,7 @@
         <div class="audio-list" id="audioList"></div>
         <div class="rec-panel" id="recPanel" hidden><span class="rec-dot"></span><span class="rec-time" id="recTime">0:00</span><div class="rec-levels" id="recLevels"></div><button type="button" class="btn btn-secondary btn-small" id="recPause">Пауза</button><button type="button" class="btn btn-secondary btn-small" id="recCancel">Отмена</button><button type="button" class="btn btn-small" id="recStop">Готово</button></div>
         <button type="button" class="add-btn-dashed" id="recStartBtn">🎙 Записать аудиозаметку</button>
+        <div id="recDrafts" class="audio-list" hidden></div>
       </div>
       <div class="field">
         <label class="label" for="taskFile">Файлы (до 50 МБ каждый)</label>
@@ -307,7 +313,7 @@
 </div>
 
 <div class="pomo" id="pomo" hidden>
-  <div><div class="pomo-time" id="pomoTime">25:00</div><div class="pomo-mode" id="pomoMode"></div></div>
+  <div><div class="pomo-time" id="pomoTime">25:00</div><div class="pomo-mode" id="pomoMode"></div><div class="pomo-mode" id="pomoStatus"></div></div>
   <button class="btn btn-secondary btn-icon" id="pomoToggle" aria-label="Старт/пауза">▶</button>
   <button class="btn btn-ghost btn-icon" id="pomoSkip" title="Сменить фазу" aria-label="Сменить фазу">⏭</button>
   <button class="btn btn-ghost btn-icon" id="pomoReset" title="Сброс" aria-label="Сброс">↺</button>

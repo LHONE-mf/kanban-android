@@ -5,8 +5,8 @@ const POMO_LEN = { focus: 1500, break: 300 };
 const pomo = { mode: 'focus', left: POMO_LEN.focus, end: 0, running: false, sessions: 0 };
 const mmss = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 function pomoSave() { try { localStorage.setItem('kanban_pomo', JSON.stringify({ day: todayISO(), sessions: pomo.sessions, mode: pomo.mode, left: pomo.left, end: pomo.end, running: pomo.running })); } catch (_) {} }
-function pomoRender() {
-  const left = pomo.running ? Math.max(0, Math.ceil((pomo.end - Date.now()) / 1000)) : pomo.left;
+function pomoRender(now = Date.now()) {
+  const left = pomo.running ? Math.max(0, Math.ceil((pomo.end - now) / 1000)) : pomo.left;
   $('#pomoTime').textContent = mmss(left);
   $('#pomoMode').textContent = (pomo.mode === 'focus' ? 'Фокус' : 'Перерыв') + ' · 🍅 сегодня: ' + pomo.sessions;
   $('#pomoToggle').textContent = pomo.running ? '⏸' : '▶';
@@ -20,12 +20,13 @@ function pomoBeep() {
     o.connect(g); g.connect(c.destination); o.frequency.value = 880; g.gain.value = 0.08;
     o.start(); o.stop(c.currentTime + 0.35);
   } catch (_) {}
-  if (navigator.vibrate) try { navigator.vibrate([200, 100, 200]); } catch (_) {}
+  try { globalThis.KanbanHaptics?.postMessage('done'); } catch (_) {}
 }
 function pomoSwitch() { pomo.running = false; pomo.mode = pomo.mode === 'focus' ? 'break' : 'focus'; pomo.left = POMO_LEN[pomo.mode]; pomoSave(); pomoRender(); }
 function initPomo() {
-  try { const s = JSON.parse(localStorage.getItem('kanban_pomo') || '{}'); if (s.day === todayISO()) pomo.sessions = s.sessions | 0; if (['focus','break'].includes(s.mode)) { pomo.mode = s.mode; pomo.left = Math.max(0, Math.min(86400, Number(s.left) || POMO_LEN[pomo.mode])); if (s.running && Number.isFinite(s.end)) { pomo.end = s.end; pomo.running = s.end > Date.now(); if (!pomo.running) pomo.left = 0; } } } catch (_) {}
   $('#focusBtn').onclick = () => { $('#pomo').hidden = !$('#pomo').hidden; };
+  if (globalThis.KanbanPomo?.postMessage) { initNativePomo(); return; }
+  try { const s = JSON.parse(localStorage.getItem('kanban_pomo') || '{}'); if (s.day === todayISO()) pomo.sessions = s.sessions | 0; if (['focus','break'].includes(s.mode)) { pomo.mode = s.mode; pomo.left = Math.max(0, Math.min(86400, Number(s.left) || POMO_LEN[pomo.mode])); if (s.running && Number.isFinite(s.end)) { pomo.end = s.end; pomo.running = s.end > Date.now(); if (!pomo.running) pomo.left = 0; } } } catch (_) {}
   $('#pomoToggle').onclick = () => {
     if (pomo.running) { pomo.left = Math.max(0, Math.ceil((pomo.end - Date.now()) / 1000)); pomo.running = false; }
     else { pomo.end = Date.now() + pomo.left * 1000; pomo.running = true; }
@@ -43,6 +44,147 @@ function initPomo() {
   pomoRender();
 }
 
+function initNativePomo() {
+  const buttons = ['#pomoToggle', '#pomoReset', '#pomoSkip'].map(selector => $(selector));
+  let pending = null, ticker = null, initialized = false;
+  let legacy;
+  try { legacy = JSON.parse(localStorage.getItem('kanban_pomo') || 'null'); } catch (_) {}
+  function unlock() {
+    clearTimeout(pending?.timeout);
+    pending = null;
+    for (const button of buttons) button.disabled = false;
+  }
+  function request(type) {
+    if (pending) return;
+    const id = generateId();
+    for (const button of buttons) button.disabled = true;
+    pending = { id, timeout: setTimeout(() => {
+      unlock(); showToast('Pomodoro не получил ответ от Android');
+    }, 5000) };
+    try { globalThis.KanbanPomo.postMessage(JSON.stringify({ id, type, legacy: initialized ? undefined : legacy })); }
+    catch (_) { unlock(); showToast('Pomodoro не удалось связаться с Android'); }
+  }
+  function tick() {
+    clearTimeout(ticker);
+    const left = pomoRender(performance.now());
+    if (!pomo.running || document.hidden) return;
+    if (left === 0) request('read');
+    else ticker = setTimeout(tick, 250);
+  }
+  window.kanbanPomoResult = raw => {
+    let state;
+    try { state = JSON.parse(raw); } catch (_) { return; }
+    if (state.id !== pending?.id) return;
+    unlock();
+    if (state.error) { showToast(state.error); return; }
+    initialized = true;
+    pomo.mode = state.mode;
+    pomo.running = state.running;
+    pomo.left = Math.ceil(state.ms / 1000);
+    pomo.end = performance.now() + state.ms;
+    pomo.sessions = state.sessions;
+    $('#pomoStatus').textContent = state.notificationsAllowed ? 'Android может задерживать уведомления' : 'Уведомления выключены';
+    if (state.completed) showToast(state.completed === 'focus' ? 'Сессия завершена — перерыв 5 мин' : 'Перерыв окончен');
+    tick();
+  };
+  window.kanbanNotificationPermissionResult = () => request('read');
+  buttons[0].onclick = () => request('toggle');
+  buttons[1].onclick = () => request('reset');
+  buttons[2].onclick = () => request('skip');
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimeout(ticker);
+    else request('read');
+  });
+  request('read');
+}
+
+// ============================================================
+// TASK REMINDERS
+// ============================================================
+function taskReminderRows() {
+  const rows = [];
+  const validId = id => typeof id === 'string' && id.length >= 1 && id.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(id);
+  for (const board of state.boards) {
+    if (!validId(board.id)) continue;
+    const done = new Set(board.columns.filter(column => column.isDone).map(column => column.id));
+    for (const task of state._tasksByBoard[board.id] || []) {
+      if (!task.reminderTime || !task.deadline || !isValidISODate(task.deadline) || !validId(task.id) || done.has(task.columnId)) continue;
+      rows.push({ task: task.id, board: board.id, title: task.title.slice(0, 200), date: task.deadline, time: task.reminderTime });
+    }
+  }
+  return rows;
+}
+
+const reminderSync = { timer: null, outstanding: null, confirmed: null, waiting: false, askPermission: false };
+function queueTaskReminders(askPermission = false) {
+  reminderSync.waiting = true;
+  reminderSync.askPermission ||= askPermission;
+  if (reminderSync.outstanding || reminderSync.timer != null) return;
+  reminderSync.timer = setTimeout(syncTaskReminders, 0);
+}
+function syncTaskReminders() {
+  reminderSync.timer = null;
+  reminderSync.waiting = false;
+  const rows = taskReminderRows();
+  const snapshot = JSON.stringify(rows);
+  const askPermission = reminderSync.askPermission;
+  reminderSync.askPermission = false;
+  if (snapshot === reminderSync.confirmed && !askPermission) return;
+  const id = generateId();
+  const raw = JSON.stringify({ id, rows, askPermission });
+  if (rows.length > 1500 || raw.length > 512 * 1024) {
+    showToast('Слишком много напоминаний для Android');
+    return;
+  }
+  const finish = ok => {
+    clearTimeout(reminderSync.outstanding?.timeout);
+    reminderSync.outstanding = null;
+    if (ok) reminderSync.confirmed = snapshot;
+    else showToast('Не удалось обновить напоминания Android');
+    if (reminderSync.waiting) queueTaskReminders();
+  };
+  reminderSync.outstanding = { id, finish, timeout: setTimeout(() => finish(false), 10000) };
+  try { globalThis.KanbanTaskReminders.postMessage(raw); } catch (_) { finish(false); }
+}
+window.kanbanTaskRemindersResult = raw => {
+  let result;
+  try { result = JSON.parse(raw); } catch (_) { return; }
+  if (result.id === reminderSync.outstanding?.id) reminderSync.outstanding.finish(result.ok);
+};
+
+let reminderTarget = null, reminderUiReady = false;
+async function openReminderTask() {
+  const target = reminderTarget;
+  if (!reminderUiReady || !target) return;
+  reminderTarget = null;
+  if (savingTask || importInProgress || drag || switchingBoard) {
+    showToast('Завершите текущее действие, чтобы открыть задачу', 'Открыть', () => {
+      reminderTarget = target; void openReminderTask();
+    }, 10000);
+    return;
+  }
+  if (!state._tasksByBoard[target.board]?.some(task => task.id === target.task)) {
+    showToast('Задача из напоминания удалена или перемещена');
+    return;
+  }
+  if (state.activeBoardId !== target.board && !(await switchBoard(target.board))) return;
+  if ($('#taskModal').classList.contains('open')) {
+    if (editingTaskId === target.task) return;
+    await tryCloseTaskModal();
+    if ($('#taskModal').classList.contains('open')) return;
+  }
+  if (state.activeBoardId !== target.board || !state.tasks.some(task => task.id === target.task)) return;
+  switchView('kanban');
+  openTaskModal(target.task);
+}
+window.kanbanOpenReminder = raw => {
+  let target;
+  try { target = JSON.parse(raw); } catch (_) { return; }
+  if (typeof target.board !== 'string' || typeof target.task !== 'string') return;
+  reminderTarget = target;
+  void openReminderTask();
+};
+
 // ============================================================
 // SERVICE WORKER
 // ============================================================
@@ -51,8 +193,57 @@ function initPomo() {
 // ============================================================
 const fmtDur = s => { s = Math.max(0, Math.round(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
 const isAudio = f => !!f && String(f.type || '').startsWith('audio/');
-const AP = { el: new Audio(), id: null, scope: '', url: null, rate: 1, uis: new Set(), tok: 0 };
+const AP = { el: new Audio(), id: null, scope: '', url: null, rate: 1, uis: new Set(), tok: 0, nativeId: null, nativeState: null };
 AP.el.preload = 'metadata';
+
+const mediaSteps = new Map();
+function mediaCommand(id, type, fields = {}) {
+  globalThis.KanbanMedia.postMessage(JSON.stringify({ id, type, ...fields }));
+}
+function mediaStep(id, expected, send, timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => finish(null, new Error('Android не ответил')), timeout);
+    function finish(event, error) {
+      clearTimeout(timer);
+      mediaSteps.delete(id);
+      if (error) reject(error); else resolve(event);
+    }
+    mediaSteps.set(id, { expected, finish });
+    try { send(); } catch (error) { finish(null, error); }
+  });
+}
+async function sendMediaChunks(id, blob, isCurrent = () => true) {
+  const chunkSize = 256 * 1024;
+  const header = new TextEncoder().encode(id);
+  for (let offset = 0; offset < blob.size; offset += chunkSize) {
+    const data = await blob.slice(offset, offset + chunkSize).arrayBuffer();
+    if (!isCurrent()) throw new Error('Передача отменена');
+    const frame = new Uint8Array(header.length + data.byteLength);
+    frame.set(header);
+    frame.set(new Uint8Array(data), header.length);
+    await mediaStep(id, 'chunk', () => globalThis.KanbanMedia.postMessage(frame.buffer));
+  }
+}
+function mediaDiscard(id) {
+  mediaSteps.get(id)?.finish(null, new Error('Передача отменена'));
+  try { mediaCommand(id, 'discard'); } catch (_) {}
+}
+let mediaQueue = Promise.resolve();
+function stageNativeMedia(id, blob, isCurrent, options = {}) {
+  const transfer = mediaQueue.then(async () => {
+    if (!isCurrent()) throw new Error('Передача отменена');
+    try {
+      await mediaStep(id, 'begin', () => mediaCommand(id, 'begin', { size: blob.size, ...options }));
+      await sendMediaChunks(id, blob, isCurrent);
+      return await mediaStep(id, 'loaded', () => mediaCommand(id, 'finish'));
+    } catch (error) {
+      mediaDiscard(id);
+      throw error;
+    }
+  });
+  mediaQueue = transfer.catch(() => {});
+  return transfer;
+}
 
 async function prepAudio(file) {
   if (file._meta) return file._meta;
@@ -72,7 +263,25 @@ async function prepAudio(file) {
   return file._meta = m;
 }
 
-function apState(ui) { const a = AP.el; return AP.id === ui.key ? { playing: !a.paused && !a.ended, t: a.currentTime, dur: isFinite(a.duration) ? a.duration : 0 } : null; }
+window.kanbanMediaNativeResult = raw => {
+  let event;
+  try { event = JSON.parse(raw); } catch (_) { return; }
+  const step = mediaSteps.get(event.id);
+  if (step && (event.type === 'error' || event.type === step.expected ||
+      (Array.isArray(step.expected) && step.expected.includes(event.type)))) {
+    step.finish(event, event.type === 'error' ? new Error(event.message) : null);
+  } else if (event.id === AP.nativeId) {
+    if (event.type === 'state') { AP.nativeState = event; apSync(); }
+    if (event.type === 'unavailable') showToast(event.message);
+    if (event.type === 'error') { apStop(); showToast(event.message); }
+  }
+};
+function apState(ui) {
+  if (AP.id !== ui.key) return null;
+  if (AP.nativeId) return AP.nativeState;
+  const a = AP.el;
+  return { playing: !a.paused && !a.ended, t: a.currentTime, dur: isFinite(a.duration) ? a.duration : 0 };
+}
 function apSync() {
   for (const ui of AP.uis) {
     if (!ui.root.isConnected) { if (ui.seen) AP.uis.delete(ui); continue; }
@@ -83,12 +292,29 @@ function apSync() {
 AP.el.addEventListener('ended', () => { AP.el.currentTime = 0; });
 
 async function apLoad(ui) {
-  const tok = ++AP.tok, a = AP.el;
+  apStop();
+  AP.scope = ui.scope;
+  const tok = AP.tok, a = AP.el;
   let blob = null; try { blob = await ui.getBlob(); } catch (_) {}
   if (tok !== AP.tok) return false;
   if (!blob) { showToast('Файл не найден'); return false; }
-  a.pause(); if (AP.url) revokeTrackedURL(AP.url);
-  AP.url = createTrackedURL(blob); AP.id = ui.key; AP.scope = ui.scope;
+  if (globalThis.KanbanMedia?.postMessage && globalThis.crypto?.randomUUID) {
+    const id = AP.nativeId = crypto.randomUUID();
+    try {
+      const result = await stageNativeMedia(id, blob, () => AP.tok === tok);
+      if (tok !== AP.tok) return false;
+      if (result.dur <= 0) throw new Error('Длительность записи неизвестна');
+      AP.id = ui.key;
+      AP.nativeState = result;
+      apSync();
+      return true;
+    } catch (_) {
+      if (tok !== AP.tok) return false;
+      mediaDiscard(id);
+      AP.nativeId = null;
+    }
+  }
+  AP.url = createTrackedURL(blob); AP.id = ui.key;
   a.src = AP.url; a.defaultPlaybackRate = a.playbackRate = AP.rate;
   await new Promise(res => { const d = () => { a.removeEventListener('loadedmetadata', d); a.removeEventListener('error', d); res(); }; a.addEventListener('loadedmetadata', d); a.addEventListener('error', d); setTimeout(d, 4000); });
   if (tok !== AP.tok) return false;
@@ -103,14 +329,24 @@ async function apLoad(ui) {
 }
 async function apPlay(ui, fr) {
   const a = AP.el;
-  if (AP.id !== ui.key || !a.src) { ui.root.classList.add('loading'); const ok = await apLoad(ui); ui.root.classList.remove('loading'); if (!ok) return; }
+  if (AP.id !== ui.key || (!AP.nativeId && !a.src)) { ui.root.classList.add('loading'); const ok = await apLoad(ui); ui.root.classList.remove('loading'); if (!ok) return; }
+  if (AP.nativeId) {
+    try { mediaCommand(AP.nativeId, 'play', { fraction: fr, rate: AP.rate }); }
+    catch (_) { showToast('Не удалось воспроизвести запись'); }
+    return;
+  }
   const d = isFinite(a.duration) ? a.duration : ui.dur;
   if (fr != null && d) a.currentTime = fr * d;
   try { await a.play(); } catch (_) { showToast('Не удалось воспроизвести запись'); }
 }
-function apToggle(ui) { const a = AP.el; if (AP.id === ui.key && a.src) { a.paused ? apPlay(ui) : a.pause(); } else apPlay(ui); }
+function apToggle(ui) {
+  if (AP.id !== ui.key || !apState(ui)?.playing) { void apPlay(ui); return; }
+  if (AP.nativeId) mediaCommand(AP.nativeId, 'pause'); else AP.el.pause();
+}
 function apStop(scope) {
   if (scope && AP.scope !== scope) return;
+  if (AP.nativeId) mediaDiscard(AP.nativeId);
+  AP.nativeId = AP.nativeState = null;
   const a = AP.el; AP.tok++; a.pause(); a.removeAttribute('src'); a.load();
   if (AP.url) revokeTrackedURL(AP.url);
   AP.url = null; AP.id = null; apSync();
@@ -140,11 +376,22 @@ function createAudioPlayer(f, o = {}) {
   w.onpointerup = e => { if (ui.scrub == null) return; const fr = frac(e); ui.scrub = null; apPlay(ui, fr); };
   w.onpointercancel = () => { ui.scrub = null; apSync(); };
   w.onkeydown = e => {
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); if (AP.id === key) AP.el.currentTime = Math.max(0, AP.el.currentTime + (e.key === 'ArrowRight' ? 5 : -5)); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (AP.id !== key) return;
+      const offset = e.key === 'ArrowRight' ? 5 : -5;
+      if (AP.nativeId) mediaCommand(AP.nativeId, 'seek', { offset: offset * 1000 });
+      else AP.el.currentTime = Math.max(0, AP.el.currentTime + offset);
+    }
     else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); apToggle(ui); }
   };
   const nm = root.querySelector('.ap-name'); if (nm && o.onRename) { nm.style.cursor = 'pointer'; nm.title = 'Переименовать'; nm.onclick = o.onRename; }
-  if (sp) sp.onclick = () => { AP.rate = AP.rate === 1 ? 1.5 : AP.rate === 1.5 ? 2 : 1; AP.el.defaultPlaybackRate = AP.el.playbackRate = AP.rate; apSync(); };
+  if (sp) sp.onclick = () => {
+    AP.rate = AP.rate === 1 ? 1.5 : AP.rate === 1.5 ? 2 : 1;
+    if (AP.nativeId && AP.nativeState) mediaCommand(AP.nativeId, 'rate', { rate: AP.rate });
+    else AP.el.defaultPlaybackRate = AP.el.playbackRate = AP.rate;
+    apSync();
+  };
   AP.uis.add(ui); ui.render(apState(ui));
   return root;
 }
@@ -166,87 +413,222 @@ function renderAudioList() {
       if (!v) return; if (old) f.name = v; else f._name = v; renderFiles();
     } }));
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'audio-rm'; rm.textContent = '×'; rm.setAttribute('aria-label', 'Удалить запись');
-    rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); };
+    rm.onclick = () => { if (AP.id === meta.id) apStop(); if (old) tempFiles = tempFiles.filter(x => x !== f); else newFiles = newFiles.filter(x => x !== f); renderFiles(); if (f._voiceDraft) refreshVoiceDrafts(); };
     row.appendChild(rm); (resultBoxes.get(old ? f.resultId : f._resultId) || box).appendChild(row);
   });
 }
 
-const rec = { acc: 0, seg: 0, mr: null, stream: null, ctx: null, an: null, chunks: [], t0: 0, tick: 0, lv: [], cancel: false, done: null, starting: false, finishing: false, session: null, resultId: '' };
-function bindAudio() { $('#recStartBtn').onclick = () => recStart(); $('#recStop').onclick = recStop; $('#recCancel').onclick = recAbort; $('#recPause').onclick = recPause; }
-function micErrorMessage(error) {
-  const name = error?.name || 'UnknownError';
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'Нет доступа к микрофону. Проверьте разрешения Comrade в настройках Android (' + name + ')';
-  if (name === 'NotFoundError') return 'Микрофон не найден (' + name + ')';
-  if (name === 'NotReadableError' || name === 'AbortError') return 'Не удалось запустить микрофон. Проверьте системный доступ к микрофону и закройте другие приложения записи (' + name + ')';
-  return 'Не удалось включить микрофон (' + name + ')';
+// Android owns microphone capture. WebView only controls and receives the final file.
+const rec = { id: null, session: null, resultId: '', starting: false, active: false,
+  finishing: false, paused: false, ready: null, done: null, resolve: null, lv: [], recovering: null };
+const voiceDraftId = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
+let voiceDraftRequest = null;
+function bindAudio() {
+  $('#recStartBtn').onclick = () => recStart();
+  $('#recStop').onclick = () => recStop();
+  $('#recCancel').onclick = () => recAbort();
+  $('#recPause').onclick = recPause;
 }
-async function requestMicStream(devices, stillActive) {
-  try {
-    return await devices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-  } catch (error) {
-    // Some WebViews cannot start the processed audio source. Retry once with
-    // plain capture, but never retry a denied permission or a closed editor.
-    if (!['NotReadableError', 'AbortError', 'OverconstrainedError', 'NotSupportedError'].includes(error?.name) || !stillActive()) throw error;
-    return devices.getUserMedia({ audio: true });
+function voiceCommand(id, type, fields = {}) {
+  try { window.KanbanVoice.postMessage(JSON.stringify({ id, type, ...fields })); return true; }
+  catch (_) { return false; }
+}
+function refreshVoiceDrafts() {
+  const panel = $('#recDrafts');
+  if (!panel || !window.KanbanVoice?.postMessage) return;
+  panel.hidden = true;
+  panel.replaceChildren();
+  if (!$('#taskModal').classList.contains('open')) return;
+  const id = 'list_' + generateId();
+  voiceDraftRequest = { id, editor: tempResults };
+  voiceCommand(id, 'list');
+}
+function forgetVoiceDraft(draft) {
+  voiceCommand('draft_' + generateId(), 'remove-draft', { draft });
+}
+function showVoiceDrafts(event) {
+  if (event.id !== voiceDraftRequest?.id || voiceDraftRequest.editor !== tempResults ||
+      !$('#taskModal').classList.contains('open') || !Array.isArray(event.items)) return;
+  const panel = $('#recDrafts');
+  const selected = new Set(newFiles.map(file => file._voiceDraft));
+  const saved = new Set(Object.values(state._tasksByBoard).flatMap(tasks => tasks.flatMap(task => task.files.map(file => file.id))));
+  for (const draft of event.items) {
+    if (!voiceDraftId.test(draft.draft)) continue;
+    if (saved.has('m_voice_' + draft.draft)) { forgetVoiceDraft(draft.draft); continue; }
+    if (draft.board !== state.activeBoardId || draft.task !== (editingTaskId || '') || selected.has(draft.draft)) continue;
+    const row = document.createElement('div'); row.className = 'audio-item';
+    const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'btn btn-secondary btn-small';
+    const date = new Date(draft.createdAt).toLocaleString('ru-RU');
+    restore.textContent = (draft.result ? 'Восстановить запись результата' : 'Восстановить запись') + ' · ' + date;
+    restore.onclick = () => recoverVoiceDraft(draft);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn btn-secondary btn-small';
+    remove.textContent = 'Удалить черновик';
+    remove.onclick = async () => {
+      if (await confirmDialog('Удалить голосовой черновик?', 'Черновик будет удалён с устройства.')) {
+        forgetVoiceDraft(draft.draft);
+        row.remove();
+        panel.hidden = !panel.children.length;
+      }
+    };
+    row.append(restore, remove); panel.append(row);
+  }
+  panel.hidden = !panel.children.length;
+}
+function recoverVoiceDraft(draft) {
+  if (rec.id || savingTask || !$('#taskModal').classList.contains('open') || !voiceDraftId.test(draft.draft) ||
+      draft.board !== state.activeBoardId || draft.task !== (editingTaskId || '')) return;
+  apStop();
+  const id = 'voice_' + generateId();
+  Object.assign(rec, { id, session: tempResults, resultId: '', starting: true, recovering: draft.draft });
+  voicePanel();
+  if (!voiceCommand(id, 'recover', { draft: draft.draft })) { voiceReset(false); showToast('Не удалось открыть черновик'); }
+}
+function voicePromise() {
+  if (!rec.done) rec.done = new Promise(resolve => { rec.resolve = resolve; });
+  return rec.done;
+}
+function voiceResolve(ok) {
+  const resolve = rec.resolve;
+  rec.done = rec.resolve = null;
+  if (resolve) resolve(ok);
+}
+function voicePanel() {
+  $('#recPanel').hidden = !rec.id;
+  $('#recStartBtn').hidden = !!rec.id;
+  $('#recPause').disabled = !rec.active || rec.finishing;
+  $('#recPause').textContent = rec.paused ? 'Продолжить' : 'Пауза';
+  $('#recStop').disabled = rec.starting || rec.finishing;
+  $('#recStop').textContent = rec.ready && !rec.finishing ? 'Повторить' : rec.finishing ? 'Сохранение…' : 'Готово';
+}
+function voiceReset(ok) {
+  voiceResolve(ok);
+  Object.assign(rec, { id: null, session: null, resultId: '', starting: false,
+    active: false, finishing: false, paused: false, ready: null, lv: [], recovering: null });
+  voicePanel();
+}
+function voiceStillInEditor(id) {
+  return rec.id === id && rec.session === tempResults && $('#taskModal').classList.contains('open') &&
+    (!rec.resultId || tempResults.some(r => r.id === rec.resultId));
+}
+function recStart(resultId = '') {
+  if (rec.id || savingTask) return;
+  if (resultId && !tempResults.some(r => r.id === resultId)) return;
+  if (!window.KanbanVoice?.postMessage) { showToast('Нативная запись недоступна в этой сборке'); return; }
+  apStop();
+  const id = 'voice_' + generateId();
+  Object.assign(rec, { id, session: tempResults, resultId, starting: true, lv: [] });
+  $('#recTime').textContent = '0:00';
+  $('#recLevels').replaceChildren();
+  voicePanel();
+  if (resultId) $('#recPanel').scrollIntoView({ block: 'nearest' });
+  if (!voiceCommand(id, 'start', { board: state.activeBoardId, task: editingTaskId || '', result: resultId })) {
+    voiceReset(false); showToast('Не удалось запустить диктофон Android');
   }
 }
-async function recStart(resultId = '') {
-  if (rec.mr || rec.starting || rec.finishing || savingTask) return;
-  const session = tempResults;
-  if (resultId && !session.some(r => r.id === resultId)) return;
-  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { showToast('Запись звука недоступна: обновите Android System WebView'); return; }
-  let stream;
-  rec.starting = true;
-  const stillActive = () => tempResults === session && $('#taskModal').classList.contains('open') && !savingTask;
-  try { stream = await requestMicStream(navigator.mediaDevices, stillActive); }
-  catch (e) { if (stillActive()) showToast(micErrorMessage(e), null, null, 7000); return; }
-  finally { rec.starting = false; }
-  if (tempResults !== session || !$('#taskModal').classList.contains('open') || savingTask) { stream.getTracks().forEach(t => t.stop()); return; }
-  apStop();
-  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
-  let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); } catch (_) { stream.getTracks().forEach(t => t.stop()); showToast('Не удалось начать запись'); return; }
-  Object.assign(rec, { mr, stream, chunks: [], cancel: false, lv: [], acc: 0, seg: Date.now(), session, resultId }); $('#recPause').textContent = 'Пауза';
-  mr.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
-  rec.done = new Promise(res => { mr.onstop = async () => { rec.finishing = true; try { await recFinish(); } finally { rec.finishing = false; res(); } }; });
-  try { rec.ctx = new (window.AudioContext || window.webkitAudioContext)(); rec.ctx.resume?.(); rec.an = rec.ctx.createAnalyser(); rec.an.fftSize = 256; rec.ctx.createMediaStreamSource(stream).connect(rec.an); } catch (_) { rec.an = null; }
-  mr.start(1000);
-  $('#recPanel').hidden = false; $('#recStartBtn').hidden = true;
-  if (resultId) { showToast('Запись для результата начата'); $('#recPanel').scrollIntoView({ block: 'nearest' }); }
-  rec.tick = setInterval(recTick, 80);
-}
-function recElapsed() { return (rec.acc + (rec.mr && rec.mr.state === 'recording' ? Date.now() - rec.seg : 0)) / 1000; }
 function recPause() {
-  if (!rec.mr) return;
-  if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.mr.pause(); $('#recPause').textContent = 'Продолжить'; }
-  else if (rec.mr.state === 'paused') { rec.seg = Date.now(); rec.mr.resume(); $('#recPause').textContent = 'Пауза'; }
+  if (!rec.active || rec.finishing) return;
+  if (!voiceCommand(rec.id, rec.paused ? 'resume' : 'pause')) showToast('Не удалось переключить паузу');
 }
-function recTick() {
-  const s = recElapsed(); $('#recTime').textContent = fmtDur(s);
-  let lvl = 0.05;
-  if (rec.an) { const d = new Uint8Array(rec.an.fftSize); rec.an.getByteTimeDomainData(d); let sum = 0; for (const v of d) sum += (v - 128) ** 2; lvl = Math.min(1, Math.sqrt(sum / d.length) / 40); }
-  if (rec.mr.state !== 'recording') return;
-  rec.lv.push(lvl);
-  const box = $('#recLevels'), n = 40, last = rec.lv.slice(-n);
+function recStop() {
+  if (!rec.id) return Promise.resolve(true);
+  if (rec.starting) return Promise.resolve(false);
+  if (rec.finishing) return voicePromise();
+  const pending = voicePromise();
+  rec.finishing = true;
+  voicePanel();
+  if (rec.ready) void receiveVoiceFile(rec.id);
+  else if (!voiceCommand(rec.id, 'stop')) {
+    rec.finishing = false; voicePanel(); voiceResolve(false);
+    showToast('Не удалось остановить диктофон');
+  }
+  return pending;
+}
+function recAbort(discard = true) {
+  if (!rec.id) return;
+  voiceCommand(rec.id, discard && !rec.recovering ? 'cancel' : 'leave');
+  voiceReset(false);
+}
+function voiceLevel(ms, level) {
+  $('#recTime').textContent = fmtDur(ms / 1000);
+  if (rec.paused) return;
+  const n = 40, box = $('#recLevels');
+  rec.lv.push(Math.min(1, Math.max(0, Number(level) || 0)));
+  if (rec.lv.length > n) rec.lv.shift();
   if (box.children.length !== n) box.innerHTML = '<i></i>'.repeat(n);
-  [...box.children].forEach((el, i) => { const v = last[i - (n - last.length)]; el.style.height = (v == null ? 6 : Math.max(8, v * 100)) + '%'; });
-  if (s >= 1200) recStop();
+  const last = rec.lv;
+  [...box.children].forEach((el, i) => {
+    const v = last[i - (n - last.length)];
+    el.style.height = (v == null ? 6 : Math.max(8, Math.sqrt(v) * 100)) + '%';
+  });
 }
-function recStop() { if (!rec.mr) return Promise.resolve(); if (rec.mr.state === 'recording') { rec.acc += Date.now() - rec.seg; rec.seg = Date.now(); } try { if (rec.mr.state !== 'inactive') rec.mr.stop(); } catch (_) {} return rec.done; }
-function recAbort() { if (!rec.mr) return; rec.cancel = true; recStop(); }
-async function recFinish() {
-  const dur = rec.acc / 1000, type = (rec.mr.mimeType || 'audio/webm').split(';')[0], cancel = rec.cancel, chunks = rec.chunks, session = rec.session, resultId = rec.resultId;
-  clearInterval(rec.tick); rec.stream.getTracks().forEach(t => t.stop()); try { rec.ctx && rec.ctx.close(); } catch (_) {}
-  rec.mr = null; rec.stream = null; rec.ctx = null; rec.an = null;
-  $('#recPanel').hidden = true; $('#recStartBtn').hidden = false;
-  if (cancel || !chunks.length) return;
-  const d = new Date(), p = n => String(n).padStart(2, '0'), ext = type.includes('mp4') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
-  const file = new File(chunks, `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.${ext}`, { type });
-  file._dur = dur;
-  if (resultId) file._resultId = resultId;
-  await prepAudio(file);
-  if (tempResults !== session || !$('#taskModal').classList.contains('open') || (resultId && !session.some(r => r.id === resultId))) return;
-  newFiles.push(file); renderFiles();
+async function receiveVoiceFile(id) {
+  const ready = rec.ready;
+  if (!ready || !voiceStillInEditor(id)) return;
+  try {
+    const response = await fetch('/voice-capture/' + encodeURIComponent(ready.token), { cache: 'no-store' });
+    if (!response.ok) throw new Error('Файл записи недоступен');
+    const blob = await response.blob();
+    if (blob.size !== ready.size || blob.size === 0 || blob.size > MAX_VIDEO_SIZE) throw new Error('Запись передана не полностью');
+    if (!voiceStillInEditor(id)) return;
+    const d = new Date(ready.createdAt), p = n => String(n).padStart(2, '0');
+    const file = new File([blob], `Запись ${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}-${p(d.getMinutes())}.m4a`, { type: 'audio/mp4' });
+    file._dur = ready.ms / 1000;
+    file._meta = { dur: file._dur, peaks: ready.peaks || [] };
+    const resultId = rec.recovering ? ready.result : rec.resultId;
+    if (resultId) {
+      if (!tempResults.some(result => result.id === resultId))
+        tempResults.push({ id: resultId, text: '', createdAt: ready.createdAt, updatedAt: ready.createdAt });
+      file._resultId = resultId;
+    }
+    file._voiceDraft = ready.draft;
+    newFiles.push(file);
+    // Release the transfer lease. The private draft remains until the task commit.
+    voiceCommand(id, 'ack');
+    voiceReset(true);
+    if (resultId && typeof renderTaskResults === 'function') renderTaskResults();
+    renderFiles(); refreshVoiceDrafts();
+  } catch (error) {
+    if (!voiceStillInEditor(id)) return;
+    rec.finishing = false;
+    voiceResolve(false);
+    voicePanel();
+    showToast('Не удалось получить запись. Нажмите «Повторить»: ' + error.message, null, null, 7000);
+  }
 }
+window.kanbanVoiceNativeResult = function(payload) {
+  let event;
+  try { event = JSON.parse(payload); } catch (_) { return; }
+  if (event.type === 'drafts') { showVoiceDrafts(event); return; }
+  if (event.id !== rec.id) return;
+  if (!voiceStillInEditor(event.id)) { recAbort(false); return; }
+  switch (event.type) {
+    case 'started':
+      rec.starting = false; rec.active = true; voicePanel(); break;
+    case 'paused':
+    case 'resumed':
+      rec.paused = event.type === 'paused';
+      voiceLevel(event.ms, 0); voicePanel(); break;
+    case 'level':
+      voiceLevel(event.ms, event.level); break;
+    case 'ready':
+      if (rec.ready) return;
+      if (!/^[a-f0-9-]{36}$/.test(event.token) || !voiceDraftId.test(event.draft) ||
+          !Number.isSafeInteger(event.size) || event.size <= 0 || event.size > MAX_VIDEO_SIZE ||
+          !Number.isFinite(event.ms) || !Number.isFinite(event.createdAt) ||
+          event.board !== state.activeBoardId || event.task !== (editingTaskId || '') ||
+          (rec.recovering ? event.draft !== rec.recovering : event.result !== rec.resultId)) {
+        recAbort(false); showToast('Файл записи недоступен для этой задачи'); return;
+      }
+      rec.starting = rec.active = rec.paused = false;
+      rec.ready = event;
+      rec.finishing = true; voicePromise(); voicePanel();
+      void receiveVoiceFile(event.id); break;
+    case 'cancelled':
+      voiceReset(false); break;
+    case 'error':
+      voiceReset(false); showToast(event.message || 'Ошибка диктофона Android', null, null, 7000); break;
+  }
+};
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -263,6 +645,13 @@ async function init() {
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   try { db = await openDB(); }
   catch (e) { console.error(e); alert('Не удалось открыть базу данных: ' + e.message); return; }
+
+  if (canUseZip()) {
+    try {
+      const pending = (await dbGetSettings())[ZIP_PROJECTION];
+      if (pending) { await projectZipState(pending); initTheme(); }
+    } catch (error) { alert('Восстановление настроек ZIP будет повторено при следующем запуске: ' + error.message); }
+  }
 
   await loadData();
   loadUIState();
@@ -281,12 +670,14 @@ async function init() {
   setupBroadcast();
   switchView(currentView || 'kanban');
   updateStorageInfo();
+  reminderUiReady = true;
+  void openReminderTask();
 
   setInterval(updateStorageInfo, 15000);
   setInterval(() => {
     const now = Date.now();
     for (let i = undoStack.length - 1; i >= 0; i--) {
-      if (undoStack[i].expiresAt <= now) {
+      if (!undoStack[i].restoring && undoStack[i].expiresAt <= now) {
         const exp = undoStack.splice(i, 1)[0];
         try { exp.onExpire?.(); } catch (_) {}
       }
